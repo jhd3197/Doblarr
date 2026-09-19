@@ -16,6 +16,7 @@ from .clients.radarr import RadarrClient, RadarrError
 from .clients.sonarr import SonarrClient, SonarrError
 from .config import Config
 from .jobs import JobStore, Worker
+from .scheduler import Scheduler
 
 log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -56,6 +57,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         return {"ok": True, "saved_to": str(config.path),
                 "config": config.as_dict(redact_secrets=True)}
 
+    status_state: dict = {"last_scan": None, "counts": None}
+
     def _scan_library() -> tuple[list, list[str]]:
         targets = config["general"]["target_languages"]
         conn = config.get("connect", {})
@@ -79,7 +82,34 @@ def create_app(config: Config | None = None) -> FastAPI:
             except SonarrError as exc:
                 warnings.append(f"Sonarr: {exc}")
         discovery.sort_items(items)
+        status_state["last_scan"] = _dt.datetime.now().isoformat(timespec="seconds")
+        status_state["counts"] = discovery.summarize(items)
         return items, warnings
+
+    def _scan_and_maybe_label():
+        items, _ = _scan_library()
+        conn = config.get("connect", {})
+        if config.get("filtering", {}).get("auto_label") and conn.get("plex_url") and conn.get("plex_token"):
+            try:
+                plex_labels.sync_labels(
+                    items, PlexClient(conn["plex_url"], conn["plex_token"]), config, apply=True)
+            except PlexError as exc:
+                log.warning("auto label sync failed: %s", exc)
+
+    scheduler = Scheduler(config, _scan_and_maybe_label)
+    scheduler.start()
+    app.state.scheduler = scheduler
+
+    @app.get("/api/status")
+    def status():
+        return {
+            "last_scan": status_state["last_scan"],
+            "counts": status_state["counts"],
+            "auto_scan": bool(config.get("discovery", {}).get("auto_scan")),
+            "auto_label": bool(config.get("filtering", {}).get("auto_label")),
+            "rescan_interval": config.get("discovery", {}).get("rescan_interval", "6h"),
+            "queue_paused": worker.paused,
+        }
 
     @app.get("/api/library")
     def library():

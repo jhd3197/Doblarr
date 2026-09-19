@@ -15,12 +15,14 @@ DEFAULTS: dict[str, Any] = {
     "connect": {"radarr_url": None, "radarr_api_key": None,
                 "sonarr_url": None, "sonarr_api_key": None,
                 "plex_url": None, "plex_token": None},
-    "discovery": {"only_original_foreign": True, "treat_undefined_as": "original"},
+    "discovery": {"only_original_foreign": True, "treat_undefined_as": "original",
+                  "rescan_interval": "6h", "auto_scan": False},
     "filtering": {
         "tag_missing_dub": "needs-dub",
         "hidden_collection_name": "Not in your language",
         "kometa_handoff": True,
         "kometa_file": None,
+        "auto_label": False,
     },
     "voicebox": {
         "base_url": "http://127.0.0.1:17493",

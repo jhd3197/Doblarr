@@ -177,7 +177,7 @@
     <section data-view="Overview">
       <div style="padding: 30px 26px 44px;">
         <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Overview</h2>
-        <p style="margin: 0 0 26px; font-size: 13.5px; color: var(--muted);">Watching Plex, Radarr and Sonarr · last scan 6 minutes ago · dubs written as non-destructive <span class="m">AI - EN</span> tracks</p>
+        <p style="margin: 0 0 26px; font-size: 13.5px; color: var(--muted);">Watching Radarr and Sonarr · last scan <span id="lastScan">—</span> · dubs added as non-destructive AI audio tracks</p>
 
         <div class="cards4" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
           <div class="panel" style="padding: 18px 20px;">
@@ -518,6 +518,7 @@ const TABS = [
   { id: "discovery", title: "Discovery", desc: "How Doblarr finds the titles you can't watch.", groups: [
     { title: "Scanning", desc: "", fields: [
       B("discovery.enabled", "Discovery enabled", true, ""),
+      B("discovery.auto_scan", "Auto-scan on the interval", false, "Rescan the library automatically every rescan interval."),
       T("discovery.rescan_interval", "Rescan interval", "6h", ""),
       C("discovery.audio_lang_source", "Read audio languages from", ["ffprobe", "plex_api", "radarr_api"], "ffprobe", "ffprobe opens the file; the APIs trust the metadata."),
       C("discovery.detect_from", "Detection depth", ["metadata_only", "probe_files"], "probe_files", "Probing is accurate but slower on a big library.") ] },
@@ -544,7 +545,8 @@ const TABS = [
       T("filtering.hidden_collection_name", "Hidden collection", "Not in your language", ""),
       C("filtering.hide_scope", "Applies", ["per user", "library-wide"], "per user", ""),
       T("filtering.surface_collection_name", "Surface collection", "Now available in English", "Doblarr fills this as dubs land."),
-      B("filtering.kometa_handoff", "Hand off to Kometa", true, "Emit a YAML fragment and let your existing Kometa run own the hide/show.") ] } ] },
+      B("filtering.kometa_handoff", "Hand off to Kometa", true, "Emit a YAML fragment and let your existing Kometa run own the hide/show."),
+      B("filtering.auto_label", "Auto-apply labels on each scan", false, "When auto-scan runs, label needs-dub titles in Plex automatically.") ] } ] },
 
   { id: "source", title: "Source", desc: "Which audio and which transcript the dub is built from.", groups: [
     { title: "Audio", desc: "", fields: [
@@ -968,6 +970,15 @@ function renderActivity(list) {
     </tr>`).join("");
 }
 
+function relTime(iso) {
+  if (!iso) return "not yet";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+
 async function loadOverview() {
   try {
     const jr = await fetch("api/jobs"); const d = await jr.json();
@@ -976,9 +987,22 @@ async function loadOverview() {
     renderActivity(d.jobs || []);
   } catch (e) {}
   try {
-    const lr = await fetch("api/library"); const nd = document.getElementById("statNeedsDub");
-    if (nd) nd.textContent = ((await lr.json()).counts || {}).needs_dub ?? "—";
+    const sr = await fetch("api/status"); const st = await sr.json();
+    const ls = document.getElementById("lastScan");
+    if (ls) ls.textContent = relTime(st.last_scan);
+    const nd = document.getElementById("statNeedsDub");
+    if (nd && st.counts) nd.textContent = st.counts.needs_dub ?? "—";
   } catch (e) {}
+  // If no scan has run yet, trigger one so the needs-dub count is populated.
+  const nd = document.getElementById("statNeedsDub");
+  if (nd && nd.textContent === "—") {
+    try {
+      const lr = await fetch("api/library");
+      nd.textContent = ((await lr.json()).counts || {}).needs_dub ?? "—";
+      const sr = await fetch("api/status"); const ls = document.getElementById("lastScan");
+      if (ls) ls.textContent = relTime((await sr.json()).last_scan);
+    } catch (e) {}
+  }
 }
 
 async function loadConfig() {

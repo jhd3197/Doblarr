@@ -121,3 +121,23 @@ def test_plex_label_sync():
 
     r = sync_labels(items, FakePlex(), Config.load("nope.yaml"), apply=False)
     assert r["matched"] == 1 and r["added"] == 1 and r["removed"] == 1, r
+
+
+def test_scheduler():
+    import time
+
+    from doblarr.scheduler import Scheduler, parse_interval
+    assert parse_interval("6h") == 21600
+    assert parse_interval("30m") == 1800
+    assert parse_interval("90s") == 90
+    assert parse_interval("bad") == 6 * 3600
+
+    calls = {"n": 0}
+
+    class Cfg:
+        def get(self, k, d=None):
+            return {"discovery": {"auto_scan": True, "rescan_interval": "60s"}}.get(k, d)
+
+    s = Scheduler(Cfg(), lambda: calls.__setitem__("n", calls["n"] + 1))
+    s.start(); time.sleep(0.4); s.stop(); s.join(timeout=2)
+    assert calls["n"] >= 1
