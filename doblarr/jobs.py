@@ -17,6 +17,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .errors import JobCancelled
 from .models import DubJob
 from .pipeline import run_job
 
@@ -35,7 +36,7 @@ class Job:
     source_lang: str
     target_lang: str
     input_file: str | None = None
-    status: str = "queued"     # queued | running | done | failed
+    status: str = "queued"     # queued | running | done | failed | cancelled
     stage: str = ""
     progress: int = 0
     message: str = ""
@@ -91,7 +92,8 @@ class JobStore:
 
     def clear_finished(self) -> int:
         with self._lock:
-            ids = [i for i, j in self._jobs.items() if j.status in ("done", "failed")]
+            ids = [i for i, j in self._jobs.items()
+                   if j.status in ("done", "failed", "cancelled")]
             for i in ids:
                 del self._jobs[i]
             if ids:
@@ -128,14 +130,29 @@ class Worker(threading.Thread):
         self.events = events
         self._stop_evt = threading.Event()
         self._pause = threading.Event()
+        self._current_id: str | None = None
+        self._cancel_evt: threading.Event | None = None
+
+    def stop(self) -> None:
+        self._stop_evt.set()
+        if self._cancel_evt is not None:
+            self._cancel_evt.set()  # unblock a running job so shutdown joins quickly
+
+    def cancel(self, job_id: str) -> bool:
+        """Ask the currently running job to stop. True if it was the running one."""
+        if self._current_id == job_id and self._cancel_evt is not None:
+            self._cancel_evt.set()
+            return True
+        return False
+
+    @property
+    def current_id(self) -> str | None:
+        return self._current_id
 
     def _publish(self, job: Job, type_: str, **extra) -> None:
         if self.events:
             self.events.publish("job", {"type": type_, "job_id": job.id,
                                         "title": job.title, **extra})
-
-    def stop(self) -> None:
-        self._stop_evt.set()
 
     def pause(self) -> None:
         self._pause.set()
@@ -167,6 +184,9 @@ class Worker(threading.Thread):
 
         # Read live so toggling dub.dry_run in Settings applies without a restart.
         dry_run = self.config.get("dub", {}).get("dry_run", self.dry_run)
+        cancel_evt = threading.Event()
+        self._current_id = job.id
+        self._cancel_evt = cancel_evt
         self.store.update(job.id, status="running", stage="probe", progress=0)
         self._publish(job, "started")
         try:
@@ -175,13 +195,21 @@ class Worker(threading.Thread):
                 source_lang=job.source_lang,
                 target_lang=job.target_lang,
             )
-            run_job(dj, self.config, dry_run=dry_run, on_stage=on_stage)
+            run_job(dj, self.config, dry_run=dry_run, on_stage=on_stage,
+                    cancel_event=cancel_evt)
             out = str(dj.output_file) if dj.output_file else "(planned)"
             message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
                               message=message)
             self._publish(job, "done", progress=100, message=message)
+        except JobCancelled as exc:
+            log.info("job %s cancelled", job.id)
+            self.store.update(job.id, status="cancelled", message=str(exc))
+            self._publish(job, "cancelled", message=str(exc))
         except Exception as exc:  # noqa: BLE001 - surface any stage failure to the UI
             log.exception("job %s failed", job.id)
             self.store.update(job.id, status="failed", message=str(exc))
             self._publish(job, "failed", message=str(exc))
+        finally:
+            self._current_id = None
+            self._cancel_evt = None

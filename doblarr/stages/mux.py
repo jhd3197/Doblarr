@@ -7,6 +7,7 @@ subtitles; just appends the dub, tagged with its language and a friendly title.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from ..ffmpeg import run_ffmpeg
@@ -22,7 +23,7 @@ _LANG3 = {"en": "eng", "es": "spa", "ko": "kor", "ja": "jpn", "fr": "fre",
 
 @stage("mux")
 def run(job: DubJob, output_dir: Path, track_name_template: str = "AI - {language}",
-        dry_run: bool = False) -> DryRunPlan | None:
+        dry_run: bool = False, cancel: threading.Event | None = None) -> DryRunPlan | None:
     out = output_dir / job.input_file.name
     job.output_file = out
     title = track_name_template.format(language=job.target_lang.upper())
@@ -45,5 +46,5 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "AI - {languag
     if dry_run:
         return dry("ffmpeg " + " ".join(args))
     out.parent.mkdir(parents=True, exist_ok=True)
-    run_ffmpeg(args)
+    run_ffmpeg(args, cancel=cancel)
     return None

@@ -18,7 +18,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from ..errors import ArrClientError
+from ..errors import ArrClientError, JobCancelled
 from .base import ArrClient
 
 
@@ -85,14 +85,20 @@ class VoiceboxClient(ArrClient):
             raise VoiceboxError(f"no generation id in response: {data}")
         return gen_id
 
-    def wait_for(self, generation_id: str, poll: float = 1.0) -> None:
+    def wait_for(self, generation_id: str, poll: float = 1.0,
+                 cancel_event=None) -> None:
         """Block until a generation reports a terminal status.
 
         Status lives on the generation record at /history/{id} (the
         /generate/{id}/status route returns nothing useful in practice).
+        `cancel_event` aborts the wait each poll iteration — note this only
+        stops the local wait; the remote generation keeps running server-side
+        (voicebox has no cancel endpoint).
         """
         deadline = time.time() + self.timeout
         while time.time() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                raise JobCancelled(f"cancelled while waiting for {generation_id}")
             data = self._get(f"/history/{generation_id}", timeout=30)
             status = (data.get("status") or "").lower()
             if status in {"done", "completed", "success", "ready"}:
@@ -111,8 +117,8 @@ class VoiceboxClient(ArrClient):
 
     # -- convenience ------------------------------------------------------
     def synthesize_to_file(self, profile_id: str, text: str, language: str,
-                           dest: Path, **kwargs) -> Path:
+                           dest: Path, cancel_event=None, **kwargs) -> Path:
         """Full round-trip: generate -> wait -> download."""
         gen_id = self.generate(profile_id, text, language, **kwargs)
-        self.wait_for(gen_id)
+        self.wait_for(gen_id, cancel_event=cancel_event)
         return self.download_audio(gen_id, dest)

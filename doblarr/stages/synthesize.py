@@ -9,6 +9,7 @@ diarization.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from ..clients.voicebox import VoiceboxError
@@ -19,13 +20,14 @@ from .common import DryRunPlan, dry, stage
 log = logging.getLogger("doblarr.synthesize")
 
 
-def _extract_ref(source_audio: Path, start: float, end: float, dest: Path) -> Path:
+def _extract_ref(source_audio: Path, start: float, end: float, dest: Path,
+                 cancel: threading.Event | None = None) -> Path:
     """Pull a normalized mono reference clip from the original audio."""
     dur = max(4.0, min(15.0, end - start))
     dest.parent.mkdir(parents=True, exist_ok=True)
     run_ffmpeg(["-y", "-ss", str(start), "-i", str(source_audio), "-t", str(dur),
                 "-vn", "-ac", "1", "-ar", "16000", "-af", "loudnorm=I=-14",
-                "-c:a", "pcm_s16le", str(dest)])
+                "-c:a", "pcm_s16le", str(dest)], cancel=cancel)
     return dest
 
 
@@ -40,7 +42,7 @@ def _safe_transcribe(vb, clip: Path, lang: str) -> str:
 
 @stage("synthesize")
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
-        dry_run: bool = False) -> DryRunPlan | None:
+        dry_run: bool = False, cancel: threading.Event | None = None) -> DryRunPlan | None:
     clips_dir = work_dir / "clips"
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
 
@@ -66,7 +68,7 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         added = False
         for c in candidates:
             ref = _extract_ref(job.source_audio, c.start, c.end,
-                               clips_dir / "reference.wav")
+                               clips_dir / "reference.wav", cancel=cancel)
             ref_text = _safe_transcribe(vb, ref, job.source_lang) or "reference"
             try:
                 vb.add_sample(pid, ref, ref_text)
@@ -83,7 +85,8 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
     for seg in job.segments:
         text = seg.text_translated or seg.text_src
         dest = clips_dir / f"line_{seg.index:04d}.wav"
-        vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang, dest)
+        vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang, dest,
+                              cancel_event=cancel)
         seg.audio_clip = dest
         log.info("  line %d/%d done", seg.index + 1, len(job.segments))
     return None

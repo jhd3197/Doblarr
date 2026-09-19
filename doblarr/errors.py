@@ -27,6 +27,10 @@ class NotFoundError(DoblarrError):
     http_status = 404
 
 
+class JobCancelled(DoblarrError):
+    """A dub job was cancelled — by the user, or by killing its ffmpeg run."""
+
+
 class ArrClientError(DoblarrError):
     """An upstream *arr-style service (Radarr/Sonarr/Plex/voicebox) failed."""
 

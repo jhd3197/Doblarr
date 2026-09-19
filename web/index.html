@@ -884,7 +884,7 @@ const jobs = { pollTimer: null };
 
 function jobStatusTag(s) {
   const cls = s === "running" ? "tag-accent"
-            : s === "failed" ? "tag-outline" : "tag-neutral";
+            : s === "failed" || s === "cancelled" ? "tag-outline" : "tag-neutral";
   return `<span class="tag ${cls}">${s}</span>`;
 }
 
@@ -913,9 +913,10 @@ function renderJobs(data) {
     const track = `${escapeHtml(j.source_lang)} → ${escapeHtml(j.target_lang)}`;
     const stage = j.status === "done" ? escapeHtml(j.message || "done")
                 : j.status === "failed" ? escapeHtml(j.message || "failed")
+                : j.status === "cancelled" ? escapeHtml(j.message || "cancelled")
                 : (escapeHtml(j.stage || "queued"));
-    const barColor = j.status === "failed" ? "background: var(--color-neutral-600);" : "";
-    const act = j.status === "queued" ? "Cancel" : (j.status === "running" ? "" : "Remove");
+    const barColor = j.status === "failed" || j.status === "cancelled" ? "background: var(--color-neutral-600);" : "";
+    const act = (j.status === "queued" || j.status === "running") ? "Cancel" : "Remove";
     const action = act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "";
     return `
       <tr>

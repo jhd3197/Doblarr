@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from ..ffmpeg import run_ffmpeg
@@ -13,7 +14,8 @@ log = logging.getLogger("doblarr.extract")
 
 
 @stage("extract")
-def run(job: DubJob, work_dir: Path, dry_run: bool = False) -> DryRunPlan | None:
+def run(job: DubJob, work_dir: Path, dry_run: bool = False,
+        cancel: threading.Event | None = None) -> DryRunPlan | None:
     out = work_dir / f"{job.input_file.stem}.source.wav"
     job.source_audio = out
     args = [
@@ -24,5 +26,5 @@ def run(job: DubJob, work_dir: Path, dry_run: bool = False) -> DryRunPlan | None
     if dry_run:
         return dry("ffmpeg " + " ".join(args))
     out.parent.mkdir(parents=True, exist_ok=True)
-    run_ffmpeg(args)
+    run_ffmpeg(args, cancel=cancel)
     return None

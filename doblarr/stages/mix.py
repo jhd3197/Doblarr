@@ -8,6 +8,7 @@ volume). Produces one dubbed track spanning the segments.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from ..ffmpeg import run_ffmpeg
@@ -21,7 +22,7 @@ BED_VOLUME = 0.35   # duck the original bed under the dubbed dialogue
 
 @stage("mix")
 def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
-        dry_run: bool = False) -> DryRunPlan | None:
+        dry_run: bool = False, cancel: threading.Event | None = None) -> DryRunPlan | None:
     out = work_dir / f"{job.input_file.stem}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
     log.info("mix dialogue over bed -> %s", out.name)
@@ -50,6 +51,6 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     args += ["-filter_complex", ";".join(parts), "-map", "[out]",
              "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(out)]
     out.parent.mkdir(parents=True, exist_ok=True)
-    run_ffmpeg(args)
+    run_ffmpeg(args, cancel=cancel)
     log.info("mix -> %s (%.0fs window, %d lines)", out.name, dur, len(segs))
     return None

@@ -274,6 +274,10 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @api.delete("/api/jobs/{job_id}")
     def delete_job(job_id: str):
+        """Remove a job; a RUNNING job is cancelled instead of removed."""
+        if worker.cancel(job_id):
+            bus.publish("job", {"type": "cancelling", "job_id": job_id})
+            return {"ok": True, "cancelled": True}
         if not store.remove(job_id):
             raise NotFoundError(f"no job with id {job_id}")
         return {"ok": True}
