@@ -13,16 +13,17 @@ from pathlib import Path
 
 from .. import subtitles
 from ..models import DubJob, Segment
+from .common import dry, stage
 
 log = logging.getLogger("doblarr.transcribe")
 
 
+@stage("transcribe")
 def run(job: DubJob, work_dir: Path, source: str = "subtitles",
         whisper_model: str = "large-v3", vb=None,
         segment_limit: int | None = None, dry_run: bool = False) -> None:
     if dry_run:
-        log.info("  [dry-run] would build timed segments (%s)", source)
-        return
+        return dry(f"would build timed segments ({source})")
 
     sub_path = job.subtitle_file
     used_lang = None

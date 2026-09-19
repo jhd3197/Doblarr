@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 from ..models import DubJob
+from .common import dry, stage
 
 log = logging.getLogger("doblarr.fit_timing")
 
@@ -19,6 +20,7 @@ log = logging.getLogger("doblarr.fit_timing")
 MAX_STRETCH = 1.3
 
 
+@stage("fit_timing")
 def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> None:
     if not enabled:
         log.info("fit_timing disabled")
@@ -26,8 +28,7 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> None:
     log.info("fit_timing over %d clips (max stretch %.2fx)",
              len(job.segments), MAX_STRETCH)
     if dry_run:
-        log.info("  [dry-run] would measure each clip vs slot and time-stretch to fit")
-        return
+        return dry("would measure each clip vs slot and time-stretch to fit")
     # v1: pass-through (clips play at natural length; mix places them by start time).
     # TODO: measure clip vs seg.duration and atempo/rubberband within MAX_STRETCH.
     log.info("fit_timing: v1 pass-through (no stretch yet)")

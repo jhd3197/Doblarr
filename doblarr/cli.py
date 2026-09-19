@@ -7,23 +7,15 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
 from . import __version__
 from .clients.voicebox import VoiceboxClient, VoiceboxError
 from .config import Config
+from .logging_setup import setup_logging
 from .models import DubJob
 from .pipeline import run_job
-
-
-def _setup_logging(verbose: bool) -> None:
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
-        datefmt="%H:%M:%S",
-    )
 
 
 def _cmd_check(args: argparse.Namespace, config: Config) -> int:
@@ -45,7 +37,8 @@ def _cmd_serve(args: argparse.Namespace, config: Config) -> int:
     host = args.host or config.get("web", {}).get("host", "127.0.0.1")
     port = args.port or config.get("web", {}).get("port", 6363)
     print(f"Doblarr serving on http://{host}:{port}  (UI + /api/library)")
-    uvicorn.run(create_app(config), host=host, port=int(port))
+    # log_config=None: logging_setup already configured uvicorn's loggers.
+    uvicorn.run(create_app(config), host=host, port=int(port), log_config=None)
     return 0
 
 
@@ -60,7 +53,9 @@ def _cmd_dub(args: argparse.Namespace, config: Config) -> int:
         target_lang=args.to,
         subtitle_file=Path(args.subs) if args.subs else None,
     )
-    run_job(job, config, dry_run=args.dry_run)
+    # --dry-run forces a plan; otherwise dub.dry_run from config decides.
+    dry_run = args.dry_run if args.dry_run is not None else config["dub"].get("dry_run", True)
+    run_job(job, config, dry_run=dry_run)
     return 0
 
 
@@ -83,15 +78,16 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--from", dest="source", default="auto",
                    help="source language code, e.g. ko (default: auto)")
     d.add_argument("--subs", default=None, help="subtitle file for text + timing")
-    d.add_argument("--dry-run", action="store_true",
-                   help="print the plan without running heavy stages")
+    d.add_argument("--dry-run", action="store_true", default=None,
+                   help="print the plan without running heavy stages "
+                        "(overrides dub.dry_run in config)")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    _setup_logging(args.verbose)
     config = Config.load(args.config)
+    setup_logging(config, verbose=args.verbose, uvicorn=args.command == "serve")
     if args.command == "check":
         return _cmd_check(args, config)
     if args.command == "serve":

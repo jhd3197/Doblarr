@@ -11,10 +11,12 @@ import os
 from pathlib import Path
 
 from ..models import DubJob, Speaker
+from .common import dry, stage
 
 log = logging.getLogger("doblarr.diarize")
 
 
+@stage("diarize")
 def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> None:
     if not enabled:
         # Single-speaker fallback: everyone is SPEAKER_00.
@@ -23,10 +25,8 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> None:
         return
 
     if dry_run:
-        log.info("  [dry-run] would run pyannote diarization on %s",
-                 job.vocals or job.source_audio)
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
-        return
+        return dry(f"would run pyannote diarization on {job.vocals or job.source_audio}")
 
     if not os.environ.get("HF_TOKEN"):
         raise RuntimeError("diarize needs HF_TOKEN (HuggingFace) in the environment")

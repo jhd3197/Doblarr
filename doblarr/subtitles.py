@@ -9,20 +9,19 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 from pathlib import Path
+
+from .ffmpeg import run_ffmpeg, run_ffprobe
 
 log = logging.getLogger("doblarr.subtitles")
 
 
 def sub_streams(video: Path) -> list[dict]:
     """List embedded text subtitle streams as {index, lang, codec}."""
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "s",
-         "-show_entries", "stream=index,codec_name:stream_tags=language",
-         "-of", "json", str(video)],
-        capture_output=True, text=True)
-    data = json.loads(out.stdout or "{}")
+    out = run_ffprobe(["-v", "error", "-select_streams", "s",
+                       "-show_entries", "stream=index,codec_name:stream_tags=language",
+                       "-of", "json", str(video)])
+    data = json.loads(out or "{}")
     streams = []
     for s in data.get("streams", []):
         streams.append({
@@ -51,7 +50,5 @@ def pick_stream(streams: list[dict], prefer_lang: str) -> dict | None:
 
 def extract_srt(video: Path, stream_index: int, dest: Path) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", str(video), "-map", f"0:{stream_index}", str(dest)],
-        check=True, capture_output=True)
+    run_ffmpeg(["-y", "-i", str(video), "-map", f"0:{stream_index}", str(dest)])
     return dest

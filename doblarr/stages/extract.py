@@ -3,24 +3,25 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 from pathlib import Path
 
+from ..ffmpeg import run_ffmpeg
 from ..models import DubJob
+from .common import dry, stage
 
 log = logging.getLogger("doblarr.extract")
 
 
+@stage("extract")
 def run(job: DubJob, work_dir: Path, dry_run: bool = False) -> None:
     out = work_dir / f"{job.input_file.stem}.source.wav"
     job.source_audio = out
-    cmd = [
-        "ffmpeg", "-y", "-i", str(job.input_file),
+    args = [
+        "-y", "-i", str(job.input_file),
         "-vn", "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(out),
     ]
     log.info("extract audio -> %s", out.name)
     if dry_run:
-        log.info("  [dry-run] %s", " ".join(cmd))
-        return
+        return dry("ffmpeg " + " ".join(args))
     out.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(cmd, check=True)
+    run_ffmpeg(args)

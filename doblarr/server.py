@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import discovery, plex_labels
 from .auth import build_api_key_dependency
+from .cache import TTLCache
 from .clients.plex import PlexClient, PlexError
 from .clients.radarr import RadarrClient, RadarrError
 from .clients.sonarr import SonarrClient, SonarrError
@@ -26,6 +28,7 @@ from .scheduler import Scheduler
 
 log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for worker/scheduler threads
 
 
 class PlexLabelsIn(BaseModel):
@@ -42,7 +45,31 @@ class JobCreateIn(BaseModel):
 
 def create_app(config: Config | None = None) -> FastAPI:
     config = config or Config.load()
-    app = FastAPI(title="Doblarr", version="0.1.0")
+
+    # Job queue + background worker; periodic rescan scheduler. Both start with
+    # the app lifespan and are stopped (and joined) on shutdown.
+    store = JobStore(config.work_dir / "jobs.json")
+    worker = Worker(store, config, dry_run=config["dub"].get("dry_run", True))
+    scheduler = Scheduler(config, lambda: _scan_and_maybe_label())
+    scan_cache = TTLCache(max_size=4)
+    status_state: dict = {"last_scan": None, "counts": None}
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        worker.start()
+        scheduler.start()
+        yield
+        scheduler.stop()
+        worker.stop()
+        for thread in (scheduler, worker):
+            thread.join(timeout=SHUTDOWN_TIMEOUT)
+            if thread.is_alive():
+                log.warning("%s did not stop within %.0fs", thread.name, SHUTDOWN_TIMEOUT)
+
+    app = FastAPI(title="Doblarr", version="0.1.0", lifespan=lifespan)
+    app.state.jobs = store
+    app.state.worker = worker
+    app.state.scheduler = scheduler
 
     @app.exception_handler(DoblarrError)
     async def doblarr_error_handler(request: Request, exc: DoblarrError):
@@ -58,13 +85,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     # mount below does not.
     api = APIRouter(dependencies=[Depends(build_api_key_dependency(config))])
 
-    # Job queue + background worker (dry-run until heavy deps + voicebox are ready).
-    store = JobStore(config.work_dir / "jobs.json")
-    worker = Worker(store, config, dry_run=True)
-    worker.start()
-    app.state.jobs = store
-    app.state.worker = worker
-
     @api.get("/api/health")
     def health():
         return {"ok": True, "service": "doblarr", "web_dir": str(WEB_DIR)}
@@ -79,12 +99,21 @@ def create_app(config: Config | None = None) -> FastAPI:
             config.apply_and_save(changes)
         except OSError as exc:
             raise DoblarrError(f"could not write {config.path}: {exc}")
+        scan_cache.clear()  # connection/discovery settings may have changed
         return {"ok": True, "saved_to": str(config.path),
                 "config": config.as_dict(redact_secrets=True)}
 
-    status_state: dict = {"last_scan": None, "counts": None}
+    def _scan_ttl() -> float:
+        try:
+            return float(config.get("discovery", {}).get("cache_ttl", 300))
+        except (TypeError, ValueError):
+            return 300.0
 
-    def _scan_library() -> tuple[list, list[str]]:
+    def _scan_library(force: bool = False) -> tuple[list, list[str]]:
+        if not force:
+            cached = scan_cache.get("library", ttl=_scan_ttl())
+            if cached is not None:
+                return cached
         targets = config["general"]["target_languages"]
         conn = config.get("connect", {})
         disc = config.get("discovery", {})
@@ -109,10 +138,12 @@ def create_app(config: Config | None = None) -> FastAPI:
         discovery.sort_items(items)
         status_state["last_scan"] = _dt.datetime.now().isoformat(timespec="seconds")
         status_state["counts"] = discovery.summarize(items)
-        return items, warnings
+        result = (items, warnings)
+        scan_cache.set("library", result)
+        return result
 
     def _scan_and_maybe_label():
-        items, _ = _scan_library()
+        items, _ = _scan_library(force=True)  # a scheduled rescan refreshes the cache
         conn = config.get("connect", {})
         if config.get("filtering", {}).get("auto_label") and conn.get("plex_url") and conn.get("plex_token"):
             try:
@@ -120,10 +151,6 @@ def create_app(config: Config | None = None) -> FastAPI:
                     items, PlexClient(conn["plex_url"], conn["plex_token"]), config, apply=True)
             except PlexError as exc:
                 log.warning("auto label sync failed: %s", exc)
-
-    scheduler = Scheduler(config, _scan_and_maybe_label)
-    scheduler.start()
-    app.state.scheduler = scheduler
 
     @api.get("/api/status")
     def status():
@@ -137,8 +164,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         }
 
     @api.get("/api/library")
-    def library():
-        items, warnings = _scan_library()
+    def library(refresh: bool = False):
+        items, warnings = _scan_library(force=refresh)
         if not items and not warnings:
             raise ConfigError("No sources configured "
                               "(connect.radarr_* / connect.sonarr_*).")

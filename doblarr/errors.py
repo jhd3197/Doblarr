@@ -35,3 +35,4 @@ class ArrClientError(DoblarrError):
     def __init__(self, message: str, status: int | None = None):
         super().__init__(message)
         self.status = status  # upstream HTTP status, if any
+        self.retry_after: str | None = None  # Retry-After header on 429/5xx

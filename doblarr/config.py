@@ -16,13 +16,13 @@ log = logging.getLogger("doblarr.config")
 
 DEFAULTS: dict[str, Any] = {
     "paths": {"work_dir": "./work", "output_dir": "./output"},
-    "general": {"target_languages": ["en", "es"]},
+    "general": {"target_languages": ["en", "es"], "log_file": None},
     "web": {"host": "127.0.0.1", "port": 6363, "api_key": ""},
     "connect": {"radarr_url": None, "radarr_api_key": None,
                 "sonarr_url": None, "sonarr_api_key": None,
                 "plex_url": None, "plex_token": None},
     "discovery": {"only_original_foreign": True, "treat_undefined_as": "original",
-                  "rescan_interval": "6h", "auto_scan": False},
+                  "rescan_interval": "6h", "auto_scan": False, "cache_ttl": 300},
     "filtering": {
         "tag_missing_dub": "needs-dub",
         "hidden_collection_name": "Not in your language",
@@ -44,6 +44,7 @@ DEFAULTS: dict[str, Any] = {
     "separate": {"model": "htdemucs_ft"},
     "dub": {
         "voice_mode": "clone",
+        "dry_run": True,           # plan-only until you flip this off
         "duration_match": True,
         "max_fit_attempts": 5,
         "ducking_ratio": "12:1",

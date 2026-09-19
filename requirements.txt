@@ -2,6 +2,7 @@
 requests>=2.31
 PyYAML>=6.0
 pysubs2>=1.6          # read/parse .srt/.ass subtitle files
+tenacity>=8           # retry/backoff for the service clients
 
 # --- Web server (doblarr serve: UI + library API) ---
 fastapi>=0.110

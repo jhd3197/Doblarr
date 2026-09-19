@@ -141,3 +141,33 @@ def test_scheduler():
     s = Scheduler(Cfg(), lambda: calls.__setitem__("n", calls["n"] + 1))
     s.start(); time.sleep(0.4); s.stop(); s.join(timeout=2)
     assert calls["n"] >= 1
+
+
+def test_ttl_cache():
+    from doblarr.cache import TTLCache
+    c = TTLCache(ttl=60, max_size=2)
+    c.set("a", 1)
+    assert c.get("a") == 1
+    assert c.get("missing") is None
+    # expired entries read as missing (ttl=0: age >= 0 always expires)
+    stale = TTLCache(ttl=0)
+    stale.set("a", 1)
+    assert stale.get("a") is None
+    # per-call ttl override
+    assert c.get("a", ttl=0) is None
+    # FIFO eviction at max_size
+    c.set("b", 2); c.set("c", 3)
+    assert len(c) == 2 and c.get("a") is None and c.get("c") == 3
+
+
+def test_dub_dry_run_config_wiring():
+    import tempfile
+
+    cfg = Config.load("does-not-exist.yaml")
+    assert cfg["dub"]["dry_run"] is True          # safe default
+    assert cfg["discovery"]["cache_ttl"] == 300
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "config.yaml"
+        cfg = Config.load(p)
+        cfg.apply_and_save({"dub": {"dry_run": False}})
+        assert Config.load(p)["dub"]["dry_run"] is False

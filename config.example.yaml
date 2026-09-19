@@ -9,6 +9,7 @@ paths:
 # What languages you want dubs in
 general:
   target_languages: [en, es]
+  # log_file: null                # defaults to <work_dir>/logs/doblarr.log
 
 # Web UI + API server (doblarr serve)
 web:
@@ -28,6 +29,7 @@ connect:
 discovery:
   only_original_foreign: true   # don't flag titles already in a target language
   treat_undefined_as: original  # how to read an 'und' (untagged) audio track
+  cache_ttl: 300                # seconds /api/library may serve a cached scan
 
 # Plex labeling + hide (Doblarr labels; Kometa/a smart collection hides)
 filtering:
@@ -64,6 +66,7 @@ separate:
 # Dubbing behaviour
 dub:
   voice_mode: clone             # clone (per-speaker cloned voice) | preset
+  dry_run: true                 # plan-only (no heavy stages) until you flip this off
   duration_match: true          # time-fit each line to the original slot
   max_fit_attempts: 5           # shorten/retranslate to fit before stretching
   ducking_ratio: "12:1"         # sidechain ducking of background under speech

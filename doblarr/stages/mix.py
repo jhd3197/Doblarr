@@ -8,24 +8,25 @@ volume). Produces one dubbed track spanning the segments.
 from __future__ import annotations
 
 import logging
-import subprocess
 from pathlib import Path
 
+from ..ffmpeg import run_ffmpeg
 from ..models import DubJob
+from .common import dry, stage
 
 log = logging.getLogger("doblarr.mix")
 
 BED_VOLUME = 0.35   # duck the original bed under the dubbed dialogue
 
 
+@stage("mix")
 def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
         dry_run: bool = False) -> None:
     out = work_dir / f"{job.input_file.stem}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
     log.info("mix dialogue over bed -> %s", out.name)
     if dry_run:
-        log.info("  [dry-run] would place %d clips and duck the bed", len(job.segments))
-        return
+        return dry(f"would place {len(job.segments)} clips and duck the bed")
 
     segs = [s for s in job.segments if s.audio_clip and Path(s.audio_clip).exists()]
     if not segs:
@@ -35,9 +36,9 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     win_end = max(s.end for s in segs) + 3.0
     dur = win_end - win_start
 
-    cmd = ["ffmpeg", "-y", "-ss", str(win_start), "-t", str(dur), "-i", str(bed)]
+    args = ["-y", "-ss", str(win_start), "-t", str(dur), "-i", str(bed)]
     for s in segs:
-        cmd += ["-i", str(s.audio_clip)]
+        args += ["-i", str(s.audio_clip)]
 
     parts = [f"[0:a]volume={BED_VOLUME},aformat=channel_layouts=stereo[bed]"]
     for i, s in enumerate(segs):
@@ -46,8 +47,8 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     mix_inputs = "[bed]" + "".join(f"[c{i}]" for i in range(len(segs)))
     parts.append(f"{mix_inputs}amix=inputs={len(segs)+1}:normalize=0[out]")
 
-    cmd += ["-filter_complex", ";".join(parts), "-map", "[out]",
-            "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(out)]
+    args += ["-filter_complex", ";".join(parts), "-map", "[out]",
+             "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(out)]
     out.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(args)
     log.info("mix -> %s (%.0fs window, %d lines)", out.name, dur, len(segs))

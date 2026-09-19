@@ -25,6 +25,7 @@ class PathsModel(_Section):
 
 class GeneralModel(_Section):
     target_languages: list[str] = ["en", "es"]
+    log_file: str | None = None
 
 
 class WebModel(_Section):
@@ -47,6 +48,7 @@ class DiscoveryModel(_Section):
     treat_undefined_as: str = "original"
     rescan_interval: str = "6h"
     auto_scan: bool = False
+    cache_ttl: int = 300
 
 
 class FilteringModel(_Section):
@@ -80,6 +82,7 @@ class SeparateModel(_Section):
 
 class DubModel(_Section):
     voice_mode: str = "clone"
+    dry_run: bool = True
     duration_match: bool = True
     max_fit_attempts: int = 5
     ducking_ratio: str = "12:1"

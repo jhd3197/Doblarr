@@ -9,11 +9,12 @@ diarization.
 from __future__ import annotations
 
 import logging
-import subprocess
 from pathlib import Path
 
 from ..clients.voicebox import VoiceboxError
+from ..ffmpeg import run_ffmpeg
 from ..models import DubJob, Speaker
+from .common import dry, stage
 
 log = logging.getLogger("doblarr.synthesize")
 
@@ -22,11 +23,9 @@ def _extract_ref(source_audio: Path, start: float, end: float, dest: Path) -> Pa
     """Pull a normalized mono reference clip from the original audio."""
     dur = max(4.0, min(15.0, end - start))
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["ffmpeg", "-y", "-ss", str(start), "-i", str(source_audio), "-t", str(dur),
-         "-vn", "-ac", "1", "-ar", "16000", "-af", "loudnorm=I=-14",
-         "-c:a", "pcm_s16le", str(dest)],
-        check=True, capture_output=True)
+    run_ffmpeg(["-y", "-ss", str(start), "-i", str(source_audio), "-t", str(dur),
+                "-vn", "-ac", "1", "-ar", "16000", "-af", "loudnorm=I=-14",
+                "-c:a", "pcm_s16le", str(dest)])
     return dest
 
 
@@ -39,6 +38,7 @@ def _safe_transcribe(vb, clip: Path, lang: str) -> str:
         return ""
 
 
+@stage("synthesize")
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         dry_run: bool = False) -> None:
     clips_dir = work_dir / "clips"
@@ -47,9 +47,8 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
     if dry_run:
         for seg in job.segments:
             seg.audio_clip = clips_dir / f"line_{seg.index:04d}.wav"
-        log.info("  [dry-run] would clone a voice + generate %d clips via voicebox",
-                 len(job.segments))
-        return
+        return dry(f"would clone a voice + generate {len(job.segments)} clips "
+                   "via voicebox")
 
     if not job.segments:
         raise RuntimeError("nothing to synthesize (no segments)")

@@ -13,7 +13,6 @@ import datetime as _dt
 import json
 import logging
 import threading
-import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -146,11 +145,11 @@ class Worker(threading.Thread):
         log.info("worker started (dry_run=%s)", self.dry_run)
         while not self._stop_evt.is_set():
             if self._pause.is_set():
-                time.sleep(0.5)
+                self._stop_evt.wait(0.5)
                 continue
             job = self.store.next_queued()
             if job is None:
-                time.sleep(1.0)
+                self._stop_evt.wait(1.0)
                 continue
             self._process(job)
 
@@ -159,6 +158,8 @@ class Worker(threading.Thread):
             self.store.update(job.id, status="running", stage=name,
                               progress=int(i / total * 100))
 
+        # Read live so toggling dub.dry_run in Settings applies without a restart.
+        dry_run = self.config.get("dub", {}).get("dry_run", self.dry_run)
         self.store.update(job.id, status="running", stage="probe", progress=0)
         try:
             dj = DubJob(
@@ -166,10 +167,10 @@ class Worker(threading.Thread):
                 source_lang=job.source_lang,
                 target_lang=job.target_lang,
             )
-            run_job(dj, self.config, dry_run=self.dry_run, on_stage=on_stage)
+            run_job(dj, self.config, dry_run=dry_run, on_stage=on_stage)
             out = str(dj.output_file) if dj.output_file else "(planned)"
             self.store.update(job.id, status="done", stage="mux", progress=100,
-                              message=f"{'planned' if self.dry_run else 'dubbed'} -> {out}")
+                              message=f"{'planned' if dry_run else 'dubbed'} -> {out}")
         except Exception as exc:  # noqa: BLE001 - surface any stage failure to the UI
             log.exception("job %s failed", job.id)
             self.store.update(job.id, status="failed", message=str(exc))
