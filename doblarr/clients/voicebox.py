@@ -93,16 +93,21 @@ class VoiceboxClient:
         return gen_id
 
     def wait_for(self, generation_id: str, poll: float = 1.0) -> None:
-        """Block until a generation reports a terminal status."""
+        """Block until a generation reports a terminal status.
+
+        Status lives on the generation record at /history/{id} (the
+        /generate/{id}/status route returns nothing useful in practice).
+        """
         deadline = time.time() + self.timeout
         while time.time() < deadline:
             data = self._json(requests.get(
-                self._url(f"/generate/{generation_id}/status"), timeout=30))
+                self._url(f"/history/{generation_id}"), timeout=30))
             status = (data.get("status") or "").lower()
             if status in {"done", "completed", "success", "ready"}:
                 return
             if status in {"failed", "error"}:
-                raise VoiceboxError(f"generation {generation_id} failed: {data}")
+                raise VoiceboxError(
+                    f"generation {generation_id} failed: {data.get('error') or data}")
             time.sleep(poll)
         raise VoiceboxError(f"generation {generation_id} timed out")
 
