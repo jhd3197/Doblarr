@@ -480,7 +480,26 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app.include_router(api)
 
-    # Static UI last, so /api/* routes take precedence over the catch-all mount.
+    # SPA fallback (History API routing): any GET that isn't /api/* and doesn't
+    # name a real file gets index.html. Registered before the catch-all mount;
+    # /api/* misses fall through here and 404 as JSON, not HTML.
+    @app.get("/{full_path:path}")
+    def spa_fallback(full_path: str):
+        if full_path == "api" or full_path.startswith("api/"):
+            raise NotFoundError(f"no such API route: /{full_path}")
+        if full_path:
+            candidate = WEB_DIR / full_path
+            try:
+                if candidate.is_file() and candidate.resolve().is_relative_to(
+                        WEB_DIR.resolve()):
+                    return FileResponse(candidate)  # real asset (favicon, logo…)
+            except OSError:
+                pass
+            if "." in full_path.rsplit("/", 1)[-1]:
+                raise NotFoundError(f"no such file: /{full_path}")
+        return FileResponse(WEB_DIR / "index.html")
+
+    # Static mount last (HEAD requests, anything the fallback didn't take).
     if WEB_DIR.exists():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
     else:

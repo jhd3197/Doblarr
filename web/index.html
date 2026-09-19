@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<base href="/">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Doblarr</title>
@@ -770,26 +771,26 @@ function setTheme(theme) {
   safeSet("doblarr.theme", theme);
 }
 
-// ---- Hash routing (#/library, #/settings/<tab>) — vanilla, no History API,
-// so the StaticFiles mount needs no rewrite rules and refresh/deep-link works.
-const PAGE_SLUGS = { overview: "Overview", library: "Library", dubs: "Dubs", voices: "Voices", settings: "Settings" };
-const PAGE_TO_SLUG = Object.fromEntries(Object.entries(PAGE_SLUGS).map(([s, p]) => [p, s]));
+// ---- History API routing (/library, /settings/<tab>) — the server serves
+// index.html for any extensionless non-api path, so refresh/deep-link works.
+const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/settings": "Settings" };
+const PAGE_TO_PATH = { Overview: "/", Library: "/library", Dubs: "/dubs", Voices: "/voices", Settings: "/settings" };
 
-function routeFromHash() {
-  const parts = location.hash.replace(/^#\/?/, "").toLowerCase().split("/").filter(Boolean);
-  const page = PAGE_SLUGS[parts[0]] || "Overview";  // unknown hashes -> Overview
+function routeFromPath() {
+  const parts = location.pathname.toLowerCase().split("/").filter(Boolean);
+  const page = PAGE_PATHS["/" + (parts[0] || "")] || "Overview";  // unknown -> Overview
   return { page, tab: page === "Settings" ? (parts[1] || null) : null };
 }
 
 function setPage(page, tab) {
-  let target = "#/" + (PAGE_TO_SLUG[page] || "overview");
+  let target = PAGE_TO_PATH[page] || "/";
   if (page === "Settings" && tab) target += "/" + tab;
-  if (location.hash === target) applyRoute();   // same hash -> no event fires
-  else location.hash = target;                  // hashchange -> applyRoute
+  if (location.pathname !== target) history.pushState({}, "", target);
+  applyRoute();
 }
 
 function applyRoute() {
-  const { page, tab } = routeFromHash();
+  const { page, tab } = routeFromPath();
   state.page = page;
   document.title = "Doblarr — " + page;
   document.querySelectorAll("[data-view]").forEach(s =>
@@ -804,7 +805,7 @@ function applyRoute() {
   if (page === "Overview") loadOverview();
   if (page === "Dubs") loadJobs();
 }
-window.addEventListener("hashchange", applyRoute);
+window.addEventListener("popstate", applyRoute);  // back/forward
 
 // ---- Library (real data from /api/library) ----
 const library = { items: [], filter: "all", loaded: false };
