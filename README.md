@@ -95,6 +95,10 @@ cp config.docker.example.yaml config/config.yaml   # fill in URLs + keys
 docker compose up -d --build                         # http://localhost:6363
 ```
 
+Tagged releases (`git tag v0.2.0 && git push --tags`) build a multi-arch image to
+`ghcr.io/<owner>/doblarr` (`latest` + the version tag) and cut a GitHub release with
+auto-generated notes — see `.github/workflows/release.yml`.
+
 `config/` holds `config.yaml`; `data/` holds the job store + generated Kometa
 fragment. The image is the app only (no ML stack) — the worker runs dry-run until
 Demucs/voicebox are added.

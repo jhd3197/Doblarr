@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: pip        # requirements.txt + pyproject.toml
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker     # base image in the Dockerfile
+    directory: "/"
+    schedule:
+      interval: weekly
