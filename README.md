@@ -39,7 +39,9 @@ The **app** is live — a real backend + web UI you can run and use:
 
 What's **not** real yet is the **dub output itself** — the worker runs the pipeline in
 **dry-run** (it plans every stage but produces no audio) until the heavy stages are
-implemented and voicebox is running (see Pipeline + Roadmap).
+implemented and voicebox is running (see Pipeline + Roadmap). This is the
+`dub.dry_run: true` default in config — flip it to `false` once voicebox + the heavy
+deps are in place.
 
 ## Running it
 
@@ -48,6 +50,14 @@ pip install -r requirements.txt          # core + FastAPI/uvicorn
 cp config.example.yaml config.yaml        # set Radarr/Sonarr URLs + API keys
 python -m doblarr serve                    # http://127.0.0.1:6363
 ```
+
+### API authentication
+
+Set `web.api_key` in `config.yaml` to lock the API: every `/api/*` route (except
+`/api/health` and `/api/health/ready`) then requires the `X-Api-Key: <key>` header
+(or `?api_key=<key>`). The web UI prompts for the key once and remembers it. With no
+key configured the API stays open (fine for a trusted home network) and a warning is
+logged at startup.
 
 Open the UI, go to **Library** to see your real collection, and **Queue dub** on a
 needs-dub title to watch it flow through the queue. The CLI still works too:
@@ -108,12 +118,22 @@ web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/health` | liveness |
-| GET | `/api/library` | scan Radarr+Sonarr, classify every title |
+| GET | `/api/health` | liveness (process up) |
+| GET | `/api/health/ready` | readiness (voicebox up + a source configured), 503 otherwise |
+| GET | `/api/library` | scan Radarr+Sonarr, classify every title (`?refresh=true` bypasses the scan cache) |
 | GET/POST | `/api/config` | read (redacted) / save config |
 | GET/POST | `/api/jobs` | list / enqueue dub jobs |
 | POST | `/api/jobs/clear-finished` | remove done+failed jobs |
 | DELETE | `/api/jobs/{id}` | remove one job |
+
+## Development
+
+```bash
+pip install -e ".[dev]"   # app + pytest/ruff/mypy/httpx
+python -m pytest -q       # test suite (no network or *arr services needed)
+ruff check .              # lint
+mypy doblarr/             # type check
+```
 
 ## Roadmap
 
