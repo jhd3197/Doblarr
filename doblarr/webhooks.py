@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 
 log = logging.getLogger("doblarr.webhooks")
 
@@ -32,7 +33,7 @@ class Debouncer:
     `delay` may be a callable so the value is read live from config.
     """
 
-    def __init__(self, fn, delay: float = 30.0):
+    def __init__(self, fn, delay: float | Callable[[], float] = 30.0):
         self._fn = fn
         self._delay = delay
         self._timer: threading.Timer | None = None
