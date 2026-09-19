@@ -188,3 +188,8 @@ def summarize(items: list[LibraryItem]) -> dict:
 
 def to_dicts(items: list[LibraryItem]) -> list[dict]:
     return [asdict(i) for i in items]
+
+
+def from_dicts(dicts: list[dict]) -> list[LibraryItem]:
+    """Rebuild items from to_dicts() output (e.g. the persisted scan state)."""
+    return [LibraryItem(**d) for d in dicts]

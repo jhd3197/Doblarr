@@ -5,6 +5,7 @@
 paths:
   work_dir: ./work        # scratch space for audio/stems/clips
   output_dir: ./output    # finished tracks / remuxed files
+  # db: null              # SQLite file for jobs + scan state (default <work_dir>/doblarr.db)
 
 # What languages you want dubs in
 general:

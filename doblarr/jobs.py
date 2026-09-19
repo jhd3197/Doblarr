@@ -1,10 +1,13 @@
-"""Dub job queue — a small persistent store plus a background worker.
+"""Dub job queue — a persistent store (SQLite, see doblarr.store) plus a worker.
 
 The worker runs each job through the real pipeline. Until the heavy stages
 (Demucs / voicebox / WhisperX) are installed and voicebox is running, it runs in
 dry-run mode: jobs still flow queued -> running -> done and record the plan, so
 the queue, the Dubs page, and the Overview counts are genuinely live. Flip
 `dry_run=False` once the dependencies are in place and nothing else changes.
+
+Jobs left in "running" when the process died are re-queued at startup (the
+pipeline's stage checkpointing skips already-produced artifacts on the rerun).
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from pathlib import Path
 from .errors import JobCancelled
 from .models import DubJob
 from .pipeline import run_job
+from .store import Database
 
 log = logging.getLogger("doblarr.jobs")
 
@@ -40,83 +44,124 @@ class Job:
     stage: str = ""
     progress: int = 0
     message: str = ""
+    force: bool = False        # re-run every stage, ignoring cached artifacts
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
 
+# Job fields with a real column; anything else rides in the payload JSON.
+_COLS = ("id", "title", "source", "source_lang", "target_lang", "input_file",
+         "status", "stage", "progress", "message", "created_at", "updated_at")
+
+
 class JobStore:
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self._jobs: dict[str, Job] = {}
-        self._lock = threading.Lock()
-        self._load()
+    """SQLite-backed queue; same interface the worker and routes already use."""
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                self._jobs = {j["id"]: Job(**j) for j in data}
-            except (OSError, ValueError, TypeError) as exc:
-                log.warning("could not load jobs from %s: %s", self.path, exc)
+    def __init__(self, db: Database | str | Path):
+        self.db = db if isinstance(db, Database) else Database(db)
+        self.path = self.db.path
+        self.reset_running()  # crashed mid-run jobs resume (checkpointed stages)
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps([asdict(j) for j in self._jobs.values()], indent=2),
-                       encoding="utf-8")
-        tmp.replace(self.path)
+    def _to_job(self, row) -> Job:
+        fields = {c: row[c] for c in _COLS}
+        fields.update(json.loads(row["payload"] or "{}"))
+        return Job(**fields)
+
+    def reset_running(self) -> int:
+        """Re-queue jobs stuck in 'running' from a previous process."""
+        rows = self.db.query("SELECT id FROM jobs WHERE status = 'running'")
+        for row in rows:
+            self.db.execute(
+                "UPDATE jobs SET status = 'queued', updated_at = ? WHERE id = ?",
+                (_now(), row["id"]))
+        if rows:
+            log.info("re-queued %d job(s) left running by a previous run", len(rows))
+        return len(rows)
 
     def add(self, **kwargs) -> Job:
-        with self._lock:
-            job = Job(id=uuid.uuid4().hex[:12], **kwargs)
-            self._jobs[job.id] = job
-            self._save()
-            return job
+        job = Job(id=kwargs.pop("id", uuid.uuid4().hex[:12]), **kwargs)
+        extra = {k: v for k, v in asdict(job).items() if k not in _COLS}
+        self.db.execute(
+            f"INSERT INTO jobs ({', '.join(_COLS)}, payload) "
+            f"VALUES ({', '.join('?' for _ in _COLS)}, ?)",
+            (*[getattr(job, c) for c in _COLS], json.dumps(extra)))
+        return job
 
     def update(self, job_id: str, **fields) -> None:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return
-            for k, v in fields.items():
-                setattr(job, k, v)
-            job.updated_at = _now()
-            self._save()
+        fields["updated_at"] = _now()
+        cols = {k: v for k, v in fields.items() if k in _COLS}
+        extra = {k: v for k, v in fields.items() if k not in _COLS}
+        if cols:
+            sets = ", ".join(f"{k} = ?" for k in cols)
+            self.db.execute(f"UPDATE jobs SET {sets} WHERE id = ?",
+                            (*cols.values(), job_id))
+        if extra:
+            row = self.db.query_one("SELECT payload FROM jobs WHERE id = ?",
+                                    (job_id,))
+            if row is not None:
+                payload = json.loads(row["payload"] or "{}")
+                payload.update(extra)
+                self.db.execute("UPDATE jobs SET payload = ? WHERE id = ?",
+                                (json.dumps(payload), job_id))
 
     def remove(self, job_id: str) -> bool:
-        with self._lock:
-            existed = self._jobs.pop(job_id, None) is not None
-            if existed:
-                self._save()
-            return existed
+        existed = self.db.query_one("SELECT id FROM jobs WHERE id = ?",
+                                    (job_id,)) is not None
+        if existed:
+            self.db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        return existed
 
     def clear_finished(self) -> int:
-        with self._lock:
-            ids = [i for i, j in self._jobs.items()
-                   if j.status in ("done", "failed", "cancelled")]
-            for i in ids:
-                del self._jobs[i]
-            if ids:
-                self._save()
-            return len(ids)
+        rows = self.db.query(
+            "SELECT id FROM jobs WHERE status IN ('done', 'failed', 'cancelled')")
+        for row in rows:
+            self.db.execute("DELETE FROM jobs WHERE id = ?", (row["id"],))
+        return len(rows)
 
     def next_queued(self) -> Job | None:
-        with self._lock:
-            queued = [j for j in self._jobs.values() if j.status == "queued"]
-            queued.sort(key=lambda j: j.created_at)
-            return queued[0] if queued else None
+        row = self.db.query_one(
+            "SELECT * FROM jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1")
+        return self._to_job(row) if row else None
+
+    def get(self, job_id: str) -> Job | None:
+        row = self.db.query_one("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        return self._to_job(row) if row else None
 
     def list(self) -> list[dict]:
-        with self._lock:
-            items = sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
-            return [asdict(j) for j in items]
+        rows = self.db.query("SELECT * FROM jobs ORDER BY created_at DESC")
+        return [asdict(self._to_job(r)) for r in rows]
 
     def counts(self) -> dict:
-        with self._lock:
-            c = {"queued": 0, "running": 0, "done": 0, "failed": 0}
-            for j in self._jobs.values():
-                c[j.status] = c.get(j.status, 0) + 1
-            return c
+        c = {"queued": 0, "running": 0, "done": 0, "failed": 0}
+        for row in self.db.query("SELECT status, COUNT(*) AS n FROM jobs GROUP BY status"):
+            c[row["status"]] = row["n"]
+        return c
+
+    def close(self) -> None:
+        self.db.close()
+
+
+def import_legacy_json(store: JobStore, json_path: str | Path) -> int:
+    """One-shot import of a pre-SQLite jobs.json; renames it when done."""
+    json_path = Path(json_path)
+    if not json_path.exists() or store.list():  # only import into an empty queue
+        return 0
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log.warning("could not import legacy %s: %s", json_path, exc)
+        return 0
+    imported = 0
+    for j in data:
+        try:
+            store.add(**j)
+            imported += 1
+        except TypeError as exc:
+            log.warning("skipping legacy job %s: %s", j.get("id"), exc)
+    json_path.rename(json_path.with_suffix(".json.migrated"))
+    log.info("imported %d job(s) from %s (renamed to .migrated)",
+             imported, json_path.name)
+    return imported
 
 
 class Worker(threading.Thread):

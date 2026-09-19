@@ -21,6 +21,7 @@ class _Section(BaseModel):
 class PathsModel(_Section):
     work_dir: str = "./work"
     output_dir: str = "./output"
+    db: str | None = None
 
 
 class GeneralModel(_Section):

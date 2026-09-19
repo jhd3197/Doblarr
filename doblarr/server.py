@@ -28,9 +28,10 @@ from .clients.voicebox import VoiceboxError
 from .config import Config
 from .errors import ConfigError, DoblarrError, NotFoundError
 from .events import EventBus
-from .jobs import JobStore, Worker
+from .jobs import JobStore, Worker, import_legacy_json
 from .scheduler import Scheduler
 from .services import Services
+from .store import Database
 
 log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -55,7 +56,9 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     # Job queue + background worker; periodic rescan scheduler. Both start with
     # the app lifespan and are stopped (and joined) on shutdown.
-    store = JobStore(config.work_dir / "jobs.json")
+    db = Database(config.db_path)
+    store = JobStore(db)
+    import_legacy_json(store, config.work_dir / "jobs.json")
     bus = EventBus()
     services = Services(config)
     worker = Worker(store, config, dry_run=config["dub"].get("dry_run", True),
@@ -63,6 +66,13 @@ def create_app(config: Config | None = None) -> FastAPI:
     scheduler = Scheduler(config, lambda: _scan_and_maybe_label(), events=bus)
     scan_cache = TTLCache(max_size=4)
     status_state: dict = {"last_scan": None, "counts": None}
+
+    # Restore the last scan so /api/status and /api/library survive a restart.
+    saved_scan = db.load_scan()
+    if saved_scan and saved_scan["last_scan"]:
+        status_state.update(last_scan=saved_scan["last_scan"],
+                            counts=saved_scan["counts"])
+        scan_cache.set("library", (discovery.from_dicts(saved_scan["items"]), []))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -75,6 +85,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             thread.join(timeout=SHUTDOWN_TIMEOUT)
             if thread.is_alive():
                 log.warning("%s did not stop within %.0fs", thread.name, SHUTDOWN_TIMEOUT)
+        db.close()
 
     app = FastAPI(title="Doblarr", version="0.1.0", lifespan=lifespan)
     app.state.jobs = store
@@ -195,6 +206,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         discovery.sort_items(items)
         status_state["last_scan"] = _dt.datetime.now().isoformat(timespec="seconds")
         status_state["counts"] = discovery.summarize(items)
+        db.save_scan(status_state["last_scan"], status_state["counts"],
+                     discovery.to_dicts(items))
         result = (items, warnings)
         scan_cache.set("library", result)
         return result

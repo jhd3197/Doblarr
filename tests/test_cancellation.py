@@ -55,7 +55,7 @@ def test_pipeline_cancel_between_stages():
 
 def test_worker_marks_job_cancelled_not_failed(tmp_path, monkeypatch):
     monkeypatch.setattr("doblarr.jobs.run_job", _fake_run_job)
-    store = JobStore(tmp_path / "jobs.json")
+    store = JobStore(tmp_path / "jobs.db")
     bus = EventBus()
     worker = Worker(store, Config.load("nope.yaml"), events=bus)
     job = store.add(title="Godzilla", source="t", source_lang="ja", target_lang="en")

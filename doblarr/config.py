@@ -15,7 +15,7 @@ from .config_schema import validate_config
 log = logging.getLogger("doblarr.config")
 
 DEFAULTS: dict[str, Any] = {
-    "paths": {"work_dir": "./work", "output_dir": "./output"},
+    "paths": {"work_dir": "./work", "output_dir": "./output", "db": None},
     "general": {"target_languages": ["en", "es"], "log_file": None},
     "web": {"host": "127.0.0.1", "port": 6363, "api_key": ""},
     "connect": {"radarr_url": None, "radarr_api_key": None,
@@ -147,6 +147,11 @@ class Config:
     @property
     def work_dir(self) -> Path:
         return Path(self._data["paths"]["work_dir"])
+
+    @property
+    def db_path(self) -> Path:
+        configured = self._data["paths"].get("db")
+        return Path(configured) if configured else self.work_dir / "doblarr.db"
 
     @property
     def output_dir(self) -> Path:

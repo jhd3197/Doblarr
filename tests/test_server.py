@@ -28,7 +28,7 @@ def _config(tmp_path, data: dict) -> Path:
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     """A TestClient over a temp config with web.api_key set (no lifespan)."""
-    monkeypatch.chdir(tmp_path)  # work/, jobs.json and logs land in tmp
+    monkeypatch.chdir(tmp_path)  # work/, doblarr.db and logs land in tmp
     cfg = Config.load(_config(tmp_path, {"web": {"api_key": API_KEY}}))
     return TestClient(create_app(cfg))
 
@@ -140,3 +140,31 @@ def test_lifespan_starts_and_stops_threads(tmp_path, monkeypatch):
     with TestClient(app):
         assert worker.is_alive() and scheduler.is_alive()
     assert not worker.is_alive() and not scheduler.is_alive()
+
+
+def test_scan_state_survives_restart(tmp_path, monkeypatch):
+    """A second app instance serves the persisted scan without upstream calls."""
+    monkeypatch.chdir(tmp_path)
+    calls = {"n": 0}
+
+    def fake_movies(self):
+        calls["n"] += 1
+        return RADARR_MOVIES
+    monkeypatch.setattr("doblarr.clients.radarr.RadarrClient.list_movies", fake_movies)
+
+    cfg_file = _config(tmp_path, {
+        "web": {"api_key": API_KEY},
+        "connect": {"radarr_url": "http://r", "radarr_api_key": "k"},
+    })
+    with TestClient(create_app(Config.load(cfg_file))) as c:
+        r = c.get("/api/library", headers=HEADERS)
+        assert r.status_code == 200 and r.json()["counts"]["needs_dub"] == 1
+    assert calls["n"] == 1
+
+    # "restart": new app over the same config/db — no upstream call needed
+    with TestClient(create_app(Config.load(cfg_file))) as c:
+        st = c.get("/api/status", headers=HEADERS).json()
+        assert st["last_scan"] and st["counts"]["needs_dub"] == 1
+        r = c.get("/api/library", headers=HEADERS)
+        assert r.json()["items"][0]["title"] == "KoreanFilm"
+    assert calls["n"] == 1

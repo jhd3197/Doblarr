@@ -83,7 +83,7 @@ def test_job_store_persist():
 
     from doblarr.jobs import JobStore
     with tempfile.TemporaryDirectory() as d:
-        p = Path(d) / "jobs.json"
+        p = Path(d) / "jobs.db"
         s = JobStore(p)
         j = s.add(title="Godzilla", source="Radarr", source_lang="ja", target_lang="en")
         assert s.counts()["queued"] == 1
@@ -91,12 +91,15 @@ def test_job_store_persist():
         s.update(j.id, status="done", progress=100)
         assert s.counts() == {"queued": 0, "running": 0, "done": 1, "failed": 0}
         # survives reload
-        assert JobStore(p).list()[0]["status"] == "done"
+        s2 = JobStore(p)
+        assert s2.list()[0]["status"] == "done"
+        s2.close()
         # clear finished
         s.add(title="Still queued", source="Radarr", source_lang="ja", target_lang="en")
         assert s.clear_finished() == 1          # only the done one
         assert s.counts()["queued"] == 1
         assert s.counts()["done"] == 0
+        s.close()  # Windows: release the db file before the temp dir is removed
 
 
 def test_plex_label_sync():
