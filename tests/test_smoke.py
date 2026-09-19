@@ -76,3 +76,19 @@ def test_discovery_shows():
     items = discovery.scan_sonarr(series, lambda sid: files.get(sid, []), ["en", "es"])
     got = {i.title: i.status for i in items}
     assert got == {"EngShow": "available", "KoShow": "needs-dub", "JaPartial": "partial"}
+
+
+def test_job_store_persist():
+    import tempfile
+
+    from doblarr.jobs import JobStore
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "jobs.json"
+        s = JobStore(p)
+        j = s.add(title="Godzilla", source="Radarr", source_lang="ja", target_lang="en")
+        assert s.counts()["queued"] == 1
+        assert s.next_queued().id == j.id
+        s.update(j.id, status="done", progress=100)
+        assert s.counts() == {"queued": 0, "running": 0, "done": 1, "failed": 0}
+        # survives reload
+        assert JobStore(p).list()[0]["status"] == "done"

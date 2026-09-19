@@ -44,6 +44,7 @@ class LibraryItem:
     label: str             # "needs-dub" | "partial" | "available"
     status: str            # same as label, used for UI filtering
     auto_dub: bool
+    path: str | None = None   # media file/folder path, for enqueuing a dub
 
 
 # Order used when sorting the merged library: work-to-do first.
@@ -112,6 +113,7 @@ def scan_radarr(movies: list[dict], targets: list[str],
             label=label,
             status=label,
             auto_dub=(label == "needs-dub"),
+            path=(m.get("movieFile") or {}).get("path"),
         ))
 
     return sort_items(items)
@@ -141,7 +143,8 @@ def scan_sonarr(series_list: list[dict], fetch_files, targets: list[str],
             items.append(LibraryItem(
                 title=s.get("title", "?"), year=s.get("year"), original=original or "??",
                 source=source_label, existing_audio="—",
-                label="available", status="available", auto_dub=False))
+                label="available", status="available", auto_dub=False,
+                path=s.get("path")))
             continue
 
         files = fetch_files(s.get("id")) or []
@@ -168,7 +171,8 @@ def scan_sonarr(series_list: list[dict], fetch_files, targets: list[str],
         items.append(LibraryItem(
             title=s.get("title", "?"), year=s.get("year"), original=original or "??",
             source=source_label, existing_audio=f"{audio_disp} ({with_target}/{total})",
-            label=status, status=status, auto_dub=(status != "available")))
+            label=status, status=status, auto_dub=(status != "available"),
+            path=s.get("path")))
 
     return sort_items(items)
 

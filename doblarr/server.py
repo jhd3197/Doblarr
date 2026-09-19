@@ -14,6 +14,7 @@ from . import discovery
 from .clients.radarr import RadarrClient, RadarrError
 from .clients.sonarr import SonarrClient, SonarrError
 from .config import Config
+from .jobs import JobStore, Worker
 
 log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -22,6 +23,13 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 def create_app(config: Config | None = None) -> FastAPI:
     config = config or Config.load()
     app = FastAPI(title="Doblarr", version="0.1.0")
+
+    # Job queue + background worker (dry-run until heavy deps + voicebox are ready).
+    store = JobStore(config.work_dir / "jobs.json")
+    worker = Worker(store, config, dry_run=True)
+    worker.start()
+    app.state.jobs = store
+    app.state.worker = worker
 
     @app.get("/api/health")
     def health():
@@ -88,6 +96,30 @@ def create_app(config: Config | None = None) -> FastAPI:
             "warnings": warnings,
             "items": discovery.to_dicts(items),
         }
+
+    @app.get("/api/jobs")
+    def list_jobs():
+        return {"jobs": store.list(), "counts": store.counts()}
+
+    @app.post("/api/jobs")
+    async def create_job(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
+        title = (body or {}).get("title")
+        if not title:
+            return JSONResponse(status_code=400, content={"error": "title is required"})
+        default_target = config["general"]["target_languages"][0]
+        job = store.add(
+            title=title,
+            source=body.get("source", "manual"),
+            source_lang=body.get("source_lang", "auto"),
+            target_lang=body.get("target_lang", default_target),
+            input_file=body.get("path"),
+        )
+        from dataclasses import asdict
+        return {"ok": True, "job": asdict(job)}
 
     # Static UI last, so /api/* routes take precedence over the catch-all mount.
     if WEB_DIR.exists():

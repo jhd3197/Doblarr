@@ -182,15 +182,15 @@
 
         <div class="cards4" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
           <div class="panel" style="padding: 18px 20px;">
-            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0; color: var(--color-accent);">2</p>
+            <p id="statRunning" class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0; color: var(--color-accent);">0</p>
             <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">Jobs running</p>
           </div>
           <div class="panel" style="padding: 18px 20px;">
-            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">14</p>
+            <p id="statQueued" class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">0</p>
             <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">Queued</p>
           </div>
           <div class="panel" style="padding: 18px 20px;">
-            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">128</p>
+            <p id="statNeedsDub" class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">—</p>
             <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">Flagged <span class="m">needs-dub</span></p>
           </div>
           <div class="panel" style="padding: 18px 20px;">
@@ -298,7 +298,7 @@
     <section data-view="Dubs" hidden>
       <div style="padding: 30px 26px 44px;">
         <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Dubs</h2>
-        <p style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">2 running · 14 queued · 1 held at the review gate</p>
+        <p id="dubsMeta" style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Loading jobs…</p>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center;">
           <button type="button" class="btn btn-secondary">Pause queue</button>
           <button type="button" class="btn btn-secondary">Clear finished</button>
@@ -310,7 +310,7 @@
             <thead>
               <tr><th>Item</th><th style="width: 100px;">Track</th><th>Stage</th><th style="width: 130px;">Progress</th><th style="width: 140px;">Status</th><th style="width: 90px;"></th></tr>
             </thead>
-            <tbody>
+            <tbody id="dubsBody">
               <tr>
                 <td style="font-weight: 600;">Alice in Borderland — S02E05</td>
                 <td class="m" style="font-size: 13px;">ja → en</td>
@@ -693,6 +693,8 @@ function setPage(page) {
     n.setAttribute("aria-current", n.dataset.page === page ? "page" : "false"));
   if (page === "Settings") { if (state.config) renderSettings(); else loadConfig(); }
   if (page === "Library" && !library.loaded) loadLibrary();
+  if (page === "Overview") loadOverview();
+  if (page === "Dubs") { loadJobs(); startJobPolling(); } else { stopJobPolling(); }
 }
 
 // ---- Library (real data from /api/library) ----
@@ -711,15 +713,38 @@ function renderLibrary() {
     body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No titles match this filter.</td></tr>`;
     return;
   }
-  body.innerHTML = rows.map(i => `
+  library.rendered = rows;
+  body.innerHTML = rows.map((i, idx) => {
+    const action = (i.status === "needs-dub" || i.status === "partial")
+      ? `<button type="button" class="btn btn-ghost queue-dub" data-idx="${idx}">Queue dub</button>`
+      : `<span class="m" style="font-size:12.5px;color:var(--muted);">—</span>`;
+    return `
     <tr>
       <td style="font-weight:600;">${escapeHtml(i.title)}${i.year ? ` <span class="m" style="color:var(--muted);font-size:12px;">${i.year}</span>` : ""}</td>
       <td class="m" style="font-size:13px;">${escapeHtml(i.original)}</td>
       <td>${escapeHtml(i.source)}</td>
       <td class="m" style="font-size:13px;">${escapeHtml(i.existing_audio)}</td>
       <td>${statusTag(i.label)}</td>
-      <td class="m" style="font-size:12.5px;${i.auto_dub ? "" : "color:var(--muted);"}">${i.auto_dub ? "On" : "Off"}</td>
-    </tr>`).join("");
+      <td>${action}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function queueDub(item, btn) {
+  btn.disabled = true; btn.textContent = "Queuing…";
+  try {
+    const res = await fetch("api/jobs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: item.title, source: item.source, source_lang: item.original,
+        target_lang: (library.targets && library.targets[0]) || "en", path: item.path,
+      }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    btn.textContent = "Queued ✓";
+  } catch (err) {
+    btn.disabled = false; btn.textContent = "Retry";
+  }
 }
 
 function escapeHtml(s) {
@@ -735,6 +760,7 @@ async function loadLibrary() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
     library.items = data.items || [];
+    library.targets = data.target_languages || ["en"];
     library.loaded = true;
     const c = data.counts || {};
     const partial = c.partial ? ` · ${c.partial} partial` : "";
@@ -796,6 +822,80 @@ function renderField(f) {
   if (f.h) right.append(el("p", { class: "hint" }, f.h));
   row.append(right);
   return row;
+}
+
+// ---- Jobs (real queue from /api/jobs) ----
+const jobs = { pollTimer: null };
+
+function jobStatusTag(s) {
+  const cls = s === "running" ? "tag-accent"
+            : s === "failed" ? "tag-outline" : "tag-neutral";
+  return `<span class="tag ${cls}">${s}</span>`;
+}
+
+function renderJobs(data) {
+  const body = document.getElementById("dubsBody");
+  const meta = document.getElementById("dubsMeta");
+  const list = data.jobs || [];
+  const c = data.counts || {};
+  meta.textContent = `${c.running || 0} running · ${c.queued || 0} queued · ${c.done || 0} done · ${c.failed || 0} failed`;
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No jobs yet — queue one from the Library.</td></tr>`;
+    return;
+  }
+  body.innerHTML = list.map(j => {
+    const track = `${escapeHtml(j.source_lang)} → ${escapeHtml(j.target_lang)}`;
+    const stage = j.status === "done" ? escapeHtml(j.message || "done")
+                : j.status === "failed" ? escapeHtml(j.message || "failed")
+                : (escapeHtml(j.stage || "queued"));
+    const barColor = j.status === "failed" ? "background: var(--color-neutral-600);" : "";
+    return `
+      <tr>
+        <td style="font-weight:600;">${escapeHtml(j.title)}</td>
+        <td class="m" style="font-size:13px;">${track}</td>
+        <td>${stage}</td>
+        <td><div class="bar"><span style="width:${j.progress || 0}%;${barColor}"></span></div></td>
+        <td>${jobStatusTag(j.status)}</td>
+        <td class="m" style="font-size:12.5px;color:var(--muted);">${(j.source || "").split(" ")[0]}</td>
+      </tr>`;
+  }).join("");
+}
+
+async function loadJobs() {
+  try {
+    const res = await fetch("api/jobs");
+    const data = await res.json();
+    renderJobs(data);
+    setOverviewJobStats(data.counts || {});
+  } catch (e) {
+    const meta = document.getElementById("dubsMeta");
+    if (meta) meta.textContent = "Jobs unavailable — is Doblarr running (doblarr serve)?";
+  }
+}
+
+function startJobPolling() {
+  stopJobPolling();
+  jobs.pollTimer = setInterval(loadJobs, 3000);
+}
+function stopJobPolling() {
+  if (jobs.pollTimer) { clearInterval(jobs.pollTimer); jobs.pollTimer = null; }
+}
+
+function setOverviewJobStats(counts) {
+  const r = document.getElementById("statRunning");
+  const q = document.getElementById("statQueued");
+  if (r) r.textContent = counts.running || 0;
+  if (q) q.textContent = counts.queued || 0;
+}
+
+async function loadOverview() {
+  try {
+    const jr = await fetch("api/jobs"); setOverviewJobStats((await jr.json()).counts || {});
+  } catch (e) {}
+  try {
+    const lr = await fetch("api/library"); const nd = document.getElementById("statNeedsDub");
+    if (nd) nd.textContent = ((await lr.json()).counts || {}).needs_dub ?? "—";
+  } catch (e) {}
 }
 
 async function loadConfig() {
@@ -878,6 +978,11 @@ document.querySelectorAll(".opts[data-single]").forEach(group => {
 });
 document.getElementById("rescanBtn").addEventListener("click", loadLibrary);
 document.getElementById("saveSettings").addEventListener("click", saveSettings);
+document.getElementById("libraryBody").addEventListener("click", e => {
+  const btn = e.target.closest(".queue-dub"); if (!btn) return;
+  const item = library.rendered[Number(btn.dataset.idx)];
+  if (item) queueDub(item, btn);
+});
 
 // ---- Init ----
 const savedTheme = safeGet("doblarr.theme", "light");
