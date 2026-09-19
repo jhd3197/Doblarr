@@ -850,13 +850,13 @@ function renderLibrary() {
               onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
          <div class="poster-fallback" hidden>${escapeHtml(i.title)}</div>`
       : `<div class="poster-fallback">${escapeHtml(i.title)}</div>`;
-    const action = (i.status === "needs-dub" || i.status === "partial")
-      ? `<div style="display:flex;gap:2px;flex-wrap:wrap;">
-           <button type="button" class="btn btn-ghost queue-dub" data-idx="${idx}">Queue dub</button>
-           <button type="button" class="btn btn-ghost tease-dub" data-idx="${idx}">Tease</button>
-           <button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>
-         </div>`
-      : `<button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>`;
+    // Every card gets all three actions — an AI track can be added even when
+    // the title already has the target language (e.g. "English AI").
+    const action = `<div style="display:flex;gap:2px;flex-wrap:wrap;">
+      <button type="button" class="btn btn-ghost queue-dub" data-idx="${idx}">Queue dub</button>
+      <button type="button" class="btn btn-ghost tease-dub" data-idx="${idx}">Tease</button>
+      <button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>
+    </div>`;
     return `
     <div class="poster-card">
       ${poster}
