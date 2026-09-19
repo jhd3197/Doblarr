@@ -55,7 +55,7 @@ def sync_labels(items: list, plex: PlexClient, config, apply: bool = False) -> d
             report["unmatched"].append(f"{i.title} ({i.year})")
             continue
         report["matched"] += 1
-        already = any(l.lower() == label.lower() for l in found["labels"])
+        already = any(lbl.lower() == label.lower() for lbl in found["labels"])
         if not already:
             if apply:
                 plex.add_label(found["section"]["key"],

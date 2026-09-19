@@ -10,10 +10,11 @@ long-running calls (e.g. voicebox generation).
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
+from typing import Any
 
 import requests
-from tenacity import (Retrying, before_sleep_log, retry_if_exception,
-                      stop_after_attempt)
+from tenacity import Retrying, before_sleep_log, retry_if_exception, stop_after_attempt
 
 from ..errors import ArrClientError
 
@@ -52,10 +53,8 @@ class ArrClient:
         delay = self.backoff * (2 ** (retry_state.attempt_number - 1))
         retry_after = getattr(exc, "retry_after", None)
         if retry_after:
-            try:
+            with suppress(TypeError, ValueError):
                 delay = max(delay, float(retry_after))
-            except (TypeError, ValueError):
-                pass
         return delay
 
     def _attempt(self, method: str, path: str, *,
@@ -91,10 +90,10 @@ class ArrClient:
 
     # -- verb helpers -----------------------------------------------------
     def _get(self, path: str, params: dict | None = None,
-             timeout: int | None = None) -> dict:
+             timeout: int | None = None) -> Any:
         return self._request("GET", path, params=params, timeout=timeout).json()
 
-    def _post(self, path: str, timeout: int | None = None, **kwargs) -> dict:
+    def _post(self, path: str, timeout: int | None = None, **kwargs) -> Any:
         return self._request("POST", path, timeout=timeout, **kwargs).json()
 
     def _put(self, path: str, params: dict | None = None,

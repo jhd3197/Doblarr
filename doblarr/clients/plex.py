@@ -38,7 +38,7 @@ class PlexClient(ArrClient):
 
     @staticmethod
     def _meta_labels(m: dict) -> list[str]:
-        return [l["tag"] for l in m.get("Label", [])]
+        return [lbl["tag"] for lbl in m.get("Label", [])]
 
     def find(self, section_key: str, type_num: int, title: str,
              year: int | None) -> dict | None:

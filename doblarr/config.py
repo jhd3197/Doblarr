@@ -117,7 +117,7 @@ def _strip_sentinels(d: Any) -> Any:
 def load_user_data(path: str | Path) -> dict:
     p = Path(path)
     if p.exists():
-        with open(p, "r", encoding="utf-8") as fh:
+        with open(p, encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     return {}
 
@@ -170,7 +170,7 @@ class Config:
         return merged_user
 
     @classmethod
-    def load(cls, path: str | Path | None = None) -> "Config":
+    def load(cls, path: str | Path | None = None) -> Config:
         """Load config.yaml if present, else fall back to defaults."""
         data = copy.deepcopy(DEFAULTS)
         candidate = Path(path) if path else Path("config.yaml")

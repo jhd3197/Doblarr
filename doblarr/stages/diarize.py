@@ -8,21 +8,20 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 
 from ..models import DubJob, Speaker
-from .common import dry, stage
+from .common import DryRunPlan, dry, stage
 
 log = logging.getLogger("doblarr.diarize")
 
 
 @stage("diarize")
-def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> None:
+def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan | None:
     if not enabled:
         # Single-speaker fallback: everyone is SPEAKER_00.
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
         log.info("diarize disabled -> 1 speaker")
-        return
+        return None
 
     if dry_run:
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}

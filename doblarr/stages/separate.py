@@ -10,14 +10,14 @@ import logging
 from pathlib import Path
 
 from ..models import DubJob
-from .common import dry, stage
+from .common import DryRunPlan, dry, stage
 
 log = logging.getLogger("doblarr.separate")
 
 
 @stage("separate")
 def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
-        dry_run: bool = False) -> None:
+        dry_run: bool = False) -> DryRunPlan | None:
     job.vocals = work_dir / f"{job.input_file.stem}.vocals.wav"
     job.background = work_dir / f"{job.input_file.stem}.background.wav"
     if dry_run:
@@ -32,8 +32,9 @@ def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
         job.vocals = None
         log.warning("Demucs not installed — mixing over the original audio "
                     "(install demucs for clean dialogue separation)")
-        return
+        return None
 
     # TODO: run Demucs two-stems and set job.vocals / job.background.
     job.background = job.source_audio
     log.info("separate (%s): Demucs present but not yet wired — using original bed", model)
+    return None

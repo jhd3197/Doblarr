@@ -51,7 +51,7 @@ class LibraryItem:
 STATUS_ORDER = {"needs-dub": 0, "partial": 1, "available": 2}
 
 
-def sort_items(items: list["LibraryItem"]) -> list["LibraryItem"]:
+def sort_items(items: list[LibraryItem]) -> list[LibraryItem]:
     items.sort(key=lambda i: (STATUS_ORDER.get(i.status, 3), i.title.lower()))
     return items
 

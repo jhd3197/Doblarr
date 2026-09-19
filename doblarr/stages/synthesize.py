@@ -14,7 +14,7 @@ from pathlib import Path
 from ..clients.voicebox import VoiceboxError
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob, Speaker
-from .common import dry, stage
+from .common import DryRunPlan, dry, stage
 
 log = logging.getLogger("doblarr.synthesize")
 
@@ -40,7 +40,7 @@ def _safe_transcribe(vb, clip: Path, lang: str) -> str:
 
 @stage("synthesize")
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
-        dry_run: bool = False) -> None:
+        dry_run: bool = False) -> DryRunPlan | None:
     clips_dir = work_dir / "clips"
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
 
@@ -52,6 +52,8 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
 
     if not job.segments:
         raise RuntimeError("nothing to synthesize (no segments)")
+    if job.source_audio is None:
+        raise RuntimeError("synthesize needs source audio (extract stage must run first)")
     if not job.speakers:
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
     spk = next(iter(job.speakers.values()))
@@ -84,3 +86,4 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang, dest)
         seg.audio_clip = dest
         log.info("  line %d/%d done", seg.index + 1, len(job.segments))
+    return None

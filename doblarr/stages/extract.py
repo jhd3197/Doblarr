@@ -7,13 +7,13 @@ from pathlib import Path
 
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob
-from .common import dry, stage
+from .common import DryRunPlan, dry, stage
 
 log = logging.getLogger("doblarr.extract")
 
 
 @stage("extract")
-def run(job: DubJob, work_dir: Path, dry_run: bool = False) -> None:
+def run(job: DubJob, work_dir: Path, dry_run: bool = False) -> DryRunPlan | None:
     out = work_dir / f"{job.input_file.stem}.source.wav"
     job.source_audio = out
     args = [
@@ -25,3 +25,4 @@ def run(job: DubJob, work_dir: Path, dry_run: bool = False) -> None:
         return dry("ffmpeg " + " ".join(args))
     out.parent.mkdir(parents=True, exist_ok=True)
     run_ffmpeg(args)
+    return None

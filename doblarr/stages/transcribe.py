@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .. import subtitles
 from ..models import DubJob, Segment
-from .common import dry, stage
+from .common import DryRunPlan, dry, stage
 
 log = logging.getLogger("doblarr.transcribe")
 
@@ -21,7 +21,7 @@ log = logging.getLogger("doblarr.transcribe")
 @stage("transcribe")
 def run(job: DubJob, work_dir: Path, source: str = "subtitles",
         whisper_model: str = "large-v3", vb=None,
-        segment_limit: int | None = None, dry_run: bool = False) -> None:
+        segment_limit: int | None = None, dry_run: bool = False) -> DryRunPlan | None:
     if dry_run:
         return dry(f"would build timed segments ({source})")
 
@@ -65,3 +65,4 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
 
     log.info("transcribe -> %d segments%s", len(job.segments),
              " (already target language)" if job.script_is_target else "")
+    return None

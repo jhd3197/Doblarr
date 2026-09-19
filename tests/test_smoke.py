@@ -113,7 +113,9 @@ def test_plex_label_sync():
             return [{"key": "1", "type": "movie", "title": "Movies"},
                     {"key": "2", "type": "show", "title": "TV Shows"}]
         def find(self, sk, tn, title, year):
-            return {"ratingKey": "rk-A", "title": title, "year": year, "labels": []} if title == "A" else None
+            if title != "A":
+                return None
+            return {"ratingKey": "rk-A", "title": title, "year": year, "labels": []}
         def items_with_label(self, sk, tn, label):
             return [{"ratingKey": "rk-B", "title": "B", "year": 2021}] if sk == "1" else []
         def add_label(self, *a): pass
@@ -139,7 +141,10 @@ def test_scheduler():
             return {"discovery": {"auto_scan": True, "rescan_interval": "60s"}}.get(k, d)
 
     s = Scheduler(Cfg(), lambda: calls.__setitem__("n", calls["n"] + 1))
-    s.start(); time.sleep(0.4); s.stop(); s.join(timeout=2)
+    s.start()
+    time.sleep(0.4)
+    s.stop()
+    s.join(timeout=2)
     assert calls["n"] >= 1
 
 
@@ -156,7 +161,8 @@ def test_ttl_cache():
     # per-call ttl override
     assert c.get("a", ttl=0) is None
     # FIFO eviction at max_size
-    c.set("b", 2); c.set("c", 3)
+    c.set("b", 2)
+    c.set("c", 3)
     assert len(c) == 2 and c.get("a") is None and c.get("c") == 3
 
 

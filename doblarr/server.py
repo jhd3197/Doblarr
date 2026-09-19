@@ -118,7 +118,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         try:
             config.apply_and_save(changes)
         except OSError as exc:
-            raise DoblarrError(f"could not write {config.path}: {exc}")
+            raise DoblarrError(f"could not write {config.path}: {exc}") from exc
         scan_cache.clear()  # connection/discovery settings may have changed
         return {"ok": True, "saved_to": str(config.path),
                 "config": config.as_dict(redact_secrets=True)}
@@ -165,7 +165,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     def _scan_and_maybe_label():
         items, _ = _scan_library(force=True)  # a scheduled rescan refreshes the cache
         conn = config.get("connect", {})
-        if config.get("filtering", {}).get("auto_label") and conn.get("plex_url") and conn.get("plex_token"):
+        if config.get("filtering", {}).get("auto_label") \
+                and conn.get("plex_url") and conn.get("plex_token"):
             try:
                 plex_labels.sync_labels(
                     items, PlexClient(conn["plex_url"], conn["plex_token"]), config, apply=True)
