@@ -109,7 +109,7 @@
   .table th { border-bottom: 1px solid var(--line-strong); color: var(--muted); }
   .table td { border-bottom: 1px solid var(--line); }
   .m { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-feature-settings: "tnum" 1; }
-  .shell { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; }
+  .shell { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; background: var(--color-bg); }
   .navitem { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
     padding: 10px 14px; border-radius: 10px; font-family: var(--font-body); font-size: 14px;
     color: var(--muted); background: transparent; border: 0; cursor: pointer; }
@@ -288,8 +288,6 @@
     <!-- ===== Library ===== -->
     <section data-view="Library" hidden>
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Library</h2>
-        <p id="libraryMeta" style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Reading audio languages from Radarr, matched against your target languages.</p>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px;">
           <div class="opts" data-single id="libraryFilters">
             <button type="button" class="opt" aria-pressed="true" data-filter="all">All</button>
@@ -865,7 +863,6 @@ function escapeHtml(s) {
 
 async function loadLibrary() {
   const grid = document.getElementById("libraryGrid");
-  const meta = document.getElementById("libraryMeta");
   grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">Scanning Radarr…</div>`;
   try {
     const res = await fetch("api/library");
@@ -874,15 +871,10 @@ async function loadLibrary() {
     library.items = data.items || [];
     library.targets = data.target_languages || ["en"];
     library.loaded = true;
-    const c = data.counts || {};
-    const partial = c.partial ? ` · ${c.partial} partial` : "";
-    meta.textContent = `${c.total} titles scanned · ${c.needs_dub} need a dub${partial} · ${c.available} watchable in ${(data.target_languages || []).join(", ")}`;
-    if (data.warnings && data.warnings.length) meta.textContent += ` · ⚠ ${data.warnings.join("; ")}`;
     renderLibrary();
   } catch (err) {
     library.loaded = false;
-    meta.textContent = "Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable?";
-    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">${escapeHtml(err.message)}</div>`;
+    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? ${escapeHtml(err.message)}</div>`;
   }
 }
 
