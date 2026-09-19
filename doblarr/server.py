@@ -99,7 +99,17 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get("/api/jobs")
     def list_jobs():
-        return {"jobs": store.list(), "counts": store.counts()}
+        return {"jobs": store.list(), "counts": store.counts(), "paused": worker.paused}
+
+    @app.post("/api/queue/pause")
+    def pause_queue():
+        worker.pause()
+        return {"paused": True}
+
+    @app.post("/api/queue/resume")
+    def resume_queue():
+        worker.resume()
+        return {"paused": False}
 
     @app.post("/api/jobs")
     async def create_job(request: Request):

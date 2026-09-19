@@ -300,10 +300,10 @@
         <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Dubs</h2>
         <p id="dubsMeta" style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Loading jobs…</p>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center;">
-          <button type="button" class="btn btn-secondary">Pause queue</button>
+          <button type="button" class="btn btn-secondary" id="pauseQueue">Pause queue</button>
           <button type="button" class="btn btn-secondary" id="clearFinished">Clear finished</button>
-          <span class="tag tag-neutral">Paused 19:00 – 23:00</span>
-          <span class="tag tag-accent" style="margin-left: auto;">1 of 1 worker busy</span>
+          <span class="tag tag-outline" id="pausedTag" hidden>Queue paused</span>
+          <span class="tag tag-accent" style="margin-left: auto;" id="workerTag">worker idle</span>
         </div>
         <div class="panel" style="padding: 6px 18px 10px;">
           <table class="table">
@@ -839,6 +839,16 @@ function renderJobs(data) {
   const list = data.jobs || [];
   const c = data.counts || {};
   meta.textContent = `${c.running || 0} running · ${c.queued || 0} queued · ${c.done || 0} done · ${c.failed || 0} failed`;
+
+  // toolbar state
+  const paused = !!data.paused;
+  const pauseBtn = document.getElementById("pauseQueue");
+  if (pauseBtn) pauseBtn.textContent = paused ? "Resume queue" : "Pause queue";
+  const pausedTag = document.getElementById("pausedTag");
+  if (pausedTag) pausedTag.hidden = !paused;
+  const workerTag = document.getElementById("workerTag");
+  if (workerTag) workerTag.textContent = (c.running || 0) ? `processing ${c.running}` : "worker idle";
+
   if (!list.length) {
     body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No jobs yet — queue one from the Library.</td></tr>`;
     return;
@@ -849,6 +859,8 @@ function renderJobs(data) {
                 : j.status === "failed" ? escapeHtml(j.message || "failed")
                 : (escapeHtml(j.stage || "queued"));
     const barColor = j.status === "failed" ? "background: var(--color-neutral-600);" : "";
+    const act = j.status === "queued" ? "Cancel" : (j.status === "running" ? "" : "Remove");
+    const action = act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "";
     return `
       <tr>
         <td style="font-weight:600;">${escapeHtml(j.title)}</td>
@@ -856,7 +868,7 @@ function renderJobs(data) {
         <td>${stage}</td>
         <td><div class="bar"><span style="width:${j.progress || 0}%;${barColor}"></span></div></td>
         <td>${jobStatusTag(j.status)}</td>
-        <td class="m" style="font-size:12.5px;color:var(--muted);">${(j.source || "").split(" ")[0]}</td>
+        <td>${action}</td>
       </tr>`;
   }).join("");
 }
@@ -1024,6 +1036,17 @@ document.getElementById("libraryBody").addEventListener("click", e => {
 });
 document.getElementById("clearFinished").addEventListener("click", async () => {
   try { await fetch("api/jobs/clear-finished", { method: "POST" }); } catch (e) {}
+  loadJobs();
+});
+document.getElementById("pauseQueue").addEventListener("click", async () => {
+  const resuming = document.getElementById("pauseQueue").textContent.startsWith("Resume");
+  try { await fetch(resuming ? "api/queue/resume" : "api/queue/pause", { method: "POST" }); } catch (e) {}
+  loadJobs();
+});
+document.getElementById("dubsBody").addEventListener("click", async e => {
+  const btn = e.target.closest(".job-del"); if (!btn) return;
+  btn.disabled = true;
+  try { await fetch("api/jobs/" + btn.dataset.id, { method: "DELETE" }); } catch (err) {}
   loadJobs();
 });
 

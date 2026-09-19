@@ -127,13 +127,27 @@ class Worker(threading.Thread):
         self.config = config
         self.dry_run = dry_run
         self._stop = threading.Event()
+        self._pause = threading.Event()
 
     def stop(self) -> None:
         self._stop.set()
 
+    def pause(self) -> None:
+        self._pause.set()
+
+    def resume(self) -> None:
+        self._pause.clear()
+
+    @property
+    def paused(self) -> bool:
+        return self._pause.is_set()
+
     def run(self) -> None:
         log.info("worker started (dry_run=%s)", self.dry_run)
         while not self._stop.is_set():
+            if self._pause.is_set():
+                time.sleep(0.5)
+                continue
             job = self.store.next_queued()
             if job is None:
                 time.sleep(1.0)
