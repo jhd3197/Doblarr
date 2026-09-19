@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: python -m pytest -q
+      - run: python -m pytest -q --cov=doblarr --cov-report=term-missing --cov-fail-under=70
 
   docker:
     runs-on: ubuntu-latest

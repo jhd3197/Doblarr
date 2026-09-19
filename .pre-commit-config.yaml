@@ -1,0 +1,18 @@
+# Not installed by default — opt in with `pre-commit install`.
+# Hook versions mirror the dev extra in pyproject.toml.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff          # check only; the repo deliberately skips ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        args: [doblarr/]
+        additional_dependencies:
+          - requests
+          - PyYAML
+          - fastapi
+          - pydantic
+          - tenacity
