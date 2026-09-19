@@ -15,7 +15,7 @@ from pathlib import Path
 from ..clients.voicebox import VoiceboxError
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob, Speaker
-from .common import DryRunPlan, dry, stage
+from .common import Plan, cached, dry, stage
 
 log = logging.getLogger("doblarr.synthesize")
 
@@ -42,7 +42,8 @@ def _safe_transcribe(vb, clip: Path, lang: str) -> str:
 
 @stage("synthesize")
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
-        dry_run: bool = False, cancel: threading.Event | None = None) -> DryRunPlan | None:
+        dry_run: bool = False, cancel: threading.Event | None = None,
+        force: bool = False) -> Plan | None:
     clips_dir = work_dir / "clips"
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
 
@@ -51,6 +52,14 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
             seg.audio_clip = clips_dir / f"line_{seg.index:04d}.wav"
         return dry(f"would clone a voice + generate {len(job.segments)} clips "
                    "via voicebox")
+
+    # Checkpoint: resume from the per-line clips that already exist.
+    clips = [clips_dir / f"line_{s.index:04d}.wav" for s in job.segments]
+    hit = cached(clips, job.input_file, force)
+    if hit:
+        for seg, clip in zip(job.segments, clips, strict=True):
+            seg.audio_clip = clip
+        return hit
 
     if not job.segments:
         raise RuntimeError("nothing to synthesize (no segments)")

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob
-from .common import DryRunPlan, dry, stage
+from .common import Plan, cached, dry, stage
 
 log = logging.getLogger("doblarr.mix")
 
@@ -22,12 +22,16 @@ BED_VOLUME = 0.35   # duck the original bed under the dubbed dialogue
 
 @stage("mix")
 def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
-        dry_run: bool = False, cancel: threading.Event | None = None) -> DryRunPlan | None:
+        dry_run: bool = False, cancel: threading.Event | None = None,
+        force: bool = False) -> Plan | None:
     out = work_dir / f"{job.input_file.stem}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
     log.info("mix dialogue over bed -> %s", out.name)
     if dry_run:
         return dry(f"would place {len(job.segments)} clips and duck the bed")
+    hit = cached(out, job.input_file, force)
+    if hit:
+        return hit
 
     segs = [s for s in job.segments if s.audio_clip and Path(s.audio_clip).exists()]
     if not segs:

@@ -50,6 +50,7 @@ class JobCreateIn(BaseModel):
     source_lang: str = "auto"
     target_lang: str | None = None
     path: str | None = None
+    force: bool = False  # re-run every stage, ignoring cached artifacts
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -313,6 +314,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             source_lang=body.source_lang,
             target_lang=body.target_lang or default_target,
             input_file=body.path,
+            force=body.force,
         )
         bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
         return {"ok": True, "job": asdict(job)}

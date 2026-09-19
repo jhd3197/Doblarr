@@ -72,6 +72,16 @@ URL `http://<doblarr-host>:6363/api/webhooks/radarr` (or `.../sonarr`), trigger
 **On Import/On Upgrade**. If you set `web.api_key`, add a header `X-Api-Key: <key>`
 in the webhook settings (no key configured → webhooks are open like the rest of the API).
 
+### Persistence & resume
+
+Jobs and the last library scan live in a SQLite database (`paths.db`, default
+`<work_dir>/doblarr.db`; in Docker that's inside the mounted `/data`), so the Dubs
+page and Overview survive restarts. A legacy `work/jobs.json` is imported once and
+renamed to `jobs.json.migrated`. Jobs interrupted mid-run are re-queued at startup,
+and the pipeline **skips stages whose output artifact already exists** and is newer
+than the input file (extract/separate/synthesize/mix/mux) — resubmitting continues
+where the artifacts stop. Enqueue with `"force": true` to redo every stage.
+
 Open the UI, go to **Library** to see your real collection, and **Queue dub** on a
 needs-dub title to watch it flow through the queue. The CLI still works too:
 `python -m doblarr dub "<file>" --from ko --to es --subs film.srt --dry-run`.

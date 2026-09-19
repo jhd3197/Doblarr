@@ -27,7 +27,7 @@ log = logging.getLogger("doblarr.pipeline")
 
 def run_job(job: DubJob, config: Config, dry_run: bool = False,
             on_stage=None, cancel_event: threading.Event | None = None,
-            services: Services | None = None) -> DubJob:
+            services: Services | None = None, force: bool = False) -> DubJob:
     """Run every stage in order, mutating and returning the job.
 
     `on_stage(name, index, total)` is called before each stage, so a caller (the
@@ -37,6 +37,7 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     voicebox *remote* generation aborts the wait but leaves the server-side
     generation running (voicebox has no cancel endpoint). `services` supplies
     the voicebox client; one is built from config when not given (CLI path).
+    `force` re-runs every stage, ignoring cached work-dir artifacts.
     """
     work = config.work_dir
     out = config.output_dir
@@ -48,9 +49,10 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     log.info("=== Doblarr job: %s ===", job.summary())
 
     steps = [
-        ("probe", lambda: extract.run(job, work, dry_run=dry_run, cancel=cancel_event)),
+        ("probe", lambda: extract.run(job, work, dry_run=dry_run,
+                                      cancel=cancel_event, force=force)),
         ("separate", lambda: separate.run(job, work, model=config["separate"]["model"],
-                                          dry_run=dry_run)),
+                                          dry_run=dry_run, force=force)),
         ("transcribe", lambda: transcribe.run(job, work, source=config["transcribe"]["source"],
                                               whisper_model=config["transcribe"]["whisper_model"],
                                               vb=vb, segment_limit=seg_limit, dry_run=dry_run)),
@@ -59,14 +61,15 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
         ("translate", lambda: translate.run(job, translator, dry_run=dry_run)),
         ("synthesize", lambda: synthesize.run(job, vb, work,
                                               voice_mode=config["dub"]["voice_mode"],
-                                              dry_run=dry_run, cancel=cancel_event)),
+                                              dry_run=dry_run, cancel=cancel_event,
+                                              force=force)),
         ("fit", lambda: fit_timing.run(job, enabled=config["dub"]["duration_match"],
                                        dry_run=dry_run)),
         ("mix", lambda: mix.run(job, work, ducking_ratio=config["dub"]["ducking_ratio"],
-                                dry_run=dry_run, cancel=cancel_event)),
+                                dry_run=dry_run, cancel=cancel_event, force=force)),
         ("mux", lambda: mux.run(job, out,
                                 track_name_template=config["dub"]["track_name_template"],
-                                dry_run=dry_run, cancel=cancel_event)),
+                                dry_run=dry_run, cancel=cancel_event, force=force)),
     ]
     total = len(steps)
     for i, (name, fn) in enumerate(steps):

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob
-from .common import DryRunPlan, dry, stage
+from .common import Plan, cached, dry, stage
 
 log = logging.getLogger("doblarr.mux")
 
@@ -23,7 +23,8 @@ _LANG3 = {"en": "eng", "es": "spa", "ko": "kor", "ja": "jpn", "fr": "fre",
 
 @stage("mux")
 def run(job: DubJob, output_dir: Path, track_name_template: str = "AI - {language}",
-        dry_run: bool = False, cancel: threading.Event | None = None) -> DryRunPlan | None:
+        dry_run: bool = False, cancel: threading.Event | None = None,
+        force: bool = False) -> Plan | None:
     out = output_dir / job.input_file.name
     job.output_file = out
     title = track_name_template.format(language=job.target_lang.upper())
@@ -45,6 +46,9 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "AI - {languag
     log.info("mux new track '%s' (%s) -> %s", title, lang3, out.name)
     if dry_run:
         return dry("ffmpeg " + " ".join(args))
+    hit = cached(out, job.input_file, force)
+    if hit:
+        return hit
     out.parent.mkdir(parents=True, exist_ok=True)
     run_ffmpeg(args, cancel=cancel)
     return None
