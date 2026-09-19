@@ -90,6 +90,7 @@ class DubModel(_Section):
     ducking_ratio: str = "12:1"
     track_name_template: str = "AI - {language}"
     preset_voices: list[str] = []
+    teaser_minutes: int = 10
     segment_limit: int | None = None
 
 

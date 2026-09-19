@@ -42,6 +42,13 @@ def dry(detail: str) -> DryRunPlan:
     return DryRunPlan(detail)
 
 
+def work_stem(job) -> str:
+    """Work-dir artifact stem; teases get a '.tease' namespace so a teaser never
+    poisons the full dub's checkpoint cache (and vice versa)."""
+    stem = job.input_file.stem
+    return f"{stem}.tease" if job.kind == "tease" else stem
+
+
 def cached(artifacts: Path | Iterable[Path], input_file: Path,
            force: bool = False) -> CachedPlan | None:
     """A CachedPlan if all artifacts exist and are fresh vs the input, else None."""

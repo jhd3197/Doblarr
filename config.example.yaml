@@ -69,6 +69,8 @@ separate:
 dub:
   voice_mode: clone             # clone (per-speaker cloned voice) | preset
   dry_run: true                 # plan-only (no heavy stages) until you flip this off
+  teaser_minutes: 10            # a "tease" job dubs just this opening window
+  preset_voices: []             # fallback voice list when voicebox is unreachable
   duration_match: true          # time-fit each line to the original slot
   max_fit_attempts: 5           # shorten/retranslate to fit before stretching
   ducking_ratio: "12:1"         # sidechain ducking of background under speech

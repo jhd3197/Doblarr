@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 from ..models import DubJob
-from .common import Plan, cached, dry, stage
+from .common import Plan, cached, dry, stage, work_stem
 
 log = logging.getLogger("doblarr.separate")
 
@@ -18,8 +18,8 @@ log = logging.getLogger("doblarr.separate")
 @stage("separate")
 def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
         dry_run: bool = False, force: bool = False) -> Plan | None:
-    job.vocals = work_dir / f"{job.input_file.stem}.vocals.wav"
-    job.background = work_dir / f"{job.input_file.stem}.background.wav"
+    job.vocals = work_dir / f"{work_stem(job)}.vocals.wav"
+    job.background = work_dir / f"{work_stem(job)}.background.wav"
     if dry_run:
         return dry(f"would run Demucs on {job.source_audio}")
     hit = cached([job.vocals, job.background], job.input_file, force)

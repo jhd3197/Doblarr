@@ -21,7 +21,8 @@ log = logging.getLogger("doblarr.transcribe")
 @stage("transcribe")
 def run(job: DubJob, work_dir: Path, source: str = "subtitles",
         whisper_model: str = "large-v3", vb=None,
-        segment_limit: int | None = None, dry_run: bool = False) -> DryRunPlan | None:
+        segment_limit: int | None = None, max_seconds: int | None = None,
+        dry_run: bool = False) -> DryRunPlan | None:
     if dry_run:
         return dry(f"would build timed segments ({source})")
 
@@ -50,6 +51,8 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
                 text_src=line.plaintext.replace("\n", " ").strip())
         for i, line in enumerate(subs) if line.plaintext.strip()
     ]
+    if max_seconds:
+        segs = [s for s in segs if s.start < max_seconds]  # tease window
     if segment_limit:
         segs = segs[:segment_limit]
     # Re-index after limiting so clip names stay 0..N.

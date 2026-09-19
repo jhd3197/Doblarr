@@ -40,6 +40,7 @@ class DubJob:
     source_lang: str                 # e.g. "ko"
     target_lang: str                 # e.g. "es"
     subtitle_file: Path | None = None
+    kind: str = "full"               # full | tease (first-minutes audition clip)
 
     # Populated as stages run:
     source_audio: Path | None = None       # extracted original audio

@@ -26,6 +26,28 @@ CATEGORIES = [
 CATEGORY_LABELS = dict(CATEGORIES)
 
 
+def ensure_cast(job, db, events=None) -> list[dict] | None:
+    """Create/merge the title's voice cast after diarization (tease), or load
+    the saved cast (full dub). Returns the cast list, or None without a db.
+
+    Teases discover speakers and assign defaults; full dubs reuse whatever the
+    teaser (or the user) established, so voices stay consistent.
+    """
+    key = cast_key(path=str(job.input_file))
+    existing = db.load_cast(key)
+    if job.kind == "tease":
+        cast = assign_default_cast(list(job.speakers),
+                                   existing=(existing or {}).get("cast"))
+        if not existing or len(cast) != len(existing["cast"]):
+            db.save_cast(key, job.input_file.stem, cast)
+            log.info("voice cast saved for %s (%d speakers)", key, len(cast))
+            if events:
+                events.publish("cast", {"type": "updated", "key": key,
+                                        "speakers": len(cast)})
+        return cast
+    return (existing or {}).get("cast") or None
+
+
 def cast_key(title: str | None = None, path: str | None = None,
              tmdb_id: int | None = None, tvdb_id: int | None = None) -> str:
     """Stable per-title cast key: media path if known, else tmdb/tvdb id, else title."""

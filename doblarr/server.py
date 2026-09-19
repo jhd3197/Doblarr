@@ -10,7 +10,7 @@ import queue
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -52,6 +52,7 @@ class JobCreateIn(BaseModel):
     source_lang: str = "auto"
     target_lang: str | None = None
     path: str | None = None
+    kind: Literal["full", "tease"] = "full"
     force: bool = False  # re-run every stage, ignoring cached artifacts
 
 
@@ -338,6 +339,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             source_lang=body.source_lang,
             target_lang=body.target_lang or default_target,
             input_file=body.path,
+            kind=body.kind,
             force=body.force,
         )
         bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})

@@ -21,13 +21,15 @@ from .stages import (
     transcribe,
     translate,
 )
+from .voices import ensure_cast
 
 log = logging.getLogger("doblarr.pipeline")
 
 
 def run_job(job: DubJob, config: Config, dry_run: bool = False,
             on_stage=None, cancel_event: threading.Event | None = None,
-            services: Services | None = None, force: bool = False) -> DubJob:
+            services: Services | None = None, force: bool = False,
+            db=None, events=None) -> DubJob:
     """Run every stage in order, mutating and returning the job.
 
     `on_stage(name, index, total)` is called before each stage, so a caller (the
@@ -38,6 +40,12 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     generation running (voicebox has no cancel endpoint). `services` supplies
     the voicebox client; one is built from config when not given (CLI path).
     `force` re-runs every stage, ignoring cached work-dir artifacts.
+
+    A `kind="tease"` job only dubs the first `dub.teaser_minutes` minutes: the
+    extract/mux stages cut with ffmpeg `-t`, transcribe drops segments past the
+    window, and all artifacts live in a separate `.tease` namespace. With `db`
+    given, a tease creates/merges the title's voice cast after diarization (and
+    publishes a `cast` event); full dubs read the saved cast into synthesize.
     """
     work = config.work_dir
     out = config.output_dir
@@ -45,31 +53,44 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     translator = build_translator(config["translate"]["provider"],
                                   config["translate"]["model"], voicebox_client=vb)
     seg_limit = config["dub"].get("segment_limit")
+    teaser_s = (int(config["dub"].get("teaser_minutes", 10)) * 60
+                if job.kind == "tease" else None)
 
-    log.info("=== Doblarr job: %s ===", job.summary())
+    log.info("=== Doblarr %s job: %s ===", job.kind, job.summary())
+
+    cast_holder: dict = {"cast": None}
+
+    def _ensure_cast():
+        if db is None or dry_run:
+            return None
+        cast_holder["cast"] = ensure_cast(job, db, events=events)
 
     steps = [
         ("probe", lambda: extract.run(job, work, dry_run=dry_run,
-                                      cancel=cancel_event, force=force)),
+                                      cancel=cancel_event, force=force,
+                                      duration=teaser_s)),
         ("separate", lambda: separate.run(job, work, model=config["separate"]["model"],
                                           dry_run=dry_run, force=force)),
         ("transcribe", lambda: transcribe.run(job, work, source=config["transcribe"]["source"],
                                               whisper_model=config["transcribe"]["whisper_model"],
-                                              vb=vb, segment_limit=seg_limit, dry_run=dry_run)),
+                                              vb=vb, segment_limit=seg_limit,
+                                              max_seconds=teaser_s, dry_run=dry_run)),
         ("diarize", lambda: diarize.run(job, enabled=config["transcribe"]["diarize"],
                                         dry_run=dry_run)),
+        ("cast", _ensure_cast),
         ("translate", lambda: translate.run(job, translator, dry_run=dry_run)),
-        ("synthesize", lambda: synthesize.run(job, vb, work,
-                                              voice_mode=config["dub"]["voice_mode"],
-                                              dry_run=dry_run, cancel=cancel_event,
-                                              force=force)),
+        ("synthesize", lambda: synthesize.run(
+            job, vb, work, voice_mode=config["dub"]["voice_mode"],
+            dry_run=dry_run, cancel=cancel_event, force=force,
+            cast={e["speaker_id"]: e for e in (cast_holder["cast"] or [])})),
         ("fit", lambda: fit_timing.run(job, enabled=config["dub"]["duration_match"],
                                        dry_run=dry_run)),
         ("mix", lambda: mix.run(job, work, ducking_ratio=config["dub"]["ducking_ratio"],
                                 dry_run=dry_run, cancel=cancel_event, force=force)),
         ("mux", lambda: mux.run(job, out,
                                 track_name_template=config["dub"]["track_name_template"],
-                                dry_run=dry_run, cancel=cancel_event, force=force)),
+                                dry_run=dry_run, cancel=cancel_event, force=force,
+                                duration=teaser_s)),
     ]
     total = len(steps)
     for i, (name, fn) in enumerate(steps):

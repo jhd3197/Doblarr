@@ -28,7 +28,7 @@ def _wait_for(cond, timeout: float = 5.0) -> None:
 
 
 def _fake_run_job(dj, config, dry_run=False, on_stage=None, cancel_event=None,
-                  services=None, force=False):
+                  services=None, force=False, db=None, events=None):
     """Stand-in pipeline: runs until cancelled, then raises JobCancelled."""
     for _ in range(200):
         if cancel_event is not None and cancel_event.is_set():

@@ -24,16 +24,26 @@ _LANG3 = {"en": "eng", "es": "spa", "ko": "kor", "ja": "jpn", "fr": "fre",
 @stage("mux")
 def run(job: DubJob, output_dir: Path, track_name_template: str = "AI - {language}",
         dry_run: bool = False, cancel: threading.Event | None = None,
-        force: bool = False) -> Plan | None:
-    out = output_dir / job.input_file.name
+        force: bool = False, duration: int | None = None) -> Plan | None:
+    if job.kind == "tease":
+        # A tease is a standalone clip, not a track added to the full video.
+        out = output_dir / f"{job.input_file.stem}.tease{job.input_file.suffix}"
+    else:
+        out = output_dir / job.input_file.name
     job.output_file = out
     title = track_name_template.format(language=job.target_lang.upper())
+    if job.kind == "tease":
+        title += " (tease)"
     lang3 = _LANG3.get(job.target_lang, job.target_lang)
 
     args = [
         "-y",
         "-i", str(job.input_file),
         "-i", str(job.dubbed_track) if job.dubbed_track else "MISSING_DUB",
+    ]
+    if duration:
+        args += ["-t", str(duration)]  # tease: cut the output at the teaser length
+    args += [
         "-map", "0",            # everything from the original
         "-map", "1:a",          # plus the new dub audio
         "-c", "copy",

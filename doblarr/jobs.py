@@ -243,10 +243,11 @@ class Worker(threading.Thread):
                 input_file=Path(job.input_file) if job.input_file else Path(job.title),
                 source_lang=job.source_lang,
                 target_lang=job.target_lang,
+                kind=job.kind,
             )
             run_job(dj, self.config, dry_run=dry_run, on_stage=on_stage,
                     cancel_event=cancel_evt, services=self.services,
-                    force=job.force)
+                    force=job.force, db=self.store.db, events=self.events)
             out = str(dj.output_file) if dj.output_file else "(planned)"
             message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,

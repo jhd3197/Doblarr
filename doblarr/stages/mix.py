@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob
-from .common import Plan, cached, dry, stage
+from .common import Plan, cached, dry, stage, work_stem
 
 log = logging.getLogger("doblarr.mix")
 
@@ -24,7 +24,7 @@ BED_VOLUME = 0.35   # duck the original bed under the dubbed dialogue
 def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
         dry_run: bool = False, cancel: threading.Event | None = None,
         force: bool = False) -> Plan | None:
-    out = work_dir / f"{job.input_file.stem}.{job.target_lang}.dub.wav"
+    out = work_dir / f"{work_stem(job)}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
     log.info("mix dialogue over bed -> %s", out.name)
     if dry_run:

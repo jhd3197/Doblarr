@@ -43,8 +43,8 @@ def _safe_transcribe(vb, clip: Path, lang: str) -> str:
 @stage("synthesize")
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         dry_run: bool = False, cancel: threading.Event | None = None,
-        force: bool = False) -> Plan | None:
-    clips_dir = work_dir / "clips"
+        force: bool = False, cast: dict | None = None) -> Plan | None:
+    clips_dir = work_dir / ("clips-tease" if job.kind == "tease" else "clips")
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
 
     if dry_run:
@@ -68,6 +68,13 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
     if not job.speakers:
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
     spk = next(iter(job.speakers.values()))
+
+    # A saved voice cast wins over cloning: the assigned voicebox profile is used
+    # directly, keeping the voice consistent with the teaser / previous runs.
+    assigned = ((cast or {}).get(spk.label) or {}).get("voice")
+    if assigned and not spk.voicebox_profile_id:
+        spk.voicebox_profile_id = assigned
+        log.info("  using cast voice %s for %s", assigned, spk.label)
 
     # Clone one voice from the longest segment's original audio.
     if voice_mode == "clone" and not spk.voicebox_profile_id:
