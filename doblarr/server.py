@@ -21,15 +21,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import discovery, plex_labels
 from .auth import build_api_key_dependency
 from .cache import TTLCache
-from .clients.plex import PlexClient, PlexError
-from .clients.radarr import RadarrClient, RadarrError
-from .clients.sonarr import SonarrClient, SonarrError
-from .clients.voicebox import VoiceboxClient, VoiceboxError
+from .clients.plex import PlexError
+from .clients.radarr import RadarrError
+from .clients.sonarr import SonarrError
+from .clients.voicebox import VoiceboxError
 from .config import Config
 from .errors import ConfigError, DoblarrError, NotFoundError
 from .events import EventBus
 from .jobs import JobStore, Worker
 from .scheduler import Scheduler
+from .services import Services
 
 log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -56,8 +57,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     # the app lifespan and are stopped (and joined) on shutdown.
     store = JobStore(config.work_dir / "jobs.json")
     bus = EventBus()
+    services = Services(config)
     worker = Worker(store, config, dry_run=config["dub"].get("dry_run", True),
-                    events=bus)
+                    events=bus, services=services)
     scheduler = Scheduler(config, lambda: _scan_and_maybe_label(), events=bus)
     scan_cache = TTLCache(max_size=4)
     status_state: dict = {"last_scan": None, "counts": None}
@@ -79,6 +81,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.worker = worker
     app.state.scheduler = scheduler
     app.state.events = bus
+    app.state.services = services
 
     @app.exception_handler(DoblarrError)
     async def doblarr_error_handler(request: Request, exc: DoblarrError):
@@ -109,7 +112,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             problems.append("no library source configured "
                             "(connect.radarr_* / connect.sonarr_*)")
         try:
-            VoiceboxClient(config["voicebox"]["base_url"]).health(timeout=4)
+            services.voicebox.health(timeout=4)
         except VoiceboxError as exc:
             problems.append(f"voicebox: {exc}")
         if problems:
@@ -151,7 +154,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             config.apply_and_save(changes)
         except OSError as exc:
             raise DoblarrError(f"could not write {config.path}: {exc}") from exc
-        scan_cache.clear()  # connection/discovery settings may have changed
+        scan_cache.clear()    # connection/discovery settings may have changed
+        services.invalidate()  # rebuild clients with the new keys/URLs
         return {"ok": True, "saved_to": str(config.path),
                 "config": config.as_dict(redact_secrets=True)}
 
@@ -167,26 +171,27 @@ def create_app(config: Config | None = None) -> FastAPI:
             if cached is not None:
                 return cached
         targets = config["general"]["target_languages"]
-        conn = config.get("connect", {})
         disc = config.get("discovery", {})
         only_foreign = disc.get("only_original_foreign", True)
         undefined = disc.get("treat_undefined_as", "original")
         items: list = []
         warnings: list[str] = []
-        if conn.get("radarr_url") and conn.get("radarr_api_key"):
-            try:
-                movies = RadarrClient(conn["radarr_url"], conn["radarr_api_key"]).list_movies()
-                items += discovery.scan_radarr(movies, targets,
-                    only_original_foreign=only_foreign, treat_undefined_as=undefined)
-            except RadarrError as exc:
-                warnings.append(f"Radarr: {exc}")
-        if conn.get("sonarr_url") and conn.get("sonarr_api_key"):
-            try:
-                sc = SonarrClient(conn["sonarr_url"], conn["sonarr_api_key"])
-                items += discovery.scan_sonarr(sc.list_series(), sc.episode_files, targets,
-                    only_original_foreign=only_foreign, treat_undefined_as=undefined)
-            except SonarrError as exc:
-                warnings.append(f"Sonarr: {exc}")
+        try:
+            movies = services.radarr.list_movies()
+            items += discovery.scan_radarr(movies, targets,
+                only_original_foreign=only_foreign, treat_undefined_as=undefined)
+        except ConfigError:
+            pass  # Radarr not configured
+        except RadarrError as exc:
+            warnings.append(f"Radarr: {exc}")
+        try:
+            sc = services.sonarr
+            items += discovery.scan_sonarr(sc.list_series(), sc.episode_files, targets,
+                only_original_foreign=only_foreign, treat_undefined_as=undefined)
+        except ConfigError:
+            pass  # Sonarr not configured
+        except SonarrError as exc:
+            warnings.append(f"Sonarr: {exc}")
         discovery.sort_items(items)
         status_state["last_scan"] = _dt.datetime.now().isoformat(timespec="seconds")
         status_state["counts"] = discovery.summarize(items)
@@ -196,12 +201,11 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     def _scan_and_maybe_label():
         items, _ = _scan_library(force=True)  # a scheduled rescan refreshes the cache
-        conn = config.get("connect", {})
-        if config.get("filtering", {}).get("auto_label") \
-                and conn.get("plex_url") and conn.get("plex_token"):
+        if config.get("filtering", {}).get("auto_label"):
             try:
-                plex_labels.sync_labels(
-                    items, PlexClient(conn["plex_url"], conn["plex_token"]), config, apply=True)
+                plex_labels.sync_labels(items, services.plex, config, apply=True)
+            except ConfigError:
+                pass  # Plex not configured
             except PlexError as exc:
                 log.warning("auto label sync failed: %s", exc)
         return status_state["counts"]
@@ -233,13 +237,9 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @api.post("/api/plex/labels")
     def plex_sync_labels(body: PlexLabelsIn):
-        conn = config.get("connect", {})
-        if not conn.get("plex_url") or not conn.get("plex_token"):
-            raise ConfigError("Plex is not configured "
-                              "(connect.plex_url / connect.plex_token).")
         items, _ = _scan_library()
-        plex = PlexClient(conn["plex_url"], conn["plex_token"])
-        return plex_labels.sync_labels(items, plex, config, apply=body.apply)
+        # ConfigError (Plex not configured) maps to 400; PlexError to 502.
+        return plex_labels.sync_labels(items, services.plex, config, apply=body.apply)
 
     @api.get("/api/jobs")
     def list_jobs():

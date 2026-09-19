@@ -6,10 +6,10 @@ import logging
 import threading
 
 from .clients.translator import build_translator
-from .clients.voicebox import VoiceboxClient
 from .config import Config
 from .errors import JobCancelled
 from .models import DubJob
+from .services import Services
 from .stages import (
     diarize,
     extract,
@@ -26,7 +26,8 @@ log = logging.getLogger("doblarr.pipeline")
 
 
 def run_job(job: DubJob, config: Config, dry_run: bool = False,
-            on_stage=None, cancel_event: threading.Event | None = None) -> DubJob:
+            on_stage=None, cancel_event: threading.Event | None = None,
+            services: Services | None = None) -> DubJob:
     """Run every stage in order, mutating and returning the job.
 
     `on_stage(name, index, total)` is called before each stage, so a caller (the
@@ -34,12 +35,12 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     raise JobCancelled when set — and handed to the ffmpeg-bound stages, so a
     cancel kills an in-flight ffmpeg run. Note: a cancel while waiting on a
     voicebox *remote* generation aborts the wait but leaves the server-side
-    generation running (voicebox has no cancel endpoint).
+    generation running (voicebox has no cancel endpoint). `services` supplies
+    the voicebox client; one is built from config when not given (CLI path).
     """
     work = config.work_dir
     out = config.output_dir
-    vb = VoiceboxClient(config["voicebox"]["base_url"],
-                        timeout=config["voicebox"]["timeout_seconds"])
+    vb = (services or Services(config)).voicebox
     translator = build_translator(config["translate"]["provider"],
                                   config["translate"]["model"], voicebox_client=vb)
     seg_limit = config["dub"].get("segment_limit")

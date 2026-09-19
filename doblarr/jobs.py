@@ -122,12 +122,14 @@ class JobStore:
 class Worker(threading.Thread):
     daemon = True
 
-    def __init__(self, store: JobStore, config, dry_run: bool = True, events=None):
+    def __init__(self, store: JobStore, config, dry_run: bool = True, events=None,
+                 services=None):
         super().__init__(name="doblarr-worker")
         self.store = store
         self.config = config
         self.dry_run = dry_run
         self.events = events
+        self.services = services
         self._stop_evt = threading.Event()
         self._pause = threading.Event()
         self._current_id: str | None = None
@@ -196,7 +198,7 @@ class Worker(threading.Thread):
                 target_lang=job.target_lang,
             )
             run_job(dj, self.config, dry_run=dry_run, on_stage=on_stage,
-                    cancel_event=cancel_evt)
+                    cancel_event=cancel_evt, services=self.services)
             out = str(dj.output_file) if dj.output_file else "(planned)"
             message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
