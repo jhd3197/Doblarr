@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Doblarr runtime
+config.yaml          # local config with secrets — copy from config.example.yaml
+work/                # scratch: extracted audio, stems, generated clips
+output/              # finished dub tracks / remuxed files
+*.log
+
+# Media (never commit sample movies/audio)
+*.mkv
+*.mp4
+*.mov
+*.wav
+*.flac
+*.mp3
+*.srt
+*.ass
+
+# ML model caches
+models/
+.cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

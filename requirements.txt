@@ -1,0 +1,18 @@
+# --- Core (needed to run the skeleton + CLI in --dry-run) ---
+requests>=2.31
+PyYAML>=6.0
+pysubs2>=1.6          # read/parse .srt/.ass subtitle files
+
+# --- Translation (optional, for the real translate stage) ---
+# anthropic>=0.40     # Claude-based translation
+
+# --- Heavy ML deps (only needed when running real stages, install separately) ---
+# These are large and GPU-specific — keep them out of the base install.
+# torch                # match your CUDA build from https://pytorch.org
+# demucs>=4.0          # music/vocal source separation
+# whisperx             # transcription + word-level alignment
+# pyannote.audio>=3.1  # speaker diarization (needs a HuggingFace token)
+
+# --- Note ---
+# TTS + voice cloning are NOT installed here — Doblarr calls the voicebox
+# service over HTTP instead (see doblarr/clients/voicebox.py).

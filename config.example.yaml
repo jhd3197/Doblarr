@@ -1,0 +1,40 @@
+# Doblarr configuration — copy to config.yaml and edit.
+# config.yaml is gitignored (it may hold tokens).
+
+# Working directories
+paths:
+  work_dir: ./work        # scratch space for audio/stems/clips
+  output_dir: ./output    # finished tracks / remuxed files
+
+# voicebox service (the TTS + voice-cloning engine Doblarr calls)
+voicebox:
+  # Installed/native app default: 17493.  Docker maps host 17600 -> 17493.
+  base_url: http://127.0.0.1:17493
+  timeout_seconds: 600
+  # Which TTS engine profile voicebox should use (see voicebox docs).
+  default_engine: chatterbox-multilingual
+
+# Translation
+translate:
+  provider: claude              # claude | passthrough (stub)
+  model: claude-sonnet-5        # used when provider = claude
+  # api_key is read from the ANTHROPIC_API_KEY env var, not stored here.
+
+# Transcription / alignment
+transcribe:
+  source: subtitles             # subtitles | whisper
+  whisper_model: large-v3       # used when source = whisper
+  diarize: true                 # split speakers with pyannote
+  # hf_token read from HF_TOKEN env var (pyannote needs it)
+
+# Source separation
+separate:
+  model: htdemucs_ft            # keep music+FX, replace only dialogue
+
+# Dubbing behaviour
+dub:
+  voice_mode: clone             # clone (per-speaker cloned voice) | preset
+  duration_match: true          # time-fit each line to the original slot
+  max_fit_attempts: 5           # shorten/retranslate to fit before stretching
+  ducking_ratio: "12:1"         # sidechain ducking of background under speech
+  track_name_template: "AI - {language}"   # label muxed into the container
