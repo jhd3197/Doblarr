@@ -121,6 +121,14 @@ def create_app(config: Config | None = None) -> FastAPI:
         from dataclasses import asdict
         return {"ok": True, "job": asdict(job)}
 
+    @app.post("/api/jobs/clear-finished")
+    def clear_finished():
+        return {"ok": True, "removed": store.clear_finished()}
+
+    @app.delete("/api/jobs/{job_id}")
+    def delete_job(job_id: str):
+        return {"ok": store.remove(job_id)}
+
     # Static UI last, so /api/* routes take precedence over the catch-all mount.
     if WEB_DIR.exists():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

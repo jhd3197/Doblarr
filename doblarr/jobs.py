@@ -83,6 +83,22 @@ class JobStore:
             job.updated_at = _now()
             self._save()
 
+    def remove(self, job_id: str) -> bool:
+        with self._lock:
+            existed = self._jobs.pop(job_id, None) is not None
+            if existed:
+                self._save()
+            return existed
+
+    def clear_finished(self) -> int:
+        with self._lock:
+            ids = [i for i, j in self._jobs.items() if j.status in ("done", "failed")]
+            for i in ids:
+                del self._jobs[i]
+            if ids:
+                self._save()
+            return len(ids)
+
     def next_queued(self) -> Job | None:
         with self._lock:
             queued = [j for j in self._jobs.values() if j.status == "queued"]

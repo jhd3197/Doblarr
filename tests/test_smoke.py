@@ -92,3 +92,8 @@ def test_job_store_persist():
         assert s.counts() == {"queued": 0, "running": 0, "done": 1, "failed": 0}
         # survives reload
         assert JobStore(p).list()[0]["status"] == "done"
+        # clear finished
+        s.add(title="Still queued", source="Radarr", source_lang="ja", target_lang="en")
+        assert s.clear_finished() == 1          # only the done one
+        assert s.counts()["queued"] == 1
+        assert s.counts()["done"] == 0
