@@ -165,13 +165,12 @@
 
   <main style="min-width: 0; display: flex; flex-direction: column;">
     <header style="display: flex; align-items: center; gap: 14px; padding: 14px 26px; border-bottom: 1px solid var(--line); background: var(--color-bg); position: sticky; top: 0; z-index: 10;">
-      <input class="input" type="search" placeholder="Search titles, speakers, jobs…" style="max-width: 420px;">
+      <input id="globalSearch" class="input" type="search" placeholder="Search titles on this page…" style="max-width: 420px;">
       <div class="themebtn" style="margin-left: auto;" id="themebtn">
         <button type="button" data-theme-set="light">Light</button>
         <button type="button" data-theme-set="dark">Dark</button>
       </div>
-      <span class="tag tag-neutral">Queue 14</span>
-      <button type="button" class="btn btn-primary">New dub</button>
+      <button type="button" class="btn btn-primary" id="newDubBtn">New dub</button>
     </header>
 
     <!-- ===== Overview ===== -->
@@ -452,6 +451,31 @@
       </div>
     </section>
   </main>
+
+  <div id="newDubModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;">
+    <div class="panel" style="width:min(440px,92vw);padding:22px 24px;">
+      <h3 style="margin:0 0 4px;font-size:18px;">New dub</h3>
+      <p style="margin:0 0 16px;font-size:13px;color:var(--muted);">Queue a title manually.</p>
+      <label style="display:block;font-size:13px;font-weight:600;margin:10px 0 4px;">Title</label>
+      <input id="ndTitle" class="input" type="text" placeholder="e.g. Godzilla Minus One">
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;">
+          <label style="display:block;font-size:13px;font-weight:600;margin:10px 0 4px;">From</label>
+          <input id="ndFrom" class="input m" type="text" value="auto">
+        </div>
+        <div style="flex:1;">
+          <label style="display:block;font-size:13px;font-weight:600;margin:10px 0 4px;">To</label>
+          <input id="ndTo" class="input m" type="text" value="en">
+        </div>
+      </div>
+      <label style="display:block;font-size:13px;font-weight:600;margin:10px 0 4px;">File path <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+      <input id="ndPath" class="input m" type="text" placeholder="M:/Plex/Movies/…/film.mkv">
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+        <button type="button" class="btn btn-secondary" id="ndCancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="ndQueue">Queue dub</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -663,7 +687,11 @@ const TABS = [
 
 // ---- App state + rendering (vanilla, no framework) ----
 const app = document.getElementById("app");
-const state = { page: "Overview", tab: "connections", keys: false, vals: {}, config: null };
+const state = { page: "Overview", tab: "connections", keys: false, vals: {}, config: null, search: "" };
+
+function matchesSearch(title) {
+  return !state.search || String(title).toLowerCase().includes(state.search);
+}
 
 // Flat lookup of every settings field by its config key.
 const FIELD_BY_KEY = {};
@@ -708,9 +736,10 @@ function statusTag(label) {
 
 function renderLibrary() {
   const body = document.getElementById("libraryBody");
-  const rows = library.items.filter(i => library.filter === "all" || i.status === library.filter);
+  const rows = library.items.filter(i =>
+    (library.filter === "all" || i.status === library.filter) && matchesSearch(i.title));
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No titles match this filter.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No titles match.</td></tr>`;
     return;
   }
   library.rendered = rows;
@@ -834,9 +863,10 @@ function jobStatusTag(s) {
 }
 
 function renderJobs(data) {
+  jobs.lastData = data;
   const body = document.getElementById("dubsBody");
   const meta = document.getElementById("dubsMeta");
-  const list = data.jobs || [];
+  const list = (data.jobs || []).filter(j => matchesSearch(j.title));
   const c = data.counts || {};
   meta.textContent = `${c.running || 0} running · ${c.queued || 0} queued · ${c.done || 0} done · ${c.failed || 0} failed`;
 
@@ -1048,6 +1078,45 @@ document.getElementById("dubsBody").addEventListener("click", async e => {
   btn.disabled = true;
   try { await fetch("api/jobs/" + btn.dataset.id, { method: "DELETE" }); } catch (err) {}
   loadJobs();
+});
+
+// Global search: filters the current page's list by title.
+document.getElementById("globalSearch").addEventListener("input", e => {
+  state.search = e.target.value.trim().toLowerCase();
+  if (state.page === "Library" && library.loaded) renderLibrary();
+  else if (state.page === "Dubs" && jobs.lastData) renderJobs(jobs.lastData);
+});
+
+// New dub modal (manual enqueue).
+const newDubModal = document.getElementById("newDubModal");
+function openNewDub() {
+  document.getElementById("ndTitle").value = "";
+  document.getElementById("ndFrom").value = "auto";
+  document.getElementById("ndTo").value = (library.targets && library.targets[0]) || "en";
+  document.getElementById("ndPath").value = "";
+  newDubModal.hidden = false;
+  document.getElementById("ndTitle").focus();
+}
+function closeNewDub() { newDubModal.hidden = true; }
+document.getElementById("newDubBtn").addEventListener("click", openNewDub);
+document.getElementById("ndCancel").addEventListener("click", closeNewDub);
+newDubModal.addEventListener("click", e => { if (e.target === newDubModal) closeNewDub(); });
+document.getElementById("ndQueue").addEventListener("click", async () => {
+  const title = document.getElementById("ndTitle").value.trim();
+  if (!title) { document.getElementById("ndTitle").focus(); return; }
+  try {
+    await fetch("api/jobs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title, source: "manual",
+        source_lang: document.getElementById("ndFrom").value.trim() || "auto",
+        target_lang: document.getElementById("ndTo").value.trim() || "en",
+        path: document.getElementById("ndPath").value.trim() || null,
+      }),
+    });
+  } catch (e) {}
+  closeNewDub();
+  setPage("Dubs");
 });
 
 // ---- Init ----
