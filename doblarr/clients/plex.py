@@ -3,49 +3,33 @@
 Labels are added/removed non-destructively: `label[0].tag.tag=X` adds X while
 keeping every existing label (Kometa's included), and `label[].tag.tag-=X` removes
 just X. `label.locked=1` keeps the label through metadata refreshes.
+
+The token travels in the `X-Plex-Token` header, not the query string, so it
+stays out of URLs (and any logs that record them).
 """
 
 from __future__ import annotations
 
-import requests
+from ..errors import ArrClientError
+from .base import ArrClient
 
 TYPE_NUM = {"movie": 1, "show": 2}
 
 
-class PlexError(RuntimeError):
+class PlexError(ArrClientError, RuntimeError):
     pass
 
 
-class PlexClient:
+class PlexClient(ArrClient):
+    service = "Plex"
+    auth_label = "token"
+    error_cls = PlexError
+
     def __init__(self, base_url: str, token: str, timeout: int = 30):
-        self.base_url = base_url.rstrip("/")
+        super().__init__(base_url, timeout=timeout,
+                         headers={"X-Plex-Token": token,
+                                  "Accept": "application/json"})
         self.token = token
-        self.timeout = timeout
-
-    def _get(self, path: str, params: dict | None = None) -> dict:
-        p = {"X-Plex-Token": self.token}
-        if params:
-            p.update(params)
-        try:
-            r = requests.get(f"{self.base_url}{path}", params=p,
-                             headers={"Accept": "application/json"}, timeout=self.timeout)
-        except requests.RequestException as exc:
-            raise PlexError(f"Plex unreachable at {self.base_url}: {exc}")
-        if r.status_code == 401:
-            raise PlexError("Plex rejected the token (401)")
-        if not r.ok:
-            raise PlexError(f"Plex {r.status_code} on {path}: {r.text[:200]}")
-        return r.json()
-
-    def _put(self, path: str, params: dict) -> None:
-        p = {"X-Plex-Token": self.token}
-        p.update(params)
-        try:
-            r = requests.put(f"{self.base_url}{path}", params=p, timeout=self.timeout)
-        except requests.RequestException as exc:
-            raise PlexError(f"Plex unreachable at {self.base_url}: {exc}")
-        if not r.ok:
-            raise PlexError(f"Plex {r.status_code} on PUT {path}: {r.text[:200]}")
 
     def sections(self) -> list[dict]:
         data = self._get("/library/sections")

@@ -2,30 +2,22 @@
 
 from __future__ import annotations
 
-import requests
+from ..errors import ArrClientError
+from .base import ArrClient
 
 
-class RadarrError(RuntimeError):
+class RadarrError(ArrClientError, RuntimeError):
     pass
 
 
-class RadarrClient:
-    def __init__(self, base_url: str, api_key: str, timeout: int = 30):
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-        self.timeout = timeout
+class RadarrClient(ArrClient):
+    service = "Radarr"
+    error_cls = RadarrError
 
-    def _get(self, path: str):
-        try:
-            r = requests.get(f"{self.base_url}{path}",
-                             headers={"X-Api-Key": self.api_key}, timeout=self.timeout)
-        except requests.RequestException as exc:
-            raise RadarrError(f"Radarr unreachable at {self.base_url}: {exc}")
-        if r.status_code == 401:
-            raise RadarrError("Radarr rejected the API key (401)")
-        if not r.ok:
-            raise RadarrError(f"Radarr {r.status_code} on {path}: {r.text[:200]}")
-        return r.json()
+    def __init__(self, base_url: str, api_key: str, timeout: int = 30):
+        super().__init__(base_url, timeout=timeout,
+                         headers={"X-Api-Key": api_key})
+        self.api_key = api_key
 
     def system_status(self) -> dict:
         return self._get("/api/v3/system/status")

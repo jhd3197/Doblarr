@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import copy
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from .config_schema import validate_config
+
+log = logging.getLogger("doblarr.config")
+
 DEFAULTS: dict[str, Any] = {
     "paths": {"work_dir": "./work", "output_dir": "./output"},
     "general": {"target_languages": ["en", "es"]},
-    "web": {"host": "127.0.0.1", "port": 6363},
+    "web": {"host": "127.0.0.1", "port": 6363, "api_key": ""},
     "connect": {"radarr_url": None, "radarr_api_key": None,
                 "sonarr_url": None, "sonarr_api_key": None,
                 "plex_url": None, "plex_token": None},
@@ -54,6 +60,21 @@ SECRET_KEYS = {
     "web.api_key", "notify.discord_webhook",
 }
 SECRET_SENTINEL = "••••••"
+
+# Environment variables that override the matching YAML value when set
+# (documented in config.example.yaml).
+ENV_OVERRIDES = {
+    "DOBLARR_RADARR_API_KEY": ("connect", "radarr_api_key"),
+    "DOBLARR_SONARR_API_KEY": ("connect", "sonarr_api_key"),
+    "DOBLARR_PLEX_TOKEN": ("connect", "plex_token"),
+}
+
+
+def _apply_env_overrides(data: dict) -> None:
+    for env_var, (section, key) in ENV_OVERRIDES.items():
+        value = os.environ.get(env_var)
+        if value:
+            data.setdefault(section, {})[key] = value
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -143,6 +164,8 @@ class Config:
         merged_user = _deep_merge(load_user_data(self._path), clean)
         save_user_data(self._path, merged_user)
         self._data = _deep_merge(DEFAULTS, merged_user)
+        _apply_env_overrides(self._data)
+        validate_config(self._data)
         return merged_user
 
     @classmethod
@@ -152,4 +175,6 @@ class Config:
         candidate = Path(path) if path else Path("config.yaml")
         if candidate.exists():
             data = _deep_merge(data, load_user_data(candidate))
+        _apply_env_overrides(data)
+        validate_config(data)
         return cls(data, path=candidate)

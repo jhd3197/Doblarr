@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import discovery, plex_labels
+from .auth import build_api_key_dependency
 from .clients.plex import PlexClient, PlexError
 from .clients.radarr import RadarrClient, RadarrError
 from .clients.sonarr import SonarrClient, SonarrError
 from .config import Config
+from .errors import ConfigError, DoblarrError, NotFoundError
 from .jobs import JobStore, Worker
 from .scheduler import Scheduler
 
@@ -22,9 +28,35 @@ log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
+class PlexLabelsIn(BaseModel):
+    apply: bool = False
+
+
+class JobCreateIn(BaseModel):
+    title: str = Field(min_length=1)
+    source: str = "manual"
+    source_lang: str = "auto"
+    target_lang: str | None = None
+    path: str | None = None
+
+
 def create_app(config: Config | None = None) -> FastAPI:
     config = config or Config.load()
     app = FastAPI(title="Doblarr", version="0.1.0")
+
+    @app.exception_handler(DoblarrError)
+    async def doblarr_error_handler(request: Request, exc: DoblarrError):
+        return JSONResponse(status_code=exc.http_status,
+                            content={"error": str(exc)})
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error_handler(request: Request, exc: StarletteHTTPException):
+        return JSONResponse(status_code=exc.status_code,
+                            content={"error": exc.detail})
+
+    # All /api/* routes require web.api_key (when configured); the static UI
+    # mount below does not.
+    api = APIRouter(dependencies=[Depends(build_api_key_dependency(config))])
 
     # Job queue + background worker (dry-run until heavy deps + voicebox are ready).
     store = JobStore(config.work_dir / "jobs.json")
@@ -33,27 +65,20 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.jobs = store
     app.state.worker = worker
 
-    @app.get("/api/health")
+    @api.get("/api/health")
     def health():
         return {"ok": True, "service": "doblarr", "web_dir": str(WEB_DIR)}
 
-    @app.get("/api/config")
+    @api.get("/api/config")
     def get_config():
         return config.as_dict(redact_secrets=True)
 
-    @app.post("/api/config")
-    async def post_config(request: Request):
-        try:
-            changes = await request.json()
-        except Exception:
-            return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
-        if not isinstance(changes, dict):
-            return JSONResponse(status_code=400, content={"error": "expected a config object"})
+    @api.post("/api/config")
+    def post_config(changes: dict[str, Any]):
         try:
             config.apply_and_save(changes)
         except OSError as exc:
-            return JSONResponse(status_code=500,
-                                content={"error": f"could not write {config.path}: {exc}"})
+            raise DoblarrError(f"could not write {config.path}: {exc}")
         return {"ok": True, "saved_to": str(config.path),
                 "config": config.as_dict(redact_secrets=True)}
 
@@ -100,7 +125,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     scheduler.start()
     app.state.scheduler = scheduler
 
-    @app.get("/api/status")
+    @api.get("/api/status")
     def status():
         return {
             "last_scan": status_state["last_scan"],
@@ -111,13 +136,12 @@ def create_app(config: Config | None = None) -> FastAPI:
             "queue_paused": worker.paused,
         }
 
-    @app.get("/api/library")
+    @api.get("/api/library")
     def library():
         items, warnings = _scan_library()
         if not items and not warnings:
-            return JSONResponse(status_code=400,
-                                content={"error": "No sources configured "
-                                         "(connect.radarr_* / connect.sonarr_*)."})
+            raise ConfigError("No sources configured "
+                              "(connect.radarr_* / connect.sonarr_*).")
         return {
             "generated_at": _dt.datetime.now().isoformat(timespec="seconds"),
             "target_languages": config["general"]["target_languages"],
@@ -126,67 +150,53 @@ def create_app(config: Config | None = None) -> FastAPI:
             "items": discovery.to_dicts(items),
         }
 
-    @app.post("/api/plex/labels")
-    async def plex_sync_labels(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        apply = bool((body or {}).get("apply", False))
+    @api.post("/api/plex/labels")
+    def plex_sync_labels(body: PlexLabelsIn):
         conn = config.get("connect", {})
         if not conn.get("plex_url") or not conn.get("plex_token"):
-            return JSONResponse(status_code=400,
-                                content={"error": "Plex is not configured "
-                                         "(connect.plex_url / connect.plex_token)."})
+            raise ConfigError("Plex is not configured "
+                              "(connect.plex_url / connect.plex_token).")
         items, _ = _scan_library()
-        try:
-            plex = PlexClient(conn["plex_url"], conn["plex_token"])
-            report = plex_labels.sync_labels(items, plex, config, apply=apply)
-        except PlexError as exc:
-            return JSONResponse(status_code=502, content={"error": str(exc)})
-        return report
+        plex = PlexClient(conn["plex_url"], conn["plex_token"])
+        return plex_labels.sync_labels(items, plex, config, apply=body.apply)
 
-    @app.get("/api/jobs")
+    @api.get("/api/jobs")
     def list_jobs():
         return {"jobs": store.list(), "counts": store.counts(), "paused": worker.paused}
 
-    @app.post("/api/queue/pause")
+    @api.post("/api/queue/pause")
     def pause_queue():
         worker.pause()
         return {"paused": True}
 
-    @app.post("/api/queue/resume")
+    @api.post("/api/queue/resume")
     def resume_queue():
         worker.resume()
         return {"paused": False}
 
-    @app.post("/api/jobs")
-    async def create_job(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
-        title = (body or {}).get("title")
-        if not title:
-            return JSONResponse(status_code=400, content={"error": "title is required"})
+    @api.post("/api/jobs")
+    def create_job(body: JobCreateIn):
         default_target = config["general"]["target_languages"][0]
         job = store.add(
-            title=title,
-            source=body.get("source", "manual"),
-            source_lang=body.get("source_lang", "auto"),
-            target_lang=body.get("target_lang", default_target),
-            input_file=body.get("path"),
+            title=body.title,
+            source=body.source,
+            source_lang=body.source_lang,
+            target_lang=body.target_lang or default_target,
+            input_file=body.path,
         )
-        from dataclasses import asdict
         return {"ok": True, "job": asdict(job)}
 
-    @app.post("/api/jobs/clear-finished")
+    @api.post("/api/jobs/clear-finished")
     def clear_finished():
         return {"ok": True, "removed": store.clear_finished()}
 
-    @app.delete("/api/jobs/{job_id}")
+    @api.delete("/api/jobs/{job_id}")
     def delete_job(job_id: str):
-        return {"ok": store.remove(job_id)}
+        if not store.remove(job_id):
+            raise NotFoundError(f"no job with id {job_id}")
+        return {"ok": True}
+
+    app.include_router(api)
 
     # Static UI last, so /api/* routes take precedence over the catch-all mount.
     if WEB_DIR.exists():

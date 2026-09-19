@@ -18,44 +18,32 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import requests
+from ..errors import ArrClientError
+from .base import ArrClient
 
 
-class VoiceboxError(RuntimeError):
+class VoiceboxError(ArrClientError, RuntimeError):
     pass
 
 
-class VoiceboxClient:
+class VoiceboxClient(ArrClient):
+    service = "voicebox"
+    error_cls = VoiceboxError
+
     def __init__(self, base_url: str, timeout: int = 600):
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-
-    # -- internals --------------------------------------------------------
-    def _url(self, path: str) -> str:
-        return f"{self.base_url}{path}"
-
-    def _json(self, resp: requests.Response) -> dict:
-        if not resp.ok:
-            raise VoiceboxError(f"{resp.status_code} {resp.request.method} "
-                                f"{resp.url}: {resp.text[:300]}")
-        return resp.json()
+        super().__init__(base_url, timeout=timeout)
 
     # -- health -----------------------------------------------------------
     def health(self) -> dict:
         """Return service health, or raise if unreachable."""
-        try:
-            resp = requests.get(self._url("/health"), timeout=15)
-        except requests.RequestException as exc:
-            raise VoiceboxError(f"voicebox unreachable at {self.base_url}: {exc}")
-        return self._json(resp)
+        return self._get("/health", timeout=15)
 
     # -- local LLM (translation, refinement) ------------------------------
     def llm_generate(self, prompt: str, system: str | None = None) -> str:
         payload: dict = {"prompt": prompt}
         if system:
             payload["system"] = system
-        data = self._json(requests.post(self._url("/llm/generate"), json=payload,
-                                        timeout=self.timeout))
+        data = self._post("/llm/generate", json=payload)
         # Accept a few common shapes.
         return (data.get("text") or data.get("response") or data.get("output") or "").strip()
 
@@ -64,16 +52,13 @@ class VoiceboxClient:
         with open(audio, "rb") as fh:
             files = {"file": (audio.name, fh)}
             data = {"language": language} if language else {}
-            resp = requests.post(self._url("/transcribe"), files=files,
-                                 data=data, timeout=self.timeout)
-        return self._json(resp)
+            return self._post("/transcribe", files=files, data=data)
 
     # -- voice profiles (cloning) -----------------------------------------
     def create_profile(self, name: str, language: str,
                        description: str = "") -> str:
         payload = {"name": name, "language": language, "description": description}
-        data = self._json(requests.post(self._url("/profiles"), json=payload,
-                                        timeout=self.timeout))
+        data = self._post("/profiles", json=payload)
         profile_id = data.get("id") or data.get("profile_id")
         if not profile_id:
             raise VoiceboxError(f"no profile id in response: {data}")
@@ -83,9 +68,8 @@ class VoiceboxClient:
         with open(sample, "rb") as fh:
             files = {"file": (sample.name, fh)}
             data = {"reference_text": reference_text}
-            resp = requests.post(self._url(f"/profiles/{profile_id}/samples"),
-                                 files=files, data=data, timeout=self.timeout)
-        return self._json(resp)
+            return self._post(f"/profiles/{profile_id}/samples",
+                              files=files, data=data)
 
     # -- speech generation ------------------------------------------------
     def generate(self, profile_id: str, text: str, language: str,
@@ -95,8 +79,7 @@ class VoiceboxClient:
             payload["seed"] = seed
         if model_size is not None:
             payload["model_size"] = model_size
-        data = self._json(requests.post(self._url("/generate"), json=payload,
-                                        timeout=self.timeout))
+        data = self._post("/generate", json=payload)
         gen_id = data.get("id") or data.get("generation_id")
         if not gen_id:
             raise VoiceboxError(f"no generation id in response: {data}")
@@ -110,8 +93,7 @@ class VoiceboxClient:
         """
         deadline = time.time() + self.timeout
         while time.time() < deadline:
-            data = self._json(requests.get(
-                self._url(f"/history/{generation_id}"), timeout=30))
+            data = self._get(f"/history/{generation_id}", timeout=30)
             status = (data.get("status") or "").lower()
             if status in {"done", "completed", "success", "ready"}:
                 return
@@ -122,10 +104,7 @@ class VoiceboxClient:
         raise VoiceboxError(f"generation {generation_id} timed out")
 
     def download_audio(self, generation_id: str, dest: Path) -> Path:
-        resp = requests.get(self._url(f"/audio/{generation_id}"),
-                            timeout=self.timeout)
-        if not resp.ok:
-            raise VoiceboxError(f"audio fetch {generation_id}: {resp.status_code}")
+        resp = self._request("GET", f"/audio/{generation_id}")
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(resp.content)
         return dest

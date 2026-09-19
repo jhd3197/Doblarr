@@ -1,0 +1,111 @@
+"""Pydantic schema for config.yaml — validates known fields at load time.
+
+Validation is advisory: unknown keys are allowed (older/newer configs keep
+working) and wrong types log a warning instead of aborting the load. The
+runtime still accesses config as plain dicts via `doblarr.config.Config`.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+log = logging.getLogger("doblarr.config")
+
+
+class _Section(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class PathsModel(_Section):
+    work_dir: str = "./work"
+    output_dir: str = "./output"
+
+
+class GeneralModel(_Section):
+    target_languages: list[str] = ["en", "es"]
+
+
+class WebModel(_Section):
+    host: str = "127.0.0.1"
+    port: int = 6363
+    api_key: str = ""
+
+
+class ConnectModel(_Section):
+    radarr_url: str | None = None
+    radarr_api_key: str | None = None
+    sonarr_url: str | None = None
+    sonarr_api_key: str | None = None
+    plex_url: str | None = None
+    plex_token: str | None = None
+
+
+class DiscoveryModel(_Section):
+    only_original_foreign: bool = True
+    treat_undefined_as: str = "original"
+    rescan_interval: str = "6h"
+    auto_scan: bool = False
+
+
+class FilteringModel(_Section):
+    tag_missing_dub: str = "needs-dub"
+    hidden_collection_name: str = "Not in your language"
+    kometa_handoff: bool = True
+    kometa_file: str | None = None
+    auto_label: bool = False
+
+
+class VoiceboxModel(_Section):
+    base_url: str = "http://127.0.0.1:17493"
+    timeout_seconds: int = 600
+    default_engine: str = "chatterbox-multilingual"
+
+
+class TranslateModel(_Section):
+    provider: str = "claude"
+    model: str = "claude-sonnet-5"
+
+
+class TranscribeModel(_Section):
+    source: str = "subtitles"
+    whisper_model: str = "large-v3"
+    diarize: bool = True
+
+
+class SeparateModel(_Section):
+    model: str = "htdemucs_ft"
+
+
+class DubModel(_Section):
+    voice_mode: str = "clone"
+    duration_match: bool = True
+    max_fit_attempts: int = 5
+    ducking_ratio: str = "12:1"
+    track_name_template: str = "AI - {language}"
+    segment_limit: int | None = None
+
+
+class ConfigModel(_Section):
+    paths: PathsModel = PathsModel()
+    general: GeneralModel = GeneralModel()
+    web: WebModel = WebModel()
+    connect: ConnectModel = ConnectModel()
+    discovery: DiscoveryModel = DiscoveryModel()
+    filtering: FilteringModel = FilteringModel()
+    voicebox: VoiceboxModel = VoiceboxModel()
+    translate: TranslateModel = TranslateModel()
+    transcribe: TranscribeModel = TranscribeModel()
+    separate: SeparateModel = SeparateModel()
+    dub: DubModel = DubModel()
+
+
+def validate_config(data: dict) -> None:
+    """Log a clear warning for every schema violation in the merged config."""
+    try:
+        ConfigModel.model_validate(data)
+    except ValidationError as exc:
+        for err in exc.errors():
+            loc = ".".join(str(p) for p in err["loc"])
+            log.warning("config: invalid value at %s: %s", loc, err["msg"])

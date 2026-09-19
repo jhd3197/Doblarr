@@ -481,6 +481,27 @@
 </div>
 
 <script>
+// ---- API-key aware fetch (wraps window.fetch; all api/* calls go through it) ----
+(function () {
+  const rawFetch = window.fetch.bind(window);
+  let apiKey = localStorage.getItem("doblarr_api_key") || "";
+  window.fetch = async (url, opts = {}) => {
+    const headers = { ...(opts.headers || {}) };
+    if (apiKey) headers["X-Api-Key"] = apiKey;
+    let res = await rawFetch(url, { ...opts, headers });
+    if ((res.status === 401 || res.status === 403) && String(url).includes("api/")) {
+      const entered = prompt("Doblarr needs its API key (web.api_key in config.yaml):", "");
+      if (entered) {
+        apiKey = entered;
+        localStorage.setItem("doblarr_api_key", entered);
+        headers["X-Api-Key"] = entered;
+        res = await rawFetch(url, { ...opts, headers });
+      }
+    }
+    return res;
+  };
+})();
+
 // ---- Settings model (carried over verbatim from the mockup) ----
 const T = (k, l, v, h) => ({ k, l, v, h, t: "text" });
 const C = (k, l, o, v, h) => ({ k, l, o, v, h, t: "choice" });
