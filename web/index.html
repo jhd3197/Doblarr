@@ -195,9 +195,6 @@
     <!-- ===== Overview ===== -->
     <section data-view="Overview">
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Overview</h2>
-        <p style="margin: 0 0 26px; font-size: 13.5px; color: var(--muted);">Watching Radarr and Sonarr · last scan <span id="lastScan">—</span> · dubs added as non-destructive AI audio tracks</p>
-
         <div class="cards4" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
           <div class="panel" style="padding: 18px 20px;">
             <p id="statRunning" class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0; color: var(--color-accent);">0</p>
@@ -306,8 +303,6 @@
     <!-- ===== Dubs ===== -->
     <section data-view="Dubs" hidden>
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Dubs</h2>
-        <p id="dubsMeta" style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Loading jobs…</p>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center;">
           <button type="button" class="btn btn-secondary" id="pauseQueue">Pause queue</button>
           <button type="button" class="btn btn-secondary" id="clearFinished">Clear finished</button>
@@ -385,9 +380,6 @@
     <!-- ===== Voices ===== -->
     <section data-view="Voices" hidden>
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Voices</h2>
-        <p style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Cloned once per speaker from the separated dialogue stem, then locked for the whole series.</p>
-
         <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
           <h3 style="font-size: 18px; margin: 0;">Cast — Alice in Borderland</h3>
           <span class="m" style="font-size: 12.5px; color: var(--muted);">pyannote · 6 speakers · 41 min of reference</span>
@@ -444,10 +436,6 @@
         <div style="display: flex; gap: 6px; padding: 14px 26px 0; overflow-x: auto;" id="settingsTabs"></div>
         <div style="padding: 26px 26px 0; flex: 1;">
           <div style="display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;">
-            <div>
-              <h2 style="font-size: 23px; margin: 0 0 4px; letter-spacing: -0.015em;" id="tabTitle"></h2>
-              <p style="margin: 0; font-size: 13.5px; color: var(--muted); max-width: 72ch;" id="tabDesc"></p>
-            </div>
             <button type="button" class="opt" id="toggleKeys" aria-pressed="false" style="margin-left: auto;">Show config keys</button>
           </div>
           <div style="display: flex; flex-direction: column; gap: 16px;" id="settingsGroups"></div>
@@ -940,10 +928,8 @@ function jobStatusTag(s) {
 function renderJobs(data) {
   jobs.lastData = data;
   const body = document.getElementById("dubsBody");
-  const meta = document.getElementById("dubsMeta");
   const list = (data.jobs || []).filter(j => matchesSearch(j.title));
   const c = data.counts || {};
-  meta.textContent = `${c.running || 0} running · ${c.queued || 0} queued · ${c.done || 0} done · ${c.failed || 0} failed`;
 
   // toolbar state
   const paused = !!data.paused;
@@ -986,8 +972,8 @@ async function loadJobs() {
     renderJobs(data);
     setOverviewJobStats(data.counts || {});
   } catch (e) {
-    const meta = document.getElementById("dubsMeta");
-    if (meta) meta.textContent = "Jobs unavailable — is Doblarr running (doblarr serve)?";
+    const body = document.getElementById("dubsBody");
+    if (body) body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">Jobs unavailable — is Doblarr running (doblarr serve)?</td></tr>`;
   }
 }
 
@@ -1079,15 +1065,6 @@ function renderActivity(list) {
     </tr>`).join("");
 }
 
-function relTime(iso) {
-  if (!iso) return "not yet";
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return Math.floor(s / 60) + "m ago";
-  if (s < 86400) return Math.floor(s / 3600) + "h ago";
-  return Math.floor(s / 86400) + "d ago";
-}
-
 async function loadOverview() {
   try {
     const jr = await fetch("api/jobs"); const d = await jr.json();
@@ -1097,8 +1074,6 @@ async function loadOverview() {
   } catch (e) {}
   try {
     const sr = await fetch("api/status"); const st = await sr.json();
-    const ls = document.getElementById("lastScan");
-    if (ls) ls.textContent = relTime(st.last_scan);
     const nd = document.getElementById("statNeedsDub");
     if (nd && st.counts) nd.textContent = st.counts.needs_dub ?? "—";
   } catch (e) {}
@@ -1108,8 +1083,6 @@ async function loadOverview() {
     try {
       const lr = await fetch("api/library");
       nd.textContent = ((await lr.json()).counts || {}).needs_dub ?? "—";
-      const sr = await fetch("api/status"); const ls = document.getElementById("lastScan");
-      if (ls) ls.textContent = relTime((await sr.json()).last_scan);
     } catch (e) {}
   }
 }
@@ -1159,8 +1132,6 @@ function renderSettings() {
     onclick: () => { state.tab = t.id; renderSettings(); },
   }, t.title)));
 
-  document.getElementById("tabTitle").textContent = cur.title;
-  document.getElementById("tabDesc").textContent = cur.desc;
   document.getElementById("toggleKeys").setAttribute("aria-pressed", state.keys ? "true" : "false");
 
   const groups = document.getElementById("settingsGroups");
