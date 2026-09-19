@@ -51,6 +51,7 @@ DEFAULTS: dict[str, Any] = {
         "max_fit_attempts": 5,
         "ducking_ratio": "12:1",
         "track_name_template": "AI - {language}",
+        "preset_voices": [],       # fallback voice list when voicebox is down
         "segment_limit": None,   # cap lines per job (handy for CPU test runs)
     },
 }

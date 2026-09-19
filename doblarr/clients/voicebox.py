@@ -55,6 +55,13 @@ class VoiceboxClient(ArrClient):
             return self._post("/transcribe", files=files, data=data)
 
     # -- voice profiles (cloning) -----------------------------------------
+    def list_voices(self) -> list[dict]:
+        """Available voices (voicebox profiles) as [{id, name}]."""
+        data = self._get("/profiles")
+        profiles = data if isinstance(data, list) else data.get("profiles", [])
+        return [{"id": p.get("id") or p.get("profile_id"),
+                 "name": p.get("name", "?")} for p in profiles]
+
     def create_profile(self, name: str, language: str,
                        description: str = "") -> str:
         payload = {"name": name, "language": language, "description": description}

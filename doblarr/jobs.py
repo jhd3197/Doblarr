@@ -44,6 +44,7 @@ class Job:
     stage: str = ""
     progress: int = 0
     message: str = ""
+    kind: str = "full"           # full | tease (a dubbed first-minutes preview)
     force: bool = False        # re-run every stage, ignoring cached artifacts
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
@@ -51,7 +52,8 @@ class Job:
 
 # Job fields with a real column; anything else rides in the payload JSON.
 _COLS = ("id", "title", "source", "source_lang", "target_lang", "input_file",
-         "status", "stage", "progress", "message", "created_at", "updated_at")
+         "status", "stage", "progress", "message", "kind", "created_at",
+         "updated_at")
 
 
 class JobStore:

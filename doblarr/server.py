@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import discovery, plex_labels
@@ -33,6 +33,7 @@ from .logging_setup import attach_log_stream
 from .scheduler import Scheduler
 from .services import Services
 from .store import Database
+from .voices import CATEGORY_LABELS
 from .webhooks import Debouncer, is_test_event, should_rescan
 
 log = logging.getLogger("doblarr.server")
@@ -52,6 +53,27 @@ class JobCreateIn(BaseModel):
     target_lang: str | None = None
     path: str | None = None
     force: bool = False  # re-run every stage, ignoring cached artifacts
+
+
+class CastEntryIn(BaseModel):
+    speaker_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    category: str
+    voice: str = ""            # voicebox profile id; "" = unassigned
+    previewed: bool = False
+
+    @field_validator("category")
+    @classmethod
+    def _known_category(cls, v: str) -> str:
+        if v not in CATEGORY_LABELS:
+            raise ValueError(f"unknown category {v!r}")
+        return v
+
+
+class CastPutIn(BaseModel):
+    key: str = Field(min_length=1)   # see doblarr.voices.cast_key
+    title: str = ""
+    cast: list[CastEntryIn]
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -334,6 +356,34 @@ def create_app(config: Config | None = None) -> FastAPI:
         if not store.remove(job_id):
             raise NotFoundError(f"no job with id {job_id}")
         return {"ok": True}
+
+    # -- voice casting ------------------------------------------------------
+    @api.get("/api/voices")
+    def list_voices():
+        """Voice list: voicebox profiles when reachable, else config presets."""
+        try:
+            return {"source": "voicebox", "voices": services.voicebox.list_voices()}
+        except VoiceboxError as exc:
+            presets = config.get("dub", {}).get("preset_voices") or []
+            return {"source": "config",
+                    "voices": [{"id": v, "name": v} for v in presets],
+                    "warning": str(exc)}
+
+    @api.get("/api/cast")
+    def get_cast(key: str | None = None, title: str | None = None):
+        k = key or title
+        if not k:
+            raise ConfigError("cast lookup needs a key "
+                              "(path / tmdb:<id> / tvdb:<id> / title:<name>)")
+        saved = db.load_cast(k)
+        return {"key": k, "title": (saved or {}).get("title", ""),
+                "cast": (saved or {}).get("cast", [])}
+
+    @api.put("/api/cast")
+    def put_cast(body: CastPutIn):
+        db.save_cast(body.key, body.title, [e.model_dump() for e in body.cast])
+        bus.publish("cast", {"type": "updated", "key": body.key})
+        return {"ok": True, "key": body.key, "saved": len(body.cast)}
 
     app.include_router(api)
 

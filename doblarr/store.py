@@ -8,6 +8,7 @@ functions applied once each at open).
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import sqlite3
@@ -43,8 +44,20 @@ def _v1_initial(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _v2_teasers_and_casts(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'full';
+        CREATE TABLE voice_casts (
+            title_key  TEXT PRIMARY KEY,   -- see doblarr.voices.cast_key
+            title      TEXT NOT NULL DEFAULT '',
+            cast_data  TEXT NOT NULL DEFAULT '[]',   -- JSON list of cast entries
+            updated_at TEXT NOT NULL
+        );
+    """)
+
+
 # Ordered migrations; MIGRATIONS[i] brings a db from version i to i+1.
-MIGRATIONS = [_v1_initial]
+MIGRATIONS = [_v1_initial, _v2_teasers_and_casts]
 
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -96,6 +109,25 @@ class Database:
         return {"last_scan": row["last_scan"],
                 "counts": json.loads(row["counts"]),
                 "items": json.loads(row["items"])}
+
+    # -- voice casts (one row per title) ------------------------------------
+    def save_cast(self, title_key: str, title: str, cast: list[dict]) -> None:
+        self.execute(
+            "INSERT INTO voice_casts (title_key, title, cast_data, updated_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(title_key) DO UPDATE SET "
+            "title=excluded.title, cast_data=excluded.cast_data, "
+            "updated_at=excluded.updated_at",
+            (title_key, title, json.dumps(cast),
+             _dt.datetime.now().isoformat(timespec="seconds")))
+
+    def load_cast(self, title_key: str) -> dict | None:
+        row = self.query_one(
+            "SELECT title, cast_data, updated_at FROM voice_casts WHERE title_key = ?",
+            (title_key,))
+        if row is None:
+            return None
+        return {"title": row["title"], "cast": json.loads(row["cast_data"]),
+                "updated_at": row["updated_at"]}
 
     def close(self) -> None:
         with self._lock:
