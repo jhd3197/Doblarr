@@ -2,6 +2,10 @@
 
 We pass a per-line character budget derived from the original spoken duration so
 the translator can keep lines short enough to fit the time slot.
+
+Unlike the other stages this one does NOT use the @stage/dry() short-circuit:
+its dry-run is real per-line work (passthrough placeholders must still populate
+text_translated so downstream stages have something to plan with).
 """
 
 from __future__ import annotations

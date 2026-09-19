@@ -1,4 +1,5 @@
-"""Load Doblarr configuration from YAML with sensible defaults."""
+"""Load Doblarr configuration from YAML with defaults, env overrides, and
+schema validation (warnings, never fatal — see config_schema.py)."""
 
 from __future__ import annotations
 

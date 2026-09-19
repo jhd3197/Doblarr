@@ -4,12 +4,13 @@ general:
   target_languages: [en, es]
 
 paths:
-  work_dir: /data/work
+  work_dir: /data/work    # also holds doblarr.db unless paths.db says otherwise
   output_dir: /data/output
 
 web:
   host: 0.0.0.0
   port: 6363
+  # api_key: ""           # set to require X-Api-Key on /api/* (UI prompts for it)
 
 connect:
   radarr_url: http://host.docker.internal:7878

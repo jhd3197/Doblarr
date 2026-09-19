@@ -59,6 +59,10 @@ Set `web.api_key` in `config.yaml` to lock the API: every `/api/*` route (except
 key configured the API stays open (fine for a trusted home network) and a warning is
 logged at startup.
 
+Security notes: `config.yaml` holds your *arr/Plex keys in plaintext — protect it with
+filesystem permissions (it's gitignored). Doblarr serves plain HTTP; put it behind a
+reverse proxy for HTTPS if you expose it beyond localhost/LAN.
+
 ### Webhooks (Radarr/Sonarr → Doblarr)
 
 Doblarr accepts the standard *arr webhook JSON at `POST /api/webhooks/radarr` and
@@ -126,15 +130,27 @@ under `doblarr/stages/`.
 ```
 doblarr/
   cli.py            # CLI: serve / dub / check
-  server.py         # FastAPI app: serves the UI + REST API
-  config.py         # YAML config + defaults, read/write, secret redaction
+  server.py         # FastAPI app: UI + REST API + SSE + webhooks
+  config.py         # YAML config + defaults, env overrides, secret redaction
+  config_schema.py  # pydantic validation of config.yaml (warnings, never fatal)
+  auth.py           # X-Api-Key dependency for /api/* (optional; web.api_key)
   discovery.py      # library scan: needs-dub / partial / available
-  jobs.py           # persistent job queue + background worker
+  jobs.py           # job queue (SQLite) + background worker (cancel-aware)
+  store.py          # sqlite3 Database: WAL, migrations, jobs + scan_state
+  events.py         # EventBus: in-process pub/sub with replay buffer
+  services.py       # lazy cached service clients (DI seam) from Config
+  webhooks.py       # *arr webhook classification + debounced rescan
+  cache.py          # TTL cache for library scans
+  ffmpeg.py         # run_ffmpeg/run_ffprobe with FFmpegError + cancel
+  logging_setup.py  # console + rotating file + uvicorn + SSE log stream
+  scheduler.py      # periodic rescan thread
   models.py         # DubJob / Segment / Speaker
-  pipeline.py       # runs the stages in order (with progress callback)
+  pipeline.py       # runs the stages in order (progress, cancel, resume)
   clients/
+    base.py         # ArrClient: Session + tenacity retry + uniform errors
     radarr.py       # Radarr API (movies)
     sonarr.py       # Sonarr API (shows)
+    plex.py         # Plex API (labels; token in header)
     voicebox.py     # voicebox HTTP client (transcribe, profiles, generate, audio)
     translator.py   # Claude / passthrough translation
   stages/           # one module per pipeline step (see table above)
@@ -149,23 +165,28 @@ web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
 | GET | `/api/health/ready` | readiness (voicebox up + a source configured), 503 otherwise |
 | GET | `/api/library` | scan Radarr+Sonarr, classify every title (`?refresh=true` bypasses the scan cache) |
 | GET/POST | `/api/config` | read (redacted) / save config |
-| GET/POST | `/api/jobs` | list / enqueue dub jobs |
+| GET/POST | `/api/jobs` | list / enqueue dub jobs (`force: true` ignores cached artifacts) |
 | POST | `/api/jobs/clear-finished` | remove done+failed+cancelled jobs |
 | DELETE | `/api/jobs/{id}` | remove one job (a *running* job is cancelled instead) |
-| GET | `/api/events` | SSE stream of job/scan progress (replay + live; use `?api_key=` from browsers) |
+| GET | `/api/events` | SSE stream of job/scan/log events (replay + live; `?api_key=` from browsers) |
+| POST | `/api/webhooks/radarr` | Radarr webhook (Download → debounced rescan; Test → 200) |
+| POST | `/api/webhooks/sonarr` | Sonarr webhook (same) |
 
-The UI consumes `/api/events` via `EventSource` for live job progress (slow polling
-as a fallback). Cancelling a running job stops it between pipeline stages and kills
+The UI consumes `/api/events` via `EventSource` for live job progress and a log
+tail (slow polling as a fallback). Cancelling a running job stops it between
+pipeline stages and kills
 any in-flight ffmpeg process; a cancel while waiting on a voicebox generation aborts
 the wait but leaves the remote generation running (voicebox has no cancel endpoint).
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"   # app + pytest/ruff/mypy/httpx
+pip install -e ".[dev]"   # app + pytest/pytest-cov/ruff/mypy/httpx
 python -m pytest -q       # test suite (no network or *arr services needed)
+python -m pytest -q --cov=doblarr --cov-report=term-missing   # with coverage
 ruff check .              # lint
 mypy doblarr/             # type check
+# pre-commit install      # optional: run ruff+mypy as git hooks (.pre-commit-config.yaml)
 ```
 
 ## Roadmap

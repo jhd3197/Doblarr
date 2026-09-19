@@ -1,4 +1,4 @@
-"""Doblarr web server — serves the UI and the first real API (library scan)."""
+"""Doblarr web server — UI, REST API, SSE event stream, and *arr webhooks."""
 
 from __future__ import annotations
 
