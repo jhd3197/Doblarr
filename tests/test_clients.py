@@ -110,3 +110,27 @@ def test_error_subclasses_share_hierarchy(monkeypatch):
         assert isinstance(exc, DoblarrError)
         assert exc.status == 404
         assert exc.http_status == 502  # upstream failure maps to 502 at the API
+
+
+def test_services_container():
+    from doblarr.config import Config
+    from doblarr.errors import ConfigError
+    from doblarr.services import Services
+
+    empty = Services(Config.load("nope.yaml"))
+    try:
+        _ = empty.radarr
+        raise AssertionError("expected ConfigError")
+    except ConfigError as exc:
+        assert "radarr_url" in str(exc)
+
+    cfg = Config({"connect": {"radarr_url": "http://r", "radarr_api_key": "k"},
+                  "voicebox": {"base_url": "http://v", "timeout_seconds": 5}})
+    svc = Services(cfg)
+    first = svc.radarr
+    assert svc.radarr is first            # cached
+    assert first.base_url == "http://r"
+    assert svc.voicebox.base_url == "http://v"
+    assert svc.voicebox.timeout == 5
+    svc.invalidate()
+    assert svc.radarr is not first        # rebuilt after invalidate
