@@ -86,6 +86,22 @@ and the pipeline **skips stages whose output artifact already exists** and is ne
 than the input file (extract/separate/synthesize/mix/mux) — resubmitting continues
 where the artifacts stop. Enqueue with `"force": true` to redo every stage.
 
+### Teasers & voice casting
+
+Before committing to a full dub, queue a **tease** (Library card → "Tease", or
+`POST /api/jobs` with `"kind": "tease"`): Doblarr dubs only the first
+`dub.teaser_minutes` (default 10) into `<title>.tease.mkv` so you can audition the
+voices. Tease artifacts live in a separate `.tease` namespace and never poison the
+full dub's checkpoint cache.
+
+Every detected speaker gets **one voice** from a per-title **voice cast**, labeled by
+archetype ("Narrator", "Adult M 1", "Adult F 2", …) and auto-assigned on the first
+tease. The cast persists (SQLite `voice_casts` table) and is reused by the full dub —
+edit it from a Library card's "Cast" button (`GET`/`PUT /api/cast`, voices from
+`GET /api/voices`, which proxies voicebox profiles or falls back to
+`dub.preset_voices`). Multi-speaker casting lands with diarization (pyannote); until
+then jobs fall back to a single narrator voice.
+
 Open the UI, go to **Library** to see your real collection, and **Queue dub** on a
 needs-dub title to watch it flow through the queue. The CLI still works too:
 `python -m doblarr dub "<file>" --from ko --to es --subs film.srt --dry-run`.
@@ -171,6 +187,8 @@ web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
 | GET | `/api/events` | SSE stream of job/scan/log events (replay + live; `?api_key=` from browsers) |
 | POST | `/api/webhooks/radarr` | Radarr webhook (Download → debounced rescan; Test → 200) |
 | POST | `/api/webhooks/sonarr` | Sonarr webhook (same) |
+| GET/PUT | `/api/cast` | read / save a title's voice cast (`?key=` or `?path=`/`?tmdb_id=`/`?title=`) |
+| GET | `/api/voices` | voice list (voicebox profiles, else `dub.preset_voices`) |
 
 The UI consumes `/api/events` via `EventSource` for live job progress and a log
 tail (slow polling as a fallback). Cancelling a running job stops it between
