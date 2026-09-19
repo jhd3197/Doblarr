@@ -34,10 +34,11 @@ def parse_interval(value, default: int = 6 * 3600) -> int:
 class Scheduler(threading.Thread):
     daemon = True
 
-    def __init__(self, config, tick_fn):
+    def __init__(self, config, tick_fn, events=None):
         super().__init__(name="doblarr-scheduler")
         self.config = config
         self.tick_fn = tick_fn
+        self.events = events
         self._stop_evt = threading.Event()
 
     def stop(self) -> None:
@@ -46,12 +47,22 @@ class Scheduler(threading.Thread):
     def _interval(self) -> int:
         return parse_interval(self.config.get("discovery", {}).get("rescan_interval", "6h"))
 
+    def _tick(self) -> None:
+        if self.events:
+            self.events.publish("scan", {"type": "started"})
+        result = self.tick_fn()
+        if self.events:
+            payload: dict = {"type": "completed"}
+            if isinstance(result, dict):
+                payload["counts"] = result
+            self.events.publish("scan", payload)
+
     def run(self) -> None:
         log.info("scheduler started")
         while not self._stop_evt.is_set():
             if self.config.get("discovery", {}).get("auto_scan"):
                 try:
-                    self.tick_fn()
+                    self._tick()
                 except Exception:  # noqa: BLE001 - never let the loop die
                     log.exception("scheduled scan failed")
             # Interruptible sleep for the current interval.

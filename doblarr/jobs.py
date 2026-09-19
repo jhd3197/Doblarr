@@ -120,13 +120,19 @@ class JobStore:
 class Worker(threading.Thread):
     daemon = True
 
-    def __init__(self, store: JobStore, config, dry_run: bool = True):
+    def __init__(self, store: JobStore, config, dry_run: bool = True, events=None):
         super().__init__(name="doblarr-worker")
         self.store = store
         self.config = config
         self.dry_run = dry_run
+        self.events = events
         self._stop_evt = threading.Event()
         self._pause = threading.Event()
+
+    def _publish(self, job: Job, type_: str, **extra) -> None:
+        if self.events:
+            self.events.publish("job", {"type": type_, "job_id": job.id,
+                                        "title": job.title, **extra})
 
     def stop(self) -> None:
         self._stop_evt.set()
@@ -157,10 +163,12 @@ class Worker(threading.Thread):
         def on_stage(name: str, i: int, total: int) -> None:
             self.store.update(job.id, status="running", stage=name,
                               progress=int(i / total * 100))
+            self._publish(job, "stage", stage=name, progress=int(i / total * 100))
 
         # Read live so toggling dub.dry_run in Settings applies without a restart.
         dry_run = self.config.get("dub", {}).get("dry_run", self.dry_run)
         self.store.update(job.id, status="running", stage="probe", progress=0)
+        self._publish(job, "started")
         try:
             dj = DubJob(
                 input_file=Path(job.input_file) if job.input_file else Path(job.title),
@@ -169,8 +177,11 @@ class Worker(threading.Thread):
             )
             run_job(dj, self.config, dry_run=dry_run, on_stage=on_stage)
             out = str(dj.output_file) if dj.output_file else "(planned)"
+            message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
-                              message=f"{'planned' if dry_run else 'dubbed'} -> {out}")
+                              message=message)
+            self._publish(job, "done", progress=100, message=message)
         except Exception as exc:  # noqa: BLE001 - surface any stage failure to the UI
             log.exception("job %s failed", job.id)
             self.store.update(job.id, status="failed", message=str(exc))
+            self._publish(job, "failed", message=str(exc))

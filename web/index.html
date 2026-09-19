@@ -494,6 +494,7 @@
       if (entered) {
         apiKey = entered;
         localStorage.setItem("doblarr_api_key", entered);
+        window.dispatchEvent(new Event("doblarr-api-key"));
         headers["X-Api-Key"] = entered;
         res = await rawFetch(url, { ...opts, headers });
       }
@@ -747,7 +748,7 @@ function setPage(page) {
   if (page === "Settings") { if (state.config) renderSettings(); else loadConfig(); }
   if (page === "Library" && !library.loaded) loadLibrary();
   if (page === "Overview") loadOverview();
-  if (page === "Dubs") { loadJobs(); startJobPolling(); } else { stopJobPolling(); }
+  if (page === "Dubs") loadJobs();
 }
 
 // ---- Library (real data from /api/library) ----
@@ -942,11 +943,36 @@ async function loadJobs() {
 
 function startJobPolling() {
   stopJobPolling();
-  jobs.pollTimer = setInterval(loadJobs, 3000);
+  jobs.pollTimer = setInterval(loadJobs, 30000);  // slow fallback when SSE is down
 }
 function stopJobPolling() {
   if (jobs.pollTimer) { clearInterval(jobs.pollTimer); jobs.pollTimer = null; }
 }
+
+// Live updates via SSE (/api/events); falls back to slow polling if the stream
+// keeps failing. EventSource can't set headers, so the API key goes on the URL.
+function startEventStream() {
+  stopEventStream();
+  const key = localStorage.getItem("doblarr_api_key") || "";
+  const es = new EventSource("api/events" + (key ? "?api_key=" + encodeURIComponent(key) : ""));
+  jobs.eventSource = es;
+  es.onmessage = (e) => {
+    jobs.eventFailures = 0;
+    stopJobPolling();  // stream is healthy — no fallback needed
+    let evt;
+    try { evt = JSON.parse(e.data); } catch { return; }
+    if (evt.topic === "job") loadJobs();
+    if (state.page === "Overview") loadOverview();
+  };
+  es.onerror = () => {
+    jobs.eventFailures = (jobs.eventFailures || 0) + 1;
+    if (jobs.eventFailures >= 3) startJobPolling();
+  };
+}
+function stopEventStream() {
+  if (jobs.eventSource) { jobs.eventSource.close(); jobs.eventSource = null; }
+}
+window.addEventListener("doblarr-api-key", startEventStream);  // reconnect with the new key
 
 function setOverviewJobStats(counts) {
   const r = document.getElementById("statRunning");
@@ -1197,6 +1223,7 @@ document.getElementById("ndQueue").addEventListener("click", async () => {
 const savedTheme = safeGet("doblarr.theme", "light");
 setTheme(savedTheme === "dark" ? "dark" : "light");
 setPage("Overview");
+startEventStream();
 </script>
 </body>
 </html>

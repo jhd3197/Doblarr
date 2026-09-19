@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
+import json
 import logging
+import queue
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -24,12 +27,14 @@ from .clients.sonarr import SonarrClient, SonarrError
 from .clients.voicebox import VoiceboxClient, VoiceboxError
 from .config import Config
 from .errors import ConfigError, DoblarrError, NotFoundError
+from .events import EventBus
 from .jobs import JobStore, Worker
 from .scheduler import Scheduler
 
 log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for worker/scheduler threads
+SSE_HEARTBEAT = 15.0    # seconds between `: ping` comments
 
 
 class PlexLabelsIn(BaseModel):
@@ -50,8 +55,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     # Job queue + background worker; periodic rescan scheduler. Both start with
     # the app lifespan and are stopped (and joined) on shutdown.
     store = JobStore(config.work_dir / "jobs.json")
-    worker = Worker(store, config, dry_run=config["dub"].get("dry_run", True))
-    scheduler = Scheduler(config, lambda: _scan_and_maybe_label())
+    bus = EventBus()
+    worker = Worker(store, config, dry_run=config["dub"].get("dry_run", True),
+                    events=bus)
+    scheduler = Scheduler(config, lambda: _scan_and_maybe_label(), events=bus)
     scan_cache = TTLCache(max_size=4)
     status_state: dict = {"last_scan": None, "counts": None}
 
@@ -71,6 +78,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.jobs = store
     app.state.worker = worker
     app.state.scheduler = scheduler
+    app.state.events = bus
 
     @app.exception_handler(DoblarrError)
     async def doblarr_error_handler(request: Request, exc: DoblarrError):
@@ -108,6 +116,30 @@ def create_app(config: Config | None = None) -> FastAPI:
             return JSONResponse(status_code=503,
                                 content={"ready": False, "problems": problems})
         return {"ready": True}
+
+    @api.get("/api/events")
+    async def events():
+        """Server-sent events: replay recent events, then stream live ones.
+
+        Browsers can't set headers on EventSource, so pass the API key as
+        `?api_key=` (the auth dependency accepts it).
+        """
+        q = bus.subscribe()
+
+        async def stream():
+            try:
+                while True:
+                    try:
+                        event = await asyncio.to_thread(q.get, timeout=SSE_HEARTBEAT)
+                        yield f"data: {json.dumps(event)}\n\n"
+                    except queue.Empty:
+                        yield ": ping\n\n"
+            finally:
+                bus.unsubscribe(q)
+
+        return StreamingResponse(
+            stream(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @api.get("/api/config")
     def get_config():
@@ -172,6 +204,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     items, PlexClient(conn["plex_url"], conn["plex_token"]), config, apply=True)
             except PlexError as exc:
                 log.warning("auto label sync failed: %s", exc)
+        return status_state["counts"]
 
     @api.get("/api/status")
     def status():
@@ -232,6 +265,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             target_lang=body.target_lang or default_target,
             input_file=body.path,
         )
+        bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
         return {"ok": True, "job": asdict(job)}
 
     @api.post("/api/jobs/clear-finished")
