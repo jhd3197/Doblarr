@@ -84,7 +84,10 @@ page and Overview survive restarts. A legacy `work/jobs.json` is imported once a
 renamed to `jobs.json.migrated`. Jobs interrupted mid-run are re-queued at startup,
 and the pipeline **skips stages whose output artifact already exists** and is newer
 than the input file (extract/separate/synthesize/mix/mux) — resubmitting continues
-where the artifacts stop. Enqueue with `"force": true` to redo every stage.
+where the artifacts stop. Enqueue with `"force": true` to redo every stage. After a
+real (non-dry-run) mux, Doblarr asks Plex to refresh that item so the new
+"`<Language>` AI" track shows up at once (`plex.auto_refresh`, default on; failures
+never fail the job).
 
 ### Teasers & voice casting
 

@@ -510,6 +510,31 @@
       </div>
     </div>
   </div>
+
+  <!-- Library item detail -->
+  <div id="detailModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;">
+    <div class="panel" style="width:min(720px,94vw);padding:22px 24px;max-height:88vh;overflow-y:auto;">
+      <div style="display:flex;gap:20px;">
+        <div id="detailPoster" style="flex:none;width:180px;"></div>
+        <div style="min-width:0;flex:1;">
+          <h3 id="detailTitle" style="margin:0 0 8px;font-size:20px;line-height:1.25;"></h3>
+          <div id="detailMeta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;"></div>
+          <div id="detailLangs" class="lang-chips" style="margin-bottom:12px;"></div>
+          <div id="detailPath" class="m" style="font-size:12px;color:var(--muted);user-select:all;word-break:break-all;margin-bottom:16px;"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="dtQueue" class="btn btn-secondary" type="button">Queue dub</button>
+            <button id="dtTease" class="btn btn-secondary" type="button">Tease</button>
+            <button id="dtCast" class="btn btn-secondary" type="button">Cast</button>
+          </div>
+        </div>
+      </div>
+      <h4 style="margin:22px 0 4px;font-size:14px;">Jobs for this title</h4>
+      <div id="detailJobs"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+        <button type="button" class="btn btn-secondary" id="detailClose">Close</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -829,6 +854,15 @@ function langChip(code, missing) {
   return `<span class="lang-chip${missing ? " missing" : ""}" title="${tip}">${flag}${escapeHtml(code.toUpperCase())}</span>`;
 }
 
+function langChipsHtml(i) {
+  // Audio languages present; fall back to the original language when unprobed.
+  const present = new Set((i.audio_langs && i.audio_langs.length)
+    ? i.audio_langs : (i.original && i.original !== "??" ? [i.original] : []));
+  const targets = library.targets || [];
+  return [...present].map(c => langChip(c, false)).join("")
+    + targets.filter(t => !present.has(t)).map(t => langChip(t, true)).join("");
+}
+
 function renderLibrary() {
   const grid = document.getElementById("libraryGrid");
   const rows = library.items.filter(i =>
@@ -838,13 +872,7 @@ function renderLibrary() {
     return;
   }
   library.rendered = rows;
-  const targets = library.targets || [];
   grid.innerHTML = rows.map((i, idx) => {
-    // Audio languages present; fall back to the original language when unprobed.
-    const present = new Set((i.audio_langs && i.audio_langs.length)
-      ? i.audio_langs : (i.original && i.original !== "??" ? [i.original] : []));
-    const chips = [...present].map(c => langChip(c, false)).join("")
-      + targets.filter(t => !present.has(t)).map(t => langChip(t, true)).join("");
     const poster = i.poster
       ? `<img class="poster-img" loading="lazy" src="${escapeHtml(i.poster)}" alt=""
               onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
@@ -858,11 +886,11 @@ function renderLibrary() {
       <button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>
     </div>`;
     return `
-    <div class="poster-card">
+    <div class="poster-card" data-idx="${idx}" style="cursor:pointer;">
       ${poster}
       <div class="poster-body">
         <div style="font-weight:600;font-size:13.5px;line-height:1.3;">${escapeHtml(i.title)}${i.year ? ` <span class="m" style="color:var(--muted);font-size:12px;">${i.year}</span>` : ""}</div>
-        <div class="lang-chips">${chips}</div>
+        <div class="lang-chips">${langChipsHtml(i)}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;">
           ${statusTag(i.label)}
           <span class="m" style="font-size:11.5px;color:var(--muted);">${escapeHtml(i.source.split(" ")[0])}</span>
@@ -1241,11 +1269,19 @@ async function syncPlexLabels(apply) {
 }
 document.getElementById("syncLabelsBtn").addEventListener("click", () => syncPlexLabels(false));
 document.getElementById("libraryGrid").addEventListener("click", e => {
-  const btn = e.target.closest(".queue-dub, .tease-dub, .cast-edit"); if (!btn) return;
-  const item = library.rendered[Number(btn.dataset.idx)];
-  if (!item) return;
-  if (btn.classList.contains("cast-edit")) openCast(item);
-  else queueDub(item, btn, btn.classList.contains("tease-dub") ? "tease" : "full");
+  const btn = e.target.closest(".queue-dub, .tease-dub, .cast-edit");
+  if (btn) {
+    const item = library.rendered[Number(btn.dataset.idx)];
+    if (!item) return;
+    if (btn.classList.contains("cast-edit")) openCast(item);
+    else queueDub(item, btn, btn.classList.contains("tease-dub") ? "tease" : "full");
+    return;
+  }
+  const card = e.target.closest(".poster-card");
+  if (card) {
+    const item = library.rendered[Number(card.dataset.idx)];
+    if (item) openDetail(item);
+  }
 });
 document.getElementById("clearFinished").addEventListener("click", async () => {
   try { await fetch("api/jobs/clear-finished", { method: "POST" }); } catch (e) {}
@@ -1411,6 +1447,83 @@ async function saveCast() {
 document.getElementById("castSave").addEventListener("click", saveCast);
 document.getElementById("castCancel").addEventListener("click", () => { castModal.hidden = true; });
 castModal.addEventListener("click", e => { if (e.target === castModal) castModal.hidden = true; });
+
+// ---- Library item detail modal ----
+const detailModal = document.getElementById("detailModal");
+let detailItem = null;
+
+function jobsFor(item, jobs) {
+  const norm = p => (p || "").replace(/\//g, "\\").toLowerCase();
+  const ip = norm(item.path);
+  if (!ip) return jobs.filter(j => j.title === item.title);
+  const isFile = /\.[a-z0-9]+$/.test(ip);  // movies carry the file, shows the folder
+  return jobs.filter(j => {
+    const jp = norm(j.input_file);
+    if (!jp) return j.title === item.title;
+    return isFile ? jp === ip : (jp === ip || jp.startsWith(ip + "\\"));
+  });
+}
+
+function renderDetailJobs(list) {
+  const box = document.getElementById("detailJobs");
+  if (!list.length) {
+    box.innerHTML = `<p style="color:var(--muted);font-size:13px;">No jobs for this title yet.</p>`;
+    return;
+  }
+  box.innerHTML = list.slice(0, 6).map(j => `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px;">
+      <span class="m" style="color:var(--muted);font-size:12px;">${escapeHtml((j.created_at || "").slice(5, 16))}</span>
+      ${jobStatusTag(j.status)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}
+      <span style="color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(j.message || j.stage || "")}</span>
+      ${j.has_file ? `<button type="button" class="btn btn-ghost detail-watch" data-id="${j.id}" style="margin-left:auto;">Watch</button>` : ""}
+    </div>`).join("");
+  box.querySelectorAll(".detail-watch").forEach(b =>
+    b.addEventListener("click", () => {
+      detailModal.hidden = true;  // watch modal sits under this one in the DOM
+      openWatch(b.dataset.id, { jobs: list });
+    }));
+}
+
+async function openDetail(item) {
+  detailItem = item;
+  document.getElementById("detailTitle").innerHTML =
+    `${escapeHtml(item.title)}${item.year ? ` <span class="m" style="color:var(--muted);font-size:14px;">${item.year}</span>` : ""}`;
+  document.getElementById("detailMeta").innerHTML =
+    `<span class="tag tag-neutral">${escapeHtml(item.source)}</span> ${statusTag(item.label)}`;
+  document.getElementById("detailLangs").innerHTML = langChipsHtml(item);
+  document.getElementById("detailPath").textContent = item.path || "";
+  document.getElementById("detailPoster").innerHTML = item.poster
+    ? `<img src="${escapeHtml(item.poster)}" alt="" style="width:100%;border-radius:10px;"
+            onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
+       <div class="poster-fallback" hidden style="border-radius:10px;">${escapeHtml(item.title)}</div>`
+    : `<div class="poster-fallback" style="border-radius:10px;">${escapeHtml(item.title)}</div>`;
+  document.getElementById("dtQueue").onclick = e => queueDub(item, e.currentTarget, "full");
+  document.getElementById("dtTease").onclick = e => queueDub(item, e.currentTarget, "tease");
+  document.getElementById("dtCast").onclick = () => {
+    detailModal.hidden = true;  // cast modal sits under this one in the DOM
+    openCast(item);
+  };
+  detailModal.hidden = false;
+  renderDetailJobs([]);
+  try {
+    const res = await fetch("api/jobs");
+    const data = await res.json();
+    if (detailModal.hidden) return;  // closed while loading
+    renderDetailJobs(jobsFor(item, data.jobs || []));
+  } catch (e) {}
+}
+
+document.getElementById("detailClose").addEventListener("click", () => { detailModal.hidden = true; });
+detailModal.addEventListener("click", e => { if (e.target === detailModal) detailModal.hidden = true; });
+
+// Esc closes whichever modal is open.
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!detailModal.hidden) detailModal.hidden = true;
+  else if (!watchModal.hidden) closeWatch();
+  else if (!castModal.hidden) castModal.hidden = true;
+  else if (!newDubModal.hidden) closeNewDub();
+});
 
 // ---- Init ----
 const savedTheme = safeGet("doblarr.theme", "light");
