@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import suppress
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -19,6 +20,40 @@ MAX_BYTES = 5 * 1024 * 1024
 BACKUPS = 3
 
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+
+# The bus itself must never feed back into the bus (recursion guard).
+_BUS_MUTED_LOGGERS = {"doblarr.events"}
+
+
+class BusLogHandler(logging.Handler):
+    """Publishes log records to the EventBus on the `log` topic (SSE log stream).
+
+    Streams at its own level (default INFO) regardless of the console level.
+    emit() never logs and never raises — a failure here must not recurse.
+    """
+
+    def __init__(self, bus, level: int = logging.INFO):
+        super().__init__(level)
+        self.bus = bus
+        self.setFormatter(logging.Formatter("%(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.name in _BUS_MUTED_LOGGERS:
+            return
+        # A logging handler must never explode (or recurse) — swallow everything.
+        with suppress(Exception):
+            self.bus.publish("log", {"level": record.levelname,
+                                     "logger": record.name,
+                                     "message": self.format(record)})
+
+
+def attach_log_stream(bus, level: int = logging.INFO) -> None:
+    """Stream log records onto the bus; the newest app instance replaces old ones."""
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if isinstance(handler, BusLogHandler):
+            root.removeHandler(handler)
+    root.addHandler(BusLogHandler(bus, level=level))
 
 
 def _level(verbose: bool) -> int:

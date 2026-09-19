@@ -101,3 +101,32 @@ def test_sse_streams_replayed_event(sse_client):
     assert evt["topic"] == "job" and evt["job_id"] == "abc"
     # disconnecting unsubscribed (no leaked queues)
     assert app.state.events.subscriber_count == 0
+
+
+def test_log_records_stream_to_bus(sse_client):
+    import logging
+
+    from doblarr.logging_setup import BusLogHandler
+
+    app = sse_client.app
+    root = logging.getLogger()
+    bus_handlers = [h for h in root.handlers if isinstance(h, BusLogHandler)]
+    assert len(bus_handlers) == 1 and bus_handlers[0].bus is app.state.events
+
+    q = app.state.events.subscribe(replay=False)  # skip the fixture's buffered event
+    logging.getLogger("doblarr.test").warning("hello from the test")
+    evt = q.get(timeout=2)
+    assert evt["topic"] == "log"
+    assert evt["level"] == "WARNING" and evt["logger"] == "doblarr.test"
+    assert "hello from the test" in evt["message"]
+
+    # records from the bus module itself are muted (recursion guard)
+    logging.getLogger("doblarr.events").warning("must not loop")
+    assert q.empty()
+
+    # a second app replaces the handler instead of stacking another
+    from doblarr.server import create_app
+    app2 = create_app(Config.load("nope.yaml"))
+    bus_handlers = [h for h in logging.getLogger().handlers
+                    if isinstance(h, BusLogHandler)]
+    assert len(bus_handlers) == 1 and bus_handlers[0].bus is app2.state.events

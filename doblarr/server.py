@@ -29,6 +29,7 @@ from .config import Config
 from .errors import ConfigError, DoblarrError, NotFoundError
 from .events import EventBus
 from .jobs import JobStore, Worker, import_legacy_json
+from .logging_setup import attach_log_stream
 from .scheduler import Scheduler
 from .services import Services
 from .store import Database
@@ -62,6 +63,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     store = JobStore(db)
     import_legacy_json(store, config.work_dir / "jobs.json")
     bus = EventBus()
+    attach_log_stream(bus)  # log records flow onto the SSE stream (topic: log)
     services = Services(config)
     worker = Worker(store, config, dry_run=config["dub"].get("dry_run", True),
                     events=bus, services=services)

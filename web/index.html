@@ -256,6 +256,13 @@
             </tbody>
           </table>
         </div>
+
+        <details class="panel" style="margin-top: 24px; padding: 14px 18px;">
+          <summary style="cursor: pointer; font-weight: 600;">Logs
+            <span class="m" style="color: var(--muted); font-size: 12.5px; font-weight: 400;">live from the server (last 200 lines)</span>
+          </summary>
+          <pre id="logBox" class="m" style="margin: 12px 0 2px; max-height: 320px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; color: var(--muted);"></pre>
+        </details>
       </div>
     </section>
 
@@ -962,6 +969,7 @@ function startEventStream() {
     stopJobPolling();  // stream is healthy — no fallback needed
     let evt;
     try { evt = JSON.parse(e.data); } catch { return; }
+    if (evt.topic === "log") { appendLogLine(evt); return; }
     if (evt.topic === "job") loadJobs();
     if (state.page === "Overview") loadOverview();
   };
@@ -974,6 +982,17 @@ function stopEventStream() {
   if (jobs.eventSource) { jobs.eventSource.close(); jobs.eventSource = null; }
 }
 window.addEventListener("doblarr-api-key", startEventStream);  // reconnect with the new key
+
+// ---- Live log panel (SSE topic: log) ----
+const logLines = [];
+function appendLogLine(evt) {
+  const box = document.getElementById("logBox");
+  if (!box) return;
+  logLines.push(`${(evt.at || "").slice(11)} ${evt.level.padEnd(7)} ${evt.logger} | ${evt.message}`);
+  if (logLines.length > 200) logLines.splice(0, logLines.length - 200);
+  box.textContent = logLines.join("\n");
+  box.scrollTop = box.scrollHeight;
+}
 
 function setOverviewJobStats(counts) {
   const r = document.getElementById("statRunning");
