@@ -49,6 +49,7 @@ class DubJob:
     speakers: dict[str, Speaker] = field(default_factory=dict)
     dubbed_track: Path | None = None       # mixed dialogue + background
     output_file: Path | None = None        # final remuxed video
+    script_is_target: bool = False         # segments already in the target language
 
     def summary(self) -> str:
         return (

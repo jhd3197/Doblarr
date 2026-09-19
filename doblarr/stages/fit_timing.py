@@ -28,7 +28,6 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> None:
     if dry_run:
         log.info("  [dry-run] would measure each clip vs slot and time-stretch to fit")
         return
-    # TODO: for each seg, measure clip duration vs seg.duration; apply
-    #   ffmpeg atempo / pyrubberband.time_stretch within MAX_STRETCH; flag
-    #   segments that still overflow for a shorter re-translation pass.
-    raise NotImplementedError("fit_timing: implement duration matching (see TODO).")
+    # v1: pass-through (clips play at natural length; mix places them by start time).
+    # TODO: measure clip vs seg.duration and atempo/rubberband within MAX_STRETCH.
+    log.info("fit_timing: v1 pass-through (no stretch yet)")

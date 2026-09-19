@@ -49,10 +49,32 @@ class ClaudeTranslator:
         )
 
 
-def build_translator(provider: str, model: str) -> Translator:
+class VoiceboxTranslator:
+    """Dubbing-aware translation via voicebox's bundled local LLM (no API key)."""
+
+    def __init__(self, client):
+        self.client = client
+
+    def translate(self, text: str, source_lang: str, target_lang: str,
+                  target_chars: int | None = None) -> str:
+        budget = f" Keep it under about {target_chars} characters so it fits the timing." \
+            if target_chars else ""
+        prompt = (
+            f"Translate this movie subtitle line from {source_lang} to {target_lang}. "
+            f"Reply with ONLY the translation, no quotes or notes.{budget}\n\n{text}"
+        )
+        out = self.client.llm_generate(prompt)
+        return out or text
+
+
+def build_translator(provider: str, model: str, voicebox_client=None) -> Translator:
     provider = (provider or "passthrough").lower()
     if provider == "claude":
         return ClaudeTranslator(model=model)
+    if provider == "voicebox":
+        if voicebox_client is None:
+            raise ValueError("voicebox translator needs a voicebox client")
+        return VoiceboxTranslator(voicebox_client)
     if provider == "passthrough":
         return PassthroughTranslator()
     raise ValueError(f"unknown translate provider: {provider}")

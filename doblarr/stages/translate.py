@@ -18,8 +18,15 @@ CHARS_PER_SECOND = 14
 
 
 def run(job: DubJob, translator: Translator, dry_run: bool = False) -> None:
+    if job.script_is_target:
+        log.info("translate: script already in %s — skipping", job.target_lang)
+        for seg in job.segments:
+            seg.text_translated = seg.text_translated or seg.text_src
+        return
     log.info("translate %d segments -> %s", len(job.segments), job.target_lang)
     for seg in job.segments:
+        if seg.text_translated:
+            continue
         budget = int(seg.duration * CHARS_PER_SECOND) or None
         if dry_run:
             seg.text_translated = seg.text_src  # passthrough placeholder

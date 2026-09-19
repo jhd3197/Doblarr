@@ -49,6 +49,16 @@ class VoiceboxClient:
             raise VoiceboxError(f"voicebox unreachable at {self.base_url}: {exc}")
         return self._json(resp)
 
+    # -- local LLM (translation, refinement) ------------------------------
+    def llm_generate(self, prompt: str, system: str | None = None) -> str:
+        payload: dict = {"prompt": prompt}
+        if system:
+            payload["system"] = system
+        data = self._json(requests.post(self._url("/llm/generate"), json=payload,
+                                        timeout=self.timeout))
+        # Accept a few common shapes.
+        return (data.get("text") or data.get("response") or data.get("output") or "").strip()
+
     # -- transcription ----------------------------------------------------
     def transcribe(self, audio: Path, language: str | None = None) -> dict:
         with open(audio, "rb") as fh:

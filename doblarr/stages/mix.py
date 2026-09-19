@@ -1,30 +1,53 @@
-"""Stage 8 — mix dubbed dialogue over the original music + effects.
+"""Stage 8 — mix the dubbed lines over the background bed (ffmpeg).
 
-Places each clip at its segment start on a silent timeline, sums with the
-separated background, and applies sidechain ducking so the score dips under
-speech. Produces one finished dub track.
+Each generated clip is delayed to its segment start and mixed over the bed
+(the separated M&E, or — in v1 without Demucs — the original audio at reduced
+volume). Produces one dubbed track spanning the segments.
 """
 
 from __future__ import annotations
 
 import logging
+import subprocess
 from pathlib import Path
 
 from ..models import DubJob
 
 log = logging.getLogger("doblarr.mix")
 
+BED_VOLUME = 0.35   # duck the original bed under the dubbed dialogue
+
 
 def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
         dry_run: bool = False) -> None:
     out = work_dir / f"{job.input_file.stem}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
-    log.info("mix dialogue + background (ducking %s) -> %s", ducking_ratio, out.name)
+    log.info("mix dialogue over bed -> %s", out.name)
     if dry_run:
-        log.info("  [dry-run] would place %d clips on a timeline and duck the background",
-                 len(job.segments))
+        log.info("  [dry-run] would place %d clips and duck the bed", len(job.segments))
         return
-    # TODO: build the dialogue timeline (adelay per clip, amix), then
-    #   sidechaincompress the background against the dialogue bus, then amix.
-    #   ffmpeg filter_complex with [bg][dialogue]sidechaincompress=ratio=...
-    raise NotImplementedError("mix: implement ffmpeg timeline + ducking (see TODO).")
+
+    segs = [s for s in job.segments if s.audio_clip and Path(s.audio_clip).exists()]
+    if not segs:
+        raise RuntimeError("mix: no generated clips to place")
+    bed = job.background or job.source_audio
+    win_start = min(s.start for s in segs)
+    win_end = max(s.end for s in segs) + 3.0
+    dur = win_end - win_start
+
+    cmd = ["ffmpeg", "-y", "-ss", str(win_start), "-t", str(dur), "-i", str(bed)]
+    for s in segs:
+        cmd += ["-i", str(s.audio_clip)]
+
+    parts = [f"[0:a]volume={BED_VOLUME},aformat=channel_layouts=stereo[bed]"]
+    for i, s in enumerate(segs):
+        d = max(0, int((s.start - win_start) * 1000))
+        parts.append(f"[{i+1}:a]adelay={d}|{d},aformat=channel_layouts=stereo[c{i}]")
+    mix_inputs = "[bed]" + "".join(f"[c{i}]" for i in range(len(segs)))
+    parts.append(f"{mix_inputs}amix=inputs={len(segs)+1}:normalize=0[out]")
+
+    cmd += ["-filter_complex", ";".join(parts), "-map", "[out]",
+            "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(out)]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(cmd, check=True, capture_output=True)
+    log.info("mix -> %s (%.0fs window, %d lines)", out.name, dur, len(segs))

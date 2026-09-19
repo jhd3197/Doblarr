@@ -27,15 +27,17 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     vb = VoiceboxClient(config["voicebox"]["base_url"],
                         timeout=config["voicebox"]["timeout_seconds"])
     translator = build_translator(config["translate"]["provider"],
-                                  config["translate"]["model"])
+                                  config["translate"]["model"], voicebox_client=vb)
+    seg_limit = config["dub"].get("segment_limit")
 
     log.info("=== Doblarr job: %s ===", job.summary())
 
     steps = [
         ("probe", lambda: extract.run(job, work, dry_run=dry_run)),
         ("separate", lambda: separate.run(job, work, model=config["separate"]["model"], dry_run=dry_run)),
-        ("transcribe", lambda: transcribe.run(job, source=config["transcribe"]["source"],
-                                              whisper_model=config["transcribe"]["whisper_model"], dry_run=dry_run)),
+        ("transcribe", lambda: transcribe.run(job, work, source=config["transcribe"]["source"],
+                                              whisper_model=config["transcribe"]["whisper_model"],
+                                              vb=vb, segment_limit=seg_limit, dry_run=dry_run)),
         ("diarize", lambda: diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run)),
         ("translate", lambda: translate.run(job, translator, dry_run=dry_run)),
         ("synthesize", lambda: synthesize.run(job, vb, work, voice_mode=config["dub"]["voice_mode"], dry_run=dry_run)),
