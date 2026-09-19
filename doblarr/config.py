@@ -13,8 +13,15 @@ DEFAULTS: dict[str, Any] = {
     "general": {"target_languages": ["en", "es"]},
     "web": {"host": "127.0.0.1", "port": 6363},
     "connect": {"radarr_url": None, "radarr_api_key": None,
-                "sonarr_url": None, "sonarr_api_key": None},
+                "sonarr_url": None, "sonarr_api_key": None,
+                "plex_url": None, "plex_token": None},
     "discovery": {"only_original_foreign": True, "treat_undefined_as": "original"},
+    "filtering": {
+        "tag_missing_dub": "needs-dub",
+        "hidden_collection_name": "Not in your language",
+        "kometa_handoff": True,
+        "kometa_file": None,
+    },
     "voicebox": {
         "base_url": "http://127.0.0.1:17493",
         "timeout_seconds": 600,

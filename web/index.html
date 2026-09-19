@@ -271,8 +271,10 @@
             <button type="button" class="opt" aria-pressed="false" data-filter="partial">partial</button>
             <button type="button" class="opt" aria-pressed="false" data-filter="available">available</button>
           </div>
-          <button type="button" class="btn btn-secondary" style="margin-left: auto;" id="rescanBtn">Rescan sources</button>
+          <button type="button" class="btn btn-secondary" style="margin-left: auto;" id="syncLabelsBtn">Sync Plex labels</button>
+          <button type="button" class="btn btn-secondary" id="rescanBtn">Rescan sources</button>
         </div>
+        <div id="labelStatus" style="font-size:13px;color:var(--muted);margin:-8px 0 16px;min-height:18px;"></div>
         <div class="panel" style="padding: 6px 18px 10px;">
           <table class="table">
             <thead>
@@ -1059,6 +1061,33 @@ document.querySelectorAll(".opts[data-single]").forEach(group => {
 });
 document.getElementById("rescanBtn").addEventListener("click", loadLibrary);
 document.getElementById("saveSettings").addEventListener("click", saveSettings);
+
+async function syncPlexLabels(apply) {
+  const s = document.getElementById("labelStatus");
+  s.textContent = apply ? "Applying Plex labels…" : "Previewing…";
+  try {
+    const res = await fetch("api/plex/labels", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apply }),
+    });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || ("HTTP " + res.status));
+    const unm = (r.unmatched || []).length;
+    if (apply) {
+      s.innerHTML = `Labelled <b>${r.added}</b> as “${escapeHtml(r.label)}”, removed <b>${r.removed}</b> stale · matched ${r.matched}` +
+        (unm ? ` · ${unm} not found in Plex` : "") +
+        (r.kometa_file ? ` · Kometa fragment written` : "");
+    } else {
+      s.innerHTML = `Preview: would label <b>${r.added}</b> as “${escapeHtml(r.label)}” (matched ${r.matched}` +
+        (unm ? `, ${unm} unmatched` : "") + `), remove <b>${r.removed}</b> stale. ` +
+        `<button type="button" class="btn btn-primary" id="applyLabels" style="margin-left:8px;padding:5px 12px;">Apply</button>`;
+      document.getElementById("applyLabels").addEventListener("click", () => syncPlexLabels(true));
+    }
+  } catch (err) {
+    s.textContent = "Plex labels: " + err.message;
+  }
+}
+document.getElementById("syncLabelsBtn").addEventListener("click", () => syncPlexLabels(false));
 document.getElementById("libraryBody").addEventListener("click", e => {
   const btn = e.target.closest(".queue-dub"); if (!btn) return;
   const item = library.rendered[Number(btn.dataset.idx)];

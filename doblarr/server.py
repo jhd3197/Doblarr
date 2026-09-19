@@ -10,7 +10,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import discovery
+from . import discovery, plex_labels
+from .clients.plex import PlexClient, PlexError
 from .clients.radarr import RadarrClient, RadarrError
 from .clients.sonarr import SonarrClient, SonarrError
 from .config import Config
@@ -55,17 +56,14 @@ def create_app(config: Config | None = None) -> FastAPI:
         return {"ok": True, "saved_to": str(config.path),
                 "config": config.as_dict(redact_secrets=True)}
 
-    @app.get("/api/library")
-    def library():
+    def _scan_library() -> tuple[list, list[str]]:
         targets = config["general"]["target_languages"]
         conn = config.get("connect", {})
         disc = config.get("discovery", {})
         only_foreign = disc.get("only_original_foreign", True)
         undefined = disc.get("treat_undefined_as", "original")
-
         items: list = []
         warnings: list[str] = []
-
         if conn.get("radarr_url") and conn.get("radarr_api_key"):
             try:
                 movies = RadarrClient(conn["radarr_url"], conn["radarr_api_key"]).list_movies()
@@ -73,29 +71,50 @@ def create_app(config: Config | None = None) -> FastAPI:
                     only_original_foreign=only_foreign, treat_undefined_as=undefined)
             except RadarrError as exc:
                 warnings.append(f"Radarr: {exc}")
-
         if conn.get("sonarr_url") and conn.get("sonarr_api_key"):
             try:
                 sc = SonarrClient(conn["sonarr_url"], conn["sonarr_api_key"])
-                series = sc.list_series()
-                items += discovery.scan_sonarr(series, sc.episode_files, targets,
+                items += discovery.scan_sonarr(sc.list_series(), sc.episode_files, targets,
                     only_original_foreign=only_foreign, treat_undefined_as=undefined)
             except SonarrError as exc:
                 warnings.append(f"Sonarr: {exc}")
+        discovery.sort_items(items)
+        return items, warnings
 
+    @app.get("/api/library")
+    def library():
+        items, warnings = _scan_library()
         if not items and not warnings:
             return JSONResponse(status_code=400,
                                 content={"error": "No sources configured "
                                          "(connect.radarr_* / connect.sonarr_*)."})
-
-        discovery.sort_items(items)
         return {
             "generated_at": _dt.datetime.now().isoformat(timespec="seconds"),
-            "target_languages": targets,
+            "target_languages": config["general"]["target_languages"],
             "counts": discovery.summarize(items),
             "warnings": warnings,
             "items": discovery.to_dicts(items),
         }
+
+    @app.post("/api/plex/labels")
+    async def plex_sync_labels(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        apply = bool((body or {}).get("apply", False))
+        conn = config.get("connect", {})
+        if not conn.get("plex_url") or not conn.get("plex_token"):
+            return JSONResponse(status_code=400,
+                                content={"error": "Plex is not configured "
+                                         "(connect.plex_url / connect.plex_token)."})
+        items, _ = _scan_library()
+        try:
+            plex = PlexClient(conn["plex_url"], conn["plex_token"])
+            report = plex_labels.sync_labels(items, plex, config, apply=apply)
+        except PlexError as exc:
+            return JSONResponse(status_code=502, content={"error": str(exc)})
+        return report
 
     @app.get("/api/jobs")
     def list_jobs():

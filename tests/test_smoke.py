@@ -97,3 +97,27 @@ def test_job_store_persist():
         assert s.clear_finished() == 1          # only the done one
         assert s.counts()["queued"] == 1
         assert s.counts()["done"] == 0
+
+
+def test_plex_label_sync():
+    from doblarr.discovery import LibraryItem
+    from doblarr.plex_labels import sync_labels
+
+    items = [
+        LibraryItem("A", 2020, "ko", "Radarr · Films", "ko", "needs-dub", "needs-dub", True),
+        LibraryItem("B", 2021, "en", "Radarr · Films", "en", "available", "available", False),
+    ]
+
+    class FakePlex:
+        def sections(self):
+            return [{"key": "1", "type": "movie", "title": "Movies"},
+                    {"key": "2", "type": "show", "title": "TV Shows"}]
+        def find(self, sk, tn, title, year):
+            return {"ratingKey": "rk-A", "title": title, "year": year, "labels": []} if title == "A" else None
+        def items_with_label(self, sk, tn, label):
+            return [{"ratingKey": "rk-B", "title": "B", "year": 2021}] if sk == "1" else []
+        def add_label(self, *a): pass
+        def remove_label(self, *a): pass
+
+    r = sync_labels(items, FakePlex(), Config.load("nope.yaml"), apply=False)
+    assert r["matched"] == 1 and r["added"] == 1 and r["removed"] == 1, r

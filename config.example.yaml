@@ -21,11 +21,20 @@ connect:
   radarr_api_key: CHANGE_ME
   sonarr_url: http://localhost:8989
   sonarr_api_key: CHANGE_ME
+  plex_url: http://localhost:32400
+  plex_token: CHANGE_ME          # used to label / hide non-target-language titles
 
 # Library discovery behaviour
 discovery:
   only_original_foreign: true   # don't flag titles already in a target language
   treat_undefined_as: original  # how to read an 'und' (untagged) audio track
+
+# Plex labeling + hide (Doblarr labels; Kometa/a smart collection hides)
+filtering:
+  tag_missing_dub: needs-dub
+  hidden_collection_name: Not in your language
+  kometa_handoff: true          # write a Kometa fragment that hides the labelled titles
+  kometa_file: null             # defaults to <output_dir>/doblarr-kometa.yml
 
 # voicebox service (the TTS + voice-cloning engine Doblarr calls)
 voicebox:
