@@ -20,9 +20,11 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .errors import JobCancelled
+from .clients.plex import PlexError
+from .errors import ConfigError, JobCancelled
 from .models import DubJob
 from .pipeline import run_job
+from .plex_labels import find_item
 from .store import Database
 
 log = logging.getLogger("doblarr.jobs")
@@ -204,6 +206,29 @@ class Worker(threading.Thread):
             self.events.publish("job", {"type": type_, "job_id": job.id,
                                         "title": job.title, **extra})
 
+    def _plex_refresh(self, job: Job) -> None:
+        """Best-effort Plex metadata refresh so the new track shows up at once.
+
+        Never fails the job: unconfigured/unreachable Plex or an unmatched
+        title just logs. For Sonarr shows the series item is refreshed (the
+        title match can't address single episodes).
+        """
+        if not self.config.get("plex", {}).get("auto_refresh", True):
+            return
+        if self.services is None:
+            return
+        try:
+            plex = self.services.plex  # ConfigError when Plex isn't configured
+            found = find_item(plex, job.title, source=job.source)
+            if not found:
+                log.info("plex auto-refresh: '%s' not found in Plex", job.title)
+                return
+            plex.refresh_item(found["ratingKey"])
+            log.info("plex auto-refresh: refreshed '%s' (ratingKey %s)",
+                     job.title, found["ratingKey"])
+        except (ConfigError, PlexError) as exc:
+            log.warning("plex auto-refresh failed for '%s': %s", job.title, exc)
+
     def pause(self) -> None:
         self._pause.set()
 
@@ -255,6 +280,8 @@ class Worker(threading.Thread):
                               message=message,
                               output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
+            if not dry_run:
+                self._plex_refresh(job)
         except JobCancelled as exc:
             log.info("job %s cancelled", job.id)
             self.store.update(job.id, status="cancelled", message=str(exc))

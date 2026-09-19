@@ -32,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
         "kometa_file": None,
         "auto_label": False,
     },
+    "plex": {"auto_refresh": True},   # refresh the Plex item after a muxed dub
     "voicebox": {
         "base_url": "http://127.0.0.1:17493",
         "timeout_seconds": 600,
@@ -50,7 +51,7 @@ DEFAULTS: dict[str, Any] = {
         "duration_match": True,
         "max_fit_attempts": 5,
         "ducking_ratio": "12:1",
-        "track_name_template": "AI - {language}",
+        "track_name_template": "{language_name} AI",
         "preset_voices": [],       # fallback voice list when voicebox is down
         "teaser_minutes": 10,      # a "tease" job dubs just this opening window
         "segment_limit": None,   # cap lines per job (handy for CPU test runs)

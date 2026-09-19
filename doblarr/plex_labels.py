@@ -30,6 +30,22 @@ def _primary_sections(plex: PlexClient) -> tuple[list[dict], list[dict]]:
             [show_primary] if show_primary else [])
 
 
+def find_item(plex: PlexClient, title: str, year: int | None = None,
+              source: str = "") -> dict | None:
+    """Best Plex match for a title — movies first for Radarr-sourced titles,
+    shows first for Sonarr-sourced, both when unknown. For shows this matches
+    the series (per-episode refresh isn't available via title matching)."""
+    movie_secs, show_secs = _primary_sections(plex)
+    secs = (show_secs + movie_secs) if source.startswith("Sonarr") \
+        else (movie_secs + show_secs)
+    for s in secs:
+        found = plex.find(s["key"], TYPE_NUM[s["type"]], title, year)
+        if found:
+            found["section"] = s
+            return found
+    return None
+
+
 def sync_labels(items: list, plex: PlexClient, config, apply: bool = False) -> dict:
     """Add the needs-dub label to needs-dub/partial titles and remove it elsewhere."""
     f = config.get("filtering", {}) or {}
