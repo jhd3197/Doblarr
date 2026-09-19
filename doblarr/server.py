@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import discovery
 from .clients.radarr import RadarrClient, RadarrError
+from .clients.sonarr import SonarrClient, SonarrError
 from .config import Config
 
 log = logging.getLogger("doblarr.server")
@@ -31,25 +32,40 @@ def create_app(config: Config | None = None) -> FastAPI:
         targets = config["general"]["target_languages"]
         conn = config.get("connect", {})
         disc = config.get("discovery", {})
-        url, key = conn.get("radarr_url"), conn.get("radarr_api_key")
-        if not url or not key:
-            return JSONResponse(status_code=400,
-                                content={"error": "Radarr is not configured "
-                                         "(connect.radarr_url / connect.radarr_api_key)."})
-        try:
-            movies = RadarrClient(url, key).list_movies()
-        except RadarrError as exc:
-            return JSONResponse(status_code=502, content={"error": str(exc)})
+        only_foreign = disc.get("only_original_foreign", True)
+        undefined = disc.get("treat_undefined_as", "original")
 
-        items = discovery.scan_radarr(
-            movies, targets,
-            only_original_foreign=disc.get("only_original_foreign", True),
-            treat_undefined_as=disc.get("treat_undefined_as", "original"),
-        )
+        items: list = []
+        warnings: list[str] = []
+
+        if conn.get("radarr_url") and conn.get("radarr_api_key"):
+            try:
+                movies = RadarrClient(conn["radarr_url"], conn["radarr_api_key"]).list_movies()
+                items += discovery.scan_radarr(movies, targets,
+                    only_original_foreign=only_foreign, treat_undefined_as=undefined)
+            except RadarrError as exc:
+                warnings.append(f"Radarr: {exc}")
+
+        if conn.get("sonarr_url") and conn.get("sonarr_api_key"):
+            try:
+                sc = SonarrClient(conn["sonarr_url"], conn["sonarr_api_key"])
+                series = sc.list_series()
+                items += discovery.scan_sonarr(series, sc.episode_files, targets,
+                    only_original_foreign=only_foreign, treat_undefined_as=undefined)
+            except SonarrError as exc:
+                warnings.append(f"Sonarr: {exc}")
+
+        if not items and not warnings:
+            return JSONResponse(status_code=400,
+                                content={"error": "No sources configured "
+                                         "(connect.radarr_* / connect.sonarr_*)."})
+
+        discovery.sort_items(items)
         return {
             "generated_at": _dt.datetime.now().isoformat(timespec="seconds"),
             "target_languages": targets,
             "counts": discovery.summarize(items),
+            "warnings": warnings,
             "items": discovery.to_dicts(items),
         }
 

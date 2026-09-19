@@ -269,6 +269,7 @@
           <div class="opts" data-single id="libraryFilters">
             <button type="button" class="opt" aria-pressed="true" data-filter="all">All</button>
             <button type="button" class="opt" aria-pressed="false" data-filter="needs-dub">needs-dub</button>
+            <button type="button" class="opt" aria-pressed="false" data-filter="partial">partial</button>
             <button type="button" class="opt" aria-pressed="false" data-filter="available">available</button>
           </div>
           <button type="button" class="btn btn-secondary" style="margin-left: auto;" id="rescanBtn">Rescan sources</button>
@@ -690,7 +691,7 @@ const library = { items: [], filter: "all", loaded: false };
 
 function statusTag(label) {
   const cls = label === "needs-dub" ? "tag-accent"
-            : label === "review" ? "tag-outline" : "tag-neutral";
+            : (label === "partial" || label === "review") ? "tag-outline" : "tag-neutral";
   return `<span class="tag ${cls}">${label}</span>`;
 }
 
@@ -727,7 +728,9 @@ async function loadLibrary() {
     library.items = data.items || [];
     library.loaded = true;
     const c = data.counts || {};
-    meta.textContent = `Radarr · ${c.total} titles scanned · ${c.needs_dub} need a dub · ${c.available} already watchable in ${(data.target_languages || []).join(", ")}`;
+    const partial = c.partial ? ` · ${c.partial} partial` : "";
+    meta.textContent = `${c.total} titles scanned · ${c.needs_dub} need a dub${partial} · ${c.available} watchable in ${(data.target_languages || []).join(", ")}`;
+    if (data.warnings && data.warnings.length) meta.textContent += ` · ⚠ ${data.warnings.join("; ")}`;
     renderLibrary();
   } catch (err) {
     library.loaded = false;

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from doblarr import discovery
 from doblarr.config import Config
 from doblarr.models import DubJob, Segment, Speaker
 
@@ -24,3 +25,36 @@ def test_dubjob_summary():
     job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00")}
     s = job.summary()
     assert "ko -> es" in s and "2 segments" in s
+
+
+def test_discovery_movies():
+    movies = [
+        {"title": "KoreanFilm", "hasFile": True, "originalLanguage": {"name": "Korean"},
+         "movieFile": {"mediaInfo": {"audioLanguages": "kor"}}},
+        {"title": "GermanDubbed", "hasFile": True, "originalLanguage": {"name": "German"},
+         "movieFile": {"mediaInfo": {"audioLanguages": "eng"}}},
+        {"title": "EnglishUnd", "hasFile": True, "originalLanguage": {"name": "English"},
+         "movieFile": {"mediaInfo": {"audioLanguages": "und"}}},
+        {"title": "NoFile", "hasFile": False, "originalLanguage": {"name": "Korean"}},
+    ]
+    got = {i.title: i.status for i in discovery.scan_radarr(movies, ["en", "es"])}
+    assert got == {"KoreanFilm": "needs-dub", "GermanDubbed": "available",
+                   "EnglishUnd": "available"}  # NoFile excluded
+
+
+def test_discovery_shows():
+    series = [
+        {"id": 1, "title": "EngShow", "originalLanguage": {"name": "English"},
+         "statistics": {"episodeFileCount": 2}},
+        {"id": 2, "title": "KoShow", "originalLanguage": {"name": "Korean"},
+         "statistics": {"episodeFileCount": 2}},
+        {"id": 3, "title": "JaPartial", "originalLanguage": {"name": "Japanese"},
+         "statistics": {"episodeFileCount": 2}},
+    ]
+    files = {
+        2: [{"mediaInfo": {"audioLanguages": "kor"}}, {"mediaInfo": {"audioLanguages": "kor"}}],
+        3: [{"mediaInfo": {"audioLanguages": "jpn/eng"}}, {"mediaInfo": {"audioLanguages": "jpn"}}],
+    }
+    items = discovery.scan_sonarr(series, lambda sid: files.get(sid, []), ["en", "es"])
+    got = {i.title: i.status for i in items}
+    assert got == {"EngShow": "available", "KoShow": "needs-dub", "JaPartial": "partial"}

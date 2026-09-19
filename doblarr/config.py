@@ -12,7 +12,8 @@ DEFAULTS: dict[str, Any] = {
     "paths": {"work_dir": "./work", "output_dir": "./output"},
     "general": {"target_languages": ["en", "es"]},
     "web": {"host": "127.0.0.1", "port": 6363},
-    "connect": {"radarr_url": None, "radarr_api_key": None},
+    "connect": {"radarr_url": None, "radarr_api_key": None,
+                "sonarr_url": None, "sonarr_api_key": None},
     "discovery": {"only_original_foreign": True, "treat_undefined_as": "original"},
     "voicebox": {
         "base_url": "http://127.0.0.1:17493",

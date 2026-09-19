@@ -41,9 +41,18 @@ class LibraryItem:
     original: str          # ISO 639-1 of the original language
     source: str            # e.g. "Radarr · Films"
     existing_audio: str    # normalized audio languages present, e.g. "en/ja"
-    label: str             # "needs-dub" | "available"
+    label: str             # "needs-dub" | "partial" | "available"
     status: str            # same as label, used for UI filtering
     auto_dub: bool
+
+
+# Order used when sorting the merged library: work-to-do first.
+STATUS_ORDER = {"needs-dub": 0, "partial": 1, "available": 2}
+
+
+def sort_items(items: list["LibraryItem"]) -> list["LibraryItem"]:
+    items.sort(key=lambda i: (STATUS_ORDER.get(i.status, 3), i.title.lower()))
+    return items
 
 
 def _name_to_iso2(name: str | None) -> str:
@@ -105,15 +114,70 @@ def scan_radarr(movies: list[dict], targets: list[str],
             auto_dub=(label == "needs-dub"),
         ))
 
-    # needs-dub first, then alphabetical
-    items.sort(key=lambda i: (i.status != "needs-dub", i.title.lower()))
-    return items
+    return sort_items(items)
+
+
+def scan_sonarr(series_list: list[dict], fetch_files, targets: list[str],
+                source_label: str = "Sonarr · Shows",
+                only_original_foreign: bool = True,
+                treat_undefined_as: str = "original") -> list[LibraryItem]:
+    """Classify every series with files.
+
+    A series is available if every episode has a target track, needs-dub if none
+    do, and partial in between. `fetch_files(series_id)` returns its episode files;
+    it's only called for foreign-original series, to keep the scan cheap.
+    """
+    target_set = {t.strip().lower() for t in targets}
+    items: list[LibraryItem] = []
+
+    for s in series_list:
+        stats = s.get("statistics") or {}
+        if stats.get("episodeFileCount", 0) <= 0:
+            continue
+        original = _name_to_iso2((s.get("originalLanguage") or {}).get("name"))
+
+        # Originally in a target language -> watchable; no per-episode probe needed.
+        if only_original_foreign and original in target_set:
+            items.append(LibraryItem(
+                title=s.get("title", "?"), year=s.get("year"), original=original or "??",
+                source=source_label, existing_audio="—",
+                label="available", status="available", auto_dub=False))
+            continue
+
+        files = fetch_files(s.get("id")) or []
+        total = len(files)
+        if total == 0:
+            continue
+        with_target = 0
+        all_codes: set[str] = set()
+        for f in files:
+            codes = _audio_iso2((f.get("mediaInfo") or {}).get("audioLanguages"),
+                                original, target_set, treat_undefined_as)
+            all_codes |= codes
+            if codes & target_set:
+                with_target += 1
+
+        if with_target == 0:
+            status = "needs-dub"
+        elif with_target == total:
+            status = "available"
+        else:
+            status = "partial"
+        audio_disp = "/".join(sorted(all_codes)) if all_codes else "none"
+
+        items.append(LibraryItem(
+            title=s.get("title", "?"), year=s.get("year"), original=original or "??",
+            source=source_label, existing_audio=f"{audio_disp} ({with_target}/{total})",
+            label=status, status=status, auto_dub=(status != "available")))
+
+    return sort_items(items)
 
 
 def summarize(items: list[LibraryItem]) -> dict:
     return {
         "total": len(items),
         "needs_dub": sum(1 for i in items if i.status == "needs-dub"),
+        "partial": sum(1 for i in items if i.status == "partial"),
         "available": sum(1 for i in items if i.status == "available"),
     }
 

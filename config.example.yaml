@@ -19,6 +19,8 @@ web:
 connect:
   radarr_url: http://localhost:7878
   radarr_api_key: CHANGE_ME
+  sonarr_url: http://localhost:8989
+  sonarr_api_key: CHANGE_ME
 
 # Library discovery behaviour
 discovery:
