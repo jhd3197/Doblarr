@@ -40,3 +40,4 @@ models/
 Thumbs.db
 .idea/
 .vscode/
+.coverage
