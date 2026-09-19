@@ -14,6 +14,24 @@ def test_config_defaults():
     assert cfg["dub"]["voice_mode"] in {"clone", "preset"}
 
 
+def test_config_save_and_redact():
+    import tempfile
+
+    from doblarr.config import SECRET_SENTINEL
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "config.yaml"
+        cfg = Config.load(p)
+        cfg.apply_and_save({"connect": {"radarr_api_key": "SECRET123", "radarr_url": "http://x:7878"}})
+        # secret is redacted on read-out
+        assert cfg.as_dict(redact_secrets=True)["connect"]["radarr_api_key"] == SECRET_SENTINEL
+        # a sentinel value on save must NOT overwrite the real key
+        cfg.apply_and_save({"connect": {"radarr_api_key": SECRET_SENTINEL, "radarr_url": "http://y:7878"}})
+        assert cfg["connect"]["radarr_api_key"] == "SECRET123"
+        assert cfg["connect"]["radarr_url"] == "http://y:7878"
+        # persisted to disk
+        assert Config.load(p)["connect"]["radarr_api_key"] == "SECRET123"
+
+
 def test_segment_duration():
     seg = Segment(index=0, start=1.0, end=3.5, text_src="안녕하세요")
     assert seg.duration == 2.5

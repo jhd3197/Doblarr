@@ -6,7 +6,7 @@ import datetime as _dt
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -26,6 +26,26 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.get("/api/health")
     def health():
         return {"ok": True, "service": "doblarr", "web_dir": str(WEB_DIR)}
+
+    @app.get("/api/config")
+    def get_config():
+        return config.as_dict(redact_secrets=True)
+
+    @app.post("/api/config")
+    async def post_config(request: Request):
+        try:
+            changes = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
+        if not isinstance(changes, dict):
+            return JSONResponse(status_code=400, content={"error": "expected a config object"})
+        try:
+            config.apply_and_save(changes)
+        except OSError as exc:
+            return JSONResponse(status_code=500,
+                                content={"error": f"could not write {config.path}: {exc}"})
+        return {"ok": True, "saved_to": str(config.path),
+                "config": config.as_dict(redact_secrets=True)}
 
     @app.get("/api/library")
     def library():

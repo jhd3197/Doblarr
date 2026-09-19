@@ -445,10 +445,9 @@
         </div>
         <div style="display: flex; align-items: center; gap: 10px; padding: 16px 26px; margin-top: 24px; border-top: 1px solid var(--line); background: var(--panel); position: sticky; bottom: 0;">
           <button type="button" class="btn btn-secondary">Docs</button>
-          <span class="m" style="font-size: 12px; color: var(--muted);">/config/doblarr.yml</span>
-          <button type="button" class="btn btn-secondary" style="margin-left: auto;">Dry run</button>
-          <button type="button" class="btn btn-secondary">Test</button>
-          <button type="button" class="btn btn-primary">Save changes</button>
+          <span class="m" style="font-size: 12px; color: var(--muted);">config.yaml</span>
+          <span id="saveStatus" style="margin-left: auto; font-size: 12.5px; color: var(--muted);"></span>
+          <button type="button" class="btn btn-primary" id="saveSettings">Save changes</button>
         </div>
       </div>
     </section>
@@ -664,7 +663,17 @@ const TABS = [
 
 // ---- App state + rendering (vanilla, no framework) ----
 const app = document.getElementById("app");
-const state = { page: "Overview", tab: "connections", keys: false, vals: {} };
+const state = { page: "Overview", tab: "connections", keys: false, vals: {}, config: null };
+
+// Flat lookup of every settings field by its config key.
+const FIELD_BY_KEY = {};
+TABS.forEach(t => t.groups.forEach(g => g.fields.forEach(f => { FIELD_BY_KEY[f.k] = f; })));
+
+function cfgGet(dotted) {
+  if (!state.config) return undefined;
+  return dotted.split(".").reduce((o, k) => (o && o[k] !== undefined) ? o[k] : undefined, state.config);
+}
+function isBoolField(f) { return f.t === "choice" && Array.isArray(f.o) && f.o[0] === "On"; }
 
 function safeGet(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } }
 function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -682,7 +691,7 @@ function setPage(page) {
     s.hidden = s.getAttribute("data-view") !== page);
   document.querySelectorAll("#nav .navitem").forEach(n =>
     n.setAttribute("aria-current", n.dataset.page === page ? "page" : "false"));
-  if (page === "Settings") renderSettings();
+  if (page === "Settings") { if (state.config) renderSettings(); else loadConfig(); }
   if (page === "Library" && !library.loaded) loadLibrary();
 }
 
@@ -751,7 +760,13 @@ function el(tag, attrs = {}, ...kids) {
   return n;
 }
 
-function fieldValue(f) { return state.vals[f.k] ?? f.v; }
+function fieldDisplay(f) {
+  if (state.vals[f.k] !== undefined) return state.vals[f.k];
+  const c = cfgGet(f.k);
+  if (c === undefined || c === null) return f.v;
+  if (isBoolField(f)) return c ? "On" : "Off";
+  return c;
+}
 
 function renderField(f) {
   const row = el("div", { class: "frow" });
@@ -762,24 +777,61 @@ function renderField(f) {
   const right = el("div", {});
   if (f.t === "text") {
     right.append(el("input", {
-      class: "input m", type: "text", value: fieldValue(f), style: "max-width: 420px;",
+      class: "input m", type: "text", value: fieldDisplay(f), style: "max-width: 420px;",
       oninput: e => { state.vals[f.k] = e.target.value; },
     }));
   } else if (f.t === "choice") {
     const opts = el("div", { class: "opts" });
     f.o.forEach(o => opts.append(el("button", {
-      type: "button", class: "opt", "aria-pressed": fieldValue(f) === o ? "true" : "false",
+      type: "button", class: "opt", "aria-pressed": fieldDisplay(f) === o ? "true" : "false",
       onclick: () => { state.vals[f.k] = o; renderSettings(); },
     }, o)));
     right.append(opts);
   } else if (f.t === "list") {
     const chips = el("div", { class: "chips" });
-    (f.items || []).forEach(c => chips.append(el("span", { class: "tag tag-neutral m" }, c)));
+    const items = Array.isArray(cfgGet(f.k)) ? cfgGet(f.k) : (f.items || []);
+    items.forEach(c => chips.append(el("span", { class: "tag tag-neutral m" }, c)));
     right.append(chips);
   }
   if (f.h) right.append(el("p", { class: "hint" }, f.h));
   row.append(right);
   return row;
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch("api/config");
+    state.config = res.ok ? await res.json() : null;
+  } catch (e) { state.config = null; }
+  renderSettings();
+}
+
+async function saveSettings() {
+  const status = document.getElementById("saveStatus");
+  const payload = {};
+  for (const [k, v] of Object.entries(state.vals)) {
+    const f = FIELD_BY_KEY[k];
+    const val = (f && isBoolField(f)) ? (v === "On") : v;
+    const parts = k.split(".");
+    let node = payload;
+    parts.forEach((p, i) => { if (i === parts.length - 1) node[p] = val; else node = (node[p] = node[p] || {}); });
+  }
+  if (!Object.keys(payload).length) { status.textContent = "Nothing changed."; return; }
+  status.textContent = "Saving…";
+  try {
+    const res = await fetch("api/config", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    state.config = data.config;
+    state.vals = {};
+    library.loaded = false;   // connect.* may have changed — rescan next visit
+    status.textContent = "Saved ✓";
+    renderSettings();
+  } catch (err) {
+    status.textContent = "Save failed: " + err.message;
+  }
 }
 
 function renderSettings() {
@@ -825,6 +877,7 @@ document.querySelectorAll(".opts[data-single]").forEach(group => {
   });
 });
 document.getElementById("rescanBtn").addEventListener("click", loadLibrary);
+document.getElementById("saveSettings").addEventListener("click", saveSettings);
 
 // ---- Init ----
 const savedTheme = safeGet("doblarr.theme", "light");
