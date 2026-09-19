@@ -1,0 +1,32 @@
+# Doblarr config for Docker — copy to config/config.yaml and fill in keys.
+# Inside a container, reach host services via host.docker.internal (NOT localhost).
+general:
+  target_languages: [en, es]
+
+paths:
+  work_dir: /data/work
+  output_dir: /data/output
+
+web:
+  host: 0.0.0.0
+  port: 6363
+
+connect:
+  radarr_url: http://host.docker.internal:7878
+  radarr_api_key: CHANGE_ME
+  sonarr_url: http://host.docker.internal:8989
+  sonarr_api_key: CHANGE_ME
+  plex_url: http://host.docker.internal:32400
+  plex_token: CHANGE_ME
+
+discovery:
+  only_original_foreign: true
+  treat_undefined_as: original
+  auto_scan: false
+  rescan_interval: 6h
+
+filtering:
+  tag_missing_dub: needs-dub
+  hidden_collection_name: Not in your language
+  kometa_handoff: true
+  auto_label: false

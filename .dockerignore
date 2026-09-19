@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.log
+.venv/
+venv/
+tests/
+work/
+output/
+data/
+config/
+config.yaml
+README.md

@@ -1,0 +1,22 @@
+name: doblarr
+
+# Run Doblarr next to your other -arrs. It reaches Radarr/Sonarr/Plex on the host
+# via host.docker.internal (same pattern as the media-tools stack).
+#
+#   1. cp config.docker.example.yaml config/config.yaml   # then fill in keys
+#   2. docker compose up -d --build
+#   3. open http://localhost:6363
+
+services:
+  doblarr:
+    build: .
+    image: doblarr:latest
+    container_name: doblarr
+    restart: unless-stopped
+    ports:
+      - "6363:6363"
+    volumes:
+      - ./config:/config   # holds config.yaml (see config.docker.example.yaml)
+      - ./data:/data       # jobs.json, generated Kometa fragment, scratch
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

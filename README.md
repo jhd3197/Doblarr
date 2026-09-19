@@ -53,6 +53,19 @@ Open the UI, go to **Library** to see your real collection, and **Queue dub** on
 needs-dub title to watch it flow through the queue. The CLI still works too:
 `python -m doblarr dub "<file>" --from ko --to es --subs film.srt --dry-run`.
 
+### Docker
+
+Runs next to your other -arrs; reaches Radarr/Sonarr/Plex via `host.docker.internal`.
+
+```bash
+cp config.docker.example.yaml config/config.yaml   # fill in URLs + keys
+docker compose up -d --build                         # http://localhost:6363
+```
+
+`config/` holds `config.yaml`; `data/` holds the job store + generated Kometa
+fragment. The image is the app only (no ML stack) — the worker runs dry-run until
+Demucs/voicebox are added.
+
 ## Pipeline
 
 | # | Stage | Tool | Status |
@@ -107,6 +120,8 @@ web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
 - [x] Web UI + REST API + job queue (a real *arr shell)
 - [x] Library discovery from Radarr + Sonarr
 - [x] Settings read/save from the UI
+- [x] Plex labeling + hide (Kometa handoff) + scheduled auto-sync
+- [x] Docker packaging
 - [ ] **The real dub** — flip the worker to `dry_run=False` once these land:
   - [ ] `separate` (Demucs), `diarize` (pyannote), `whisper` transcribe, `fit_timing`, `mix`
   - [ ] wire `ClaudeTranslator` (load the `claude-api` skill for current model ids)

@@ -16,6 +16,9 @@ config.yaml
 work/
 # finished dub tracks / remuxed files
 output/
+# docker-mounted config + data (secrets, runtime state)
+config/
+data/
 *.log
 
 # Media (never commit sample movies/audio)
