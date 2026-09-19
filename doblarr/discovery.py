@@ -7,7 +7,7 @@ bulk call gives the original language AND the audio languages present in the fil
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 # English language name (as Radarr reports originalLanguage.name) -> ISO 639-1
 NAME_TO_ISO2 = {
@@ -45,6 +45,23 @@ class LibraryItem:
     status: str            # same as label, used for UI filtering
     auto_dub: bool
     path: str | None = None   # media file/folder path, for enqueuing a dub
+    poster: str | None = None          # remote poster URL (TMDB CDN) for the UI
+    audio_langs: list[str] = field(default_factory=list)  # ISO 639-1 codes present
+    tmdb_id: int | None = None
+    tvdb_id: int | None = None
+
+
+def _poster_url(images: list | None) -> str | None:
+    """Poster remoteUrl from a Radarr/Sonarr images array (None if unavailable).
+
+    Only the remote (TMDB) URL is used — the local `url` is an *arr-relative
+    /MediaCover path that the browser cannot reach.
+    """
+    if not images:
+        return None
+    poster = next((i for i in images if i.get("coverType") == "poster"), None)
+    img = poster or images[0]
+    return img.get("remoteUrl")
 
 
 # Order used when sorting the merged library: work-to-do first.
@@ -114,6 +131,9 @@ def scan_radarr(movies: list[dict], targets: list[str],
             status=label,
             auto_dub=(label == "needs-dub"),
             path=(m.get("movieFile") or {}).get("path"),
+            poster=_poster_url(m.get("images")),
+            audio_langs=sorted(audio_codes),
+            tmdb_id=m.get("tmdbId"),
         ))
 
     return sort_items(items)
@@ -144,7 +164,9 @@ def scan_sonarr(series_list: list[dict], fetch_files, targets: list[str],
                 title=s.get("title", "?"), year=s.get("year"), original=original or "??",
                 source=source_label, existing_audio="—",
                 label="available", status="available", auto_dub=False,
-                path=s.get("path")))
+                path=s.get("path"), poster=_poster_url(s.get("images")),
+                audio_langs=[original] if original else [],
+                tvdb_id=s.get("tvdbId")))
             continue
 
         files = fetch_files(s.get("id")) or []
@@ -172,7 +194,8 @@ def scan_sonarr(series_list: list[dict], fetch_files, targets: list[str],
             title=s.get("title", "?"), year=s.get("year"), original=original or "??",
             source=source_label, existing_audio=f"{audio_disp} ({with_target}/{total})",
             label=status, status=status, auto_dub=(status != "available"),
-            path=s.get("path")))
+            path=s.get("path"), poster=_poster_url(s.get("images")),
+            audio_langs=sorted(all_codes), tvdb_id=s.get("tvdbId")))
 
     return sort_items(items)
 

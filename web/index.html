@@ -86,6 +86,25 @@
   .card-body { font-size: 13px; color: var(--muted); margin: 0 0 12px; line-height: 1.45; }
   .card-meta { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
 
+  /* ---- Library poster grid ---- */
+  .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+  .poster-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    overflow: hidden; display: flex; flex-direction: column; }
+  .poster-card:hover { border-color: var(--line-strong); }
+  .poster-img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; display: block;
+    background: var(--color-neutral-200); }
+  .poster-fallback { width: 100%; aspect-ratio: 2 / 3; display: flex; align-items: center;
+    justify-content: center; text-align: center; padding: 12px; font-weight: 700;
+    font-size: 14px; line-height: 1.35; background: var(--color-neutral-200); color: var(--muted); }
+  .poster-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .lang-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lang-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px;
+    font-weight: 600; padding: 2px 7px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--color-neutral-200); color: var(--color-neutral-700); }
+  .lang-chip.missing { border: 1px dashed var(--color-accent); background: transparent;
+    color: var(--color-accent-700); }
+  .app[data-theme="dark"] .lang-chip.missing { color: var(--color-accent); }
+
   /* ---- App layout (from the original mockup) ---- */
   .table th { border-bottom: 1px solid var(--line-strong); color: var(--muted); }
   .table td { border-bottom: 1px solid var(--line); }
@@ -282,23 +301,7 @@
           <button type="button" class="btn btn-secondary" id="rescanBtn">Rescan sources</button>
         </div>
         <div id="labelStatus" style="font-size:13px;color:var(--muted);margin:-8px 0 16px;min-height:18px;"></div>
-        <div class="panel" style="padding: 6px 18px 10px;">
-          <table class="table">
-            <thead>
-              <tr><th>Title</th><th style="width: 110px;">Original</th><th style="width: 160px;">Source</th><th style="width: 170px;">Existing audio</th><th style="width: 150px;">Status</th><th style="width: 110px;">Auto-dub</th></tr>
-            </thead>
-            <tbody id="libraryBody">
-              <tr><td style="font-weight: 600;">Alice in Borderland</td><td class="m" style="font-size: 13px;">ja</td><td>Plex · Anime</td><td class="m" style="font-size: 13px;">ja · AI-EN (5/16)</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
-              <tr><td style="font-weight: 600;">Squid Game</td><td class="m" style="font-size: 13px;">ko</td><td>Sonarr · Shows</td><td class="m" style="font-size: 13px;">ko · AI-ES (8/9)</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
-              <tr><td style="font-weight: 600;">Dark</td><td class="m" style="font-size: 13px;">de</td><td>Sonarr · Shows</td><td class="m" style="font-size: 13px;">de · AI-EN (26/26)</td><td><span class="tag tag-neutral">ai-dubbed</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
-              <tr><td style="font-weight: 600;">Money Heist</td><td class="m" style="font-size: 13px;">es</td><td>Plex · Shows</td><td class="m" style="font-size: 13px;">es only</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
-              <tr><td style="font-weight: 600;">Tokyo Vice</td><td class="m" style="font-size: 13px;">ja</td><td>Plex · Shows</td><td class="m" style="font-size: 13px;">ja · en (6/10)</td><td><span class="tag tag-outline">review</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
-              <tr><td style="font-weight: 600;">Frieren</td><td class="m" style="font-size: 13px;">ja</td><td>Sonarr · Anime</td><td class="m" style="font-size: 13px;">ja only</td><td><span class="tag tag-neutral">ignored</span></td><td class="m" style="font-size: 12.5px; color: var(--muted);">Off</td></tr>
-              <tr><td style="font-weight: 600;">Parasite</td><td class="m" style="font-size: 13px;">ko</td><td>Radarr · Films</td><td class="m" style="font-size: 13px;">ko · AI-EN</td><td><span class="tag tag-neutral">ai-dubbed</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
-              <tr><td style="font-weight: 600;">The Bear</td><td class="m" style="font-size: 13px;">en</td><td>Plex · Shows</td><td class="m" style="font-size: 13px;">en</td><td><span class="tag tag-neutral">en-available</span></td><td class="m" style="font-size: 12.5px; color: var(--muted);">Off</td></tr>
-            </tbody>
-          </table>
-        </div>
+        <div id="libraryGrid" class="poster-grid"></div>
       </div>
     </section>
 
@@ -767,28 +770,56 @@ function statusTag(label) {
   return `<span class="tag ${cls}">${label}</span>`;
 }
 
+// ISO 639-1 -> flag emoji. Windows browsers don't render regional-indicator
+// emoji, so chips ALWAYS carry the code text — the emoji is a bonus glyph.
+const LANG_FLAGS = {
+  en: "🇬🇧", es: "🇪🇸", ja: "🇯🇵", fr: "🇫🇷", de: "🇩🇪", it: "🇮🇹", pt: "🇵🇹",
+  ko: "🇰🇷", zh: "🇨🇳", hi: "🇮🇳", ru: "🇷🇺", ar: "🇸🇦",
+};
+
+function langChip(code, missing) {
+  const flag = LANG_FLAGS[code] ? LANG_FLAGS[code] + " " : "";
+  const tip = missing ? `no ${code.toUpperCase()} audio (target language)` : `${code.toUpperCase()} audio present`;
+  return `<span class="lang-chip${missing ? " missing" : ""}" title="${tip}">${flag}${escapeHtml(code.toUpperCase())}</span>`;
+}
+
 function renderLibrary() {
-  const body = document.getElementById("libraryBody");
+  const grid = document.getElementById("libraryGrid");
   const rows = library.items.filter(i =>
     (library.filter === "all" || i.status === library.filter) && matchesSearch(i.title));
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No titles match.</td></tr>`;
+    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">No titles match.</div>`;
     return;
   }
   library.rendered = rows;
-  body.innerHTML = rows.map((i, idx) => {
+  const targets = library.targets || [];
+  grid.innerHTML = rows.map((i, idx) => {
+    // Audio languages present; fall back to the original language when unprobed.
+    const present = new Set((i.audio_langs && i.audio_langs.length)
+      ? i.audio_langs : (i.original && i.original !== "??" ? [i.original] : []));
+    const chips = [...present].map(c => langChip(c, false)).join("")
+      + targets.filter(t => !present.has(t)).map(t => langChip(t, true)).join("");
+    const poster = i.poster
+      ? `<img class="poster-img" loading="lazy" src="${escapeHtml(i.poster)}" alt=""
+              onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
+         <div class="poster-fallback" hidden>${escapeHtml(i.title)}</div>`
+      : `<div class="poster-fallback">${escapeHtml(i.title)}</div>`;
     const action = (i.status === "needs-dub" || i.status === "partial")
       ? `<button type="button" class="btn btn-ghost queue-dub" data-idx="${idx}">Queue dub</button>`
-      : `<span class="m" style="font-size:12.5px;color:var(--muted);">—</span>`;
+      : "";
     return `
-    <tr>
-      <td style="font-weight:600;">${escapeHtml(i.title)}${i.year ? ` <span class="m" style="color:var(--muted);font-size:12px;">${i.year}</span>` : ""}</td>
-      <td class="m" style="font-size:13px;">${escapeHtml(i.original)}</td>
-      <td>${escapeHtml(i.source)}</td>
-      <td class="m" style="font-size:13px;">${escapeHtml(i.existing_audio)}</td>
-      <td>${statusTag(i.label)}</td>
-      <td>${action}</td>
-    </tr>`;
+    <div class="poster-card">
+      ${poster}
+      <div class="poster-body">
+        <div style="font-weight:600;font-size:13.5px;line-height:1.3;">${escapeHtml(i.title)}${i.year ? ` <span class="m" style="color:var(--muted);font-size:12px;">${i.year}</span>` : ""}</div>
+        <div class="lang-chips">${chips}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;">
+          ${statusTag(i.label)}
+          <span class="m" style="font-size:11.5px;color:var(--muted);">${escapeHtml(i.source.split(" ")[0])}</span>
+        </div>
+        ${action}
+      </div>
+    </div>`;
   }).join("");
 }
 
@@ -814,9 +845,9 @@ function escapeHtml(s) {
 }
 
 async function loadLibrary() {
-  const body = document.getElementById("libraryBody");
+  const grid = document.getElementById("libraryGrid");
   const meta = document.getElementById("libraryMeta");
-  body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">Scanning Radarr…</td></tr>`;
+  grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">Scanning Radarr…</div>`;
   try {
     const res = await fetch("api/library");
     const data = await res.json();
@@ -832,7 +863,7 @@ async function loadLibrary() {
   } catch (err) {
     library.loaded = false;
     meta.textContent = "Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable?";
-    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">${escapeHtml(err.message)}</td></tr>`;
+    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -1179,7 +1210,7 @@ async function syncPlexLabels(apply) {
   }
 }
 document.getElementById("syncLabelsBtn").addEventListener("click", () => syncPlexLabels(false));
-document.getElementById("libraryBody").addEventListener("click", e => {
+document.getElementById("libraryGrid").addEventListener("click", e => {
   const btn = e.target.closest(".queue-dub"); if (!btn) return;
   const item = library.rendered[Number(btn.dataset.idx)];
   if (item) queueDub(item, btn);

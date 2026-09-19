@@ -15,7 +15,10 @@ HEADERS = {"X-Api-Key": API_KEY}
 
 RADARR_MOVIES = [
     {"title": "KoreanFilm", "hasFile": True, "originalLanguage": {"name": "Korean"},
-     "movieFile": {"mediaInfo": {"audioLanguages": "kor"}}},
+     "movieFile": {"mediaInfo": {"audioLanguages": "kor"}},
+     "tmdbId": 9999,
+     "images": [{"coverType": "poster", "remoteUrl": "https://image.tmdb.org/p/kf.jpg"},
+                {"coverType": "fanart", "remoteUrl": "https://image.tmdb.org/f/kf.jpg"}]},
 ]
 
 
@@ -124,7 +127,12 @@ def test_library_scan_cached_and_refresh(tmp_path, monkeypatch):
         r = c.get("/api/library", headers=HEADERS)
         assert r.status_code == 200
         assert r.json()["counts"]["needs_dub"] == 1
-        assert r.json()["items"][0]["title"] == "KoreanFilm"
+        item = r.json()["items"][0]
+        assert item["title"] == "KoreanFilm"
+        # poster grid fields: TMDB poster pass-through, audio codes, ids
+        assert item["poster"] == "https://image.tmdb.org/p/kf.jpg"
+        assert item["audio_langs"] == ["ko"]
+        assert item["tmdb_id"] == 9999 and item["tvdb_id"] is None
         c.get("/api/library", headers=HEADERS)                      # cached
         assert calls["n"] == 1
         c.get("/api/library", headers=HEADERS, params={"refresh": "true"})
