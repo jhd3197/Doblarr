@@ -34,9 +34,9 @@ class VoiceboxClient(ArrClient):
         super().__init__(base_url, timeout=timeout)
 
     # -- health -----------------------------------------------------------
-    def health(self) -> dict:
+    def health(self, timeout: int = 15) -> dict:
         """Return service health, or raise if unreachable."""
-        return self._get("/health", timeout=15)
+        return self._get("/health", timeout=timeout)
 
     # -- local LLM (translation, refinement) ------------------------------
     def llm_generate(self, prompt: str, system: str | None = None) -> str:

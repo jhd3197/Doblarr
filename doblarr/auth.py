@@ -18,7 +18,7 @@ from .config import Config
 
 log = logging.getLogger("doblarr.auth")
 
-OPEN_PATHS = {"/api/health"}
+OPEN_PATHS = {"/api/health", "/api/health/ready"}
 
 
 def build_api_key_dependency(config: Config) -> Callable[[Request], Awaitable[None]]:

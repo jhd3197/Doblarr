@@ -21,6 +21,7 @@ from .cache import TTLCache
 from .clients.plex import PlexClient, PlexError
 from .clients.radarr import RadarrClient, RadarrError
 from .clients.sonarr import SonarrClient, SonarrError
+from .clients.voicebox import VoiceboxClient, VoiceboxError
 from .config import Config
 from .errors import ConfigError, DoblarrError, NotFoundError
 from .jobs import JobStore, Worker
@@ -87,7 +88,26 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @api.get("/api/health")
     def health():
+        """Liveness: the process is up."""
         return {"ok": True, "service": "doblarr", "web_dir": str(WEB_DIR)}
+
+    @api.get("/api/health/ready")
+    def ready():
+        """Readiness: voicebox reachable and at least one *arr source configured."""
+        problems: list[str] = []
+        conn = config.get("connect", {})
+        if not ((conn.get("radarr_url") and conn.get("radarr_api_key"))
+                or (conn.get("sonarr_url") and conn.get("sonarr_api_key"))):
+            problems.append("no library source configured "
+                            "(connect.radarr_* / connect.sonarr_*)")
+        try:
+            VoiceboxClient(config["voicebox"]["base_url"]).health(timeout=4)
+        except VoiceboxError as exc:
+            problems.append(f"voicebox: {exc}")
+        if problems:
+            return JSONResponse(status_code=503,
+                                content={"ready": False, "problems": problems})
+        return {"ready": True}
 
     @api.get("/api/config")
     def get_config():
