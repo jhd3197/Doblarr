@@ -6,6 +6,25 @@ paths:
   work_dir: ./work        # scratch space for audio/stems/clips
   output_dir: ./output    # finished tracks / remuxed files
 
+# What languages you want dubs in
+general:
+  target_languages: [en, es]
+
+# Web UI + API server (doblarr serve)
+web:
+  host: 127.0.0.1
+  port: 6363
+
+# Services Doblarr reads from (keys can also come from env, e.g. DOBLARR_RADARR_API_KEY)
+connect:
+  radarr_url: http://localhost:7878
+  radarr_api_key: CHANGE_ME
+
+# Library discovery behaviour
+discovery:
+  only_original_foreign: true   # don't flag titles already in a target language
+  treat_undefined_as: original  # how to read an 'und' (untagged) audio track
+
 # voicebox service (the TTS + voice-cloning engine Doblarr calls)
 voicebox:
   # Installed/native app default: 17493.  Docker maps host 17600 -> 17493.

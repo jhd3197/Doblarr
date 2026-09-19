@@ -37,6 +37,18 @@ def _cmd_check(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace, config: Config) -> int:
+    import uvicorn
+
+    from .server import create_app
+
+    host = args.host or config.get("web", {}).get("host", "127.0.0.1")
+    port = args.port or config.get("web", {}).get("port", 6363)
+    print(f"Doblarr serving on http://{host}:{port}  (UI + /api/library)")
+    uvicorn.run(create_app(config), host=host, port=int(port))
+    return 0
+
+
 def _cmd_dub(args: argparse.Namespace, config: Config) -> int:
     src = Path(args.input)
     if not src.exists():
@@ -61,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("check", help="check the voicebox service is reachable")
 
+    s = sub.add_parser("serve", help="run the web UI + API server")
+    s.add_argument("--host", default=None)
+    s.add_argument("--port", default=None, type=int)
+
     d = sub.add_parser("dub", help="dub a video into a target language")
     d.add_argument("input", help="path to the video file")
     d.add_argument("--to", required=True, help="target language code, e.g. es")
@@ -78,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
     config = Config.load(args.config)
     if args.command == "check":
         return _cmd_check(args, config)
+    if args.command == "serve":
+        return _cmd_serve(args, config)
     if args.command == "dub":
         return _cmd_dub(args, config)
     return 2

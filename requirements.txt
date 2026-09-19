@@ -3,6 +3,10 @@ requests>=2.31
 PyYAML>=6.0
 pysubs2>=1.6          # read/parse .srt/.ass subtitle files
 
+# --- Web server (doblarr serve: UI + library API) ---
+fastapi>=0.110
+uvicorn>=0.27
+
 # --- Translation (optional, for the real translate stage) ---
 # anthropic>=0.40     # Claude-based translation
 

@@ -264,23 +264,21 @@
     <section data-view="Library" hidden>
       <div style="padding: 30px 26px 44px;">
         <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Library</h2>
-        <p style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Titles whose audio tracks were read with ffprobe, matched against your target languages.</p>
+        <p id="libraryMeta" style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Reading audio languages from Radarr, matched against your target languages.</p>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px;">
-          <div class="opts" data-single>
-            <button type="button" class="opt" aria-pressed="true">All</button>
-            <button type="button" class="opt" aria-pressed="false">needs-dub</button>
-            <button type="button" class="opt" aria-pressed="false">ai-dubbed</button>
-            <button type="button" class="opt" aria-pressed="false">en-available</button>
-            <button type="button" class="opt" aria-pressed="false">Ignored</button>
+          <div class="opts" data-single id="libraryFilters">
+            <button type="button" class="opt" aria-pressed="true" data-filter="all">All</button>
+            <button type="button" class="opt" aria-pressed="false" data-filter="needs-dub">needs-dub</button>
+            <button type="button" class="opt" aria-pressed="false" data-filter="available">available</button>
           </div>
-          <button type="button" class="btn btn-secondary" style="margin-left: auto;">Rescan sources</button>
+          <button type="button" class="btn btn-secondary" style="margin-left: auto;" id="rescanBtn">Rescan sources</button>
         </div>
         <div class="panel" style="padding: 6px 18px 10px;">
           <table class="table">
             <thead>
-              <tr><th>Title</th><th style="width: 110px;">Original</th><th style="width: 160px;">Source</th><th style="width: 170px;">Existing audio</th><th style="width: 150px;">Plex label</th><th style="width: 110px;">Auto-dub</th></tr>
+              <tr><th>Title</th><th style="width: 110px;">Original</th><th style="width: 160px;">Source</th><th style="width: 170px;">Existing audio</th><th style="width: 150px;">Status</th><th style="width: 110px;">Auto-dub</th></tr>
             </thead>
-            <tbody>
+            <tbody id="libraryBody">
               <tr><td style="font-weight: 600;">Alice in Borderland</td><td class="m" style="font-size: 13px;">ja</td><td>Plex · Anime</td><td class="m" style="font-size: 13px;">ja · AI-EN (5/16)</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
               <tr><td style="font-weight: 600;">Squid Game</td><td class="m" style="font-size: 13px;">ko</td><td>Sonarr · Shows</td><td class="m" style="font-size: 13px;">ko · AI-ES (8/9)</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
               <tr><td style="font-weight: 600;">Dark</td><td class="m" style="font-size: 13px;">de</td><td>Sonarr · Shows</td><td class="m" style="font-size: 13px;">de · AI-EN (26/26)</td><td><span class="tag tag-neutral">ai-dubbed</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
@@ -684,6 +682,58 @@ function setPage(page) {
   document.querySelectorAll("#nav .navitem").forEach(n =>
     n.setAttribute("aria-current", n.dataset.page === page ? "page" : "false"));
   if (page === "Settings") renderSettings();
+  if (page === "Library" && !library.loaded) loadLibrary();
+}
+
+// ---- Library (real data from /api/library) ----
+const library = { items: [], filter: "all", loaded: false };
+
+function statusTag(label) {
+  const cls = label === "needs-dub" ? "tag-accent"
+            : label === "review" ? "tag-outline" : "tag-neutral";
+  return `<span class="tag ${cls}">${label}</span>`;
+}
+
+function renderLibrary() {
+  const body = document.getElementById("libraryBody");
+  const rows = library.items.filter(i => library.filter === "all" || i.status === library.filter);
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No titles match this filter.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(i => `
+    <tr>
+      <td style="font-weight:600;">${escapeHtml(i.title)}${i.year ? ` <span class="m" style="color:var(--muted);font-size:12px;">${i.year}</span>` : ""}</td>
+      <td class="m" style="font-size:13px;">${escapeHtml(i.original)}</td>
+      <td>${escapeHtml(i.source)}</td>
+      <td class="m" style="font-size:13px;">${escapeHtml(i.existing_audio)}</td>
+      <td>${statusTag(i.label)}</td>
+      <td class="m" style="font-size:12.5px;${i.auto_dub ? "" : "color:var(--muted);"}">${i.auto_dub ? "On" : "Off"}</td>
+    </tr>`).join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+async function loadLibrary() {
+  const body = document.getElementById("libraryBody");
+  const meta = document.getElementById("libraryMeta");
+  body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">Scanning Radarr…</td></tr>`;
+  try {
+    const res = await fetch("api/library");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    library.items = data.items || [];
+    library.loaded = true;
+    const c = data.counts || {};
+    meta.textContent = `Radarr · ${c.total} titles scanned · ${c.needs_dub} need a dub · ${c.available} already watchable in ${(data.target_languages || []).join(", ")}`;
+    renderLibrary();
+  } catch (err) {
+    library.loaded = false;
+    meta.textContent = "Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable?";
+    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">${escapeHtml(err.message)}</td></tr>`;
+  }
 }
 
 function el(tag, attrs = {}, ...kids) {
@@ -768,8 +818,10 @@ document.querySelectorAll(".opts[data-single]").forEach(group => {
     const btn = e.target.closest(".opt"); if (!btn) return;
     group.querySelectorAll(".opt").forEach(o => o.setAttribute("aria-pressed", "false"));
     btn.setAttribute("aria-pressed", "true");
+    if (btn.dataset.filter) { library.filter = btn.dataset.filter; renderLibrary(); }
   });
 });
+document.getElementById("rescanBtn").addEventListener("click", loadLibrary);
 
 // ---- Init ----
 const savedTheme = safeGet("doblarr.theme", "light");

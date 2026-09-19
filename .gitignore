@@ -10,9 +10,12 @@ venv/
 env/
 
 # Doblarr runtime
-config.yaml          # local config with secrets — copy from config.example.yaml
-work/                # scratch: extracted audio, stems, generated clips
-output/              # finished dub tracks / remuxed files
+# local config with secrets — copy from config.example.yaml
+config.yaml
+# scratch: extracted audio, stems, generated clips
+work/
+# finished dub tracks / remuxed files
+output/
 *.log
 
 # Media (never commit sample movies/audio)
