@@ -31,6 +31,7 @@ discovery:
   only_original_foreign: true   # don't flag titles already in a target language
   treat_undefined_as: original  # how to read an 'und' (untagged) audio track
   cache_ttl: 300                # seconds /api/library may serve a cached scan
+  webhook_debounce: 30          # coalesce *arr webhook bursts into one rescan
 
 # Plex labeling + hide (Doblarr labels; Kometa/a smart collection hides)
 filtering:

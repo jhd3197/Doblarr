@@ -32,6 +32,7 @@ from .jobs import JobStore, Worker, import_legacy_json
 from .scheduler import Scheduler
 from .services import Services
 from .store import Database
+from .webhooks import Debouncer, is_test_event, should_rescan
 
 log = logging.getLogger("doblarr.server")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -85,6 +86,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             thread.join(timeout=SHUTDOWN_TIMEOUT)
             if thread.is_alive():
                 log.warning("%s did not stop within %.0fs", thread.name, SHUTDOWN_TIMEOUT)
+        rescan_debouncer.cancel()
         db.close()
 
     app = FastAPI(title="Doblarr", version="0.1.0", lifespan=lifespan)
@@ -222,6 +224,40 @@ def create_app(config: Config | None = None) -> FastAPI:
             except PlexError as exc:
                 log.warning("auto label sync failed: %s", exc)
         return status_state["counts"]
+
+    def _run_scan_with_events(source: str):
+        bus.publish("scan", {"type": "started", "source": source})
+        counts = _scan_and_maybe_label()
+        bus.publish("scan", {"type": "completed", "counts": counts, "source": source})
+
+    def _webhook_debounce() -> float:
+        try:
+            return float(config.get("discovery", {}).get("webhook_debounce", 30))
+        except (TypeError, ValueError):
+            return 30.0
+
+    # A burst of webhooks (batch import) coalesces into one rescan.
+    rescan_debouncer = Debouncer(lambda: _run_scan_with_events("webhook"),
+                                 delay=_webhook_debounce)
+
+    def _handle_arr_webhook(source: str, body: dict[str, Any]):
+        event_type = body.get("eventType", "")
+        if is_test_event(body):
+            return {"ok": True, "test": True}
+        if not should_rescan(body):
+            return {"ok": True, "ignored": event_type}
+        log.info("%s webhook (%s) — rescan in %.0fs",
+                 source, event_type, _webhook_debounce())
+        rescan_debouncer.trigger()
+        return {"ok": True, "scan": "scheduled"}
+
+    @api.post("/api/webhooks/radarr")
+    def webhook_radarr(body: dict[str, Any]):
+        return _handle_arr_webhook("radarr", body)
+
+    @api.post("/api/webhooks/sonarr")
+    def webhook_sonarr(body: dict[str, Any]):
+        return _handle_arr_webhook("sonarr", body)
 
     @api.get("/api/status")
     def status():

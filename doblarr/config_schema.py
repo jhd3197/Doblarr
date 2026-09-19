@@ -50,6 +50,7 @@ class DiscoveryModel(_Section):
     rescan_interval: str = "6h"
     auto_scan: bool = False
     cache_ttl: int = 300
+    webhook_debounce: int = 30
 
 
 class FilteringModel(_Section):

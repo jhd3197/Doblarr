@@ -22,7 +22,8 @@ DEFAULTS: dict[str, Any] = {
                 "sonarr_url": None, "sonarr_api_key": None,
                 "plex_url": None, "plex_token": None},
     "discovery": {"only_original_foreign": True, "treat_undefined_as": "original",
-                  "rescan_interval": "6h", "auto_scan": False, "cache_ttl": 300},
+                  "rescan_interval": "6h", "auto_scan": False, "cache_ttl": 300,
+                  "webhook_debounce": 30},
     "filtering": {
         "tag_missing_dub": "needs-dub",
         "hidden_collection_name": "Not in your language",

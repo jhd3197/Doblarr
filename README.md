@@ -59,6 +59,19 @@ Set `web.api_key` in `config.yaml` to lock the API: every `/api/*` route (except
 key configured the API stays open (fine for a trusted home network) and a warning is
 logged at startup.
 
+### Webhooks (Radarr/Sonarr → Doblarr)
+
+Doblarr accepts the standard *arr webhook JSON at `POST /api/webhooks/radarr` and
+`POST /api/webhooks/sonarr`. A **Download** (import) event schedules a library rescan —
+a burst of webhooks coalesces into one scan (`discovery.webhook_debounce`, default 30s);
+**Test** events just return 200; other event types are ignored. If `filtering.auto_label`
+is on, the rescan also syncs Plex labels.
+
+Setup in Radarr/Sonarr: **Settings → Connect → Add → Webhook** —
+URL `http://<doblarr-host>:6363/api/webhooks/radarr` (or `.../sonarr`), trigger
+**On Import/On Upgrade**. If you set `web.api_key`, add a header `X-Api-Key: <key>`
+in the webhook settings (no key configured → webhooks are open like the rest of the API).
+
 Open the UI, go to **Library** to see your real collection, and **Queue dub** on a
 needs-dub title to watch it flow through the queue. The CLI still works too:
 `python -m doblarr dub "<file>" --from ko --to es --subs film.srt --dry-run`.
