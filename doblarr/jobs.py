@@ -46,6 +46,7 @@ class Job:
     message: str = ""
     kind: str = "full"           # full | tease (a dubbed first-minutes preview)
     force: bool = False        # re-run every stage, ignoring cached artifacts
+    output_file: str | None = None   # muxed result (planned path in dry-run)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -251,7 +252,8 @@ class Worker(threading.Thread):
             out = str(dj.output_file) if dj.output_file else "(planned)"
             message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
-                              message=message)
+                              message=message,
+                              output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
         except JobCancelled as exc:
             log.info("job %s cancelled", job.id)

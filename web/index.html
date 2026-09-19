@@ -497,6 +497,18 @@
       </div>
     </div>
   </div>
+
+  <!-- Watch a produced dub/tease -->
+  <div id="watchModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:100;">
+    <div class="panel" style="width:min(860px,94vw);padding:20px 22px;">
+      <h3 id="watchTitle" style="margin:0 0 12px;font-size:18px;">Watch</h3>
+      <video id="watchVideo" controls autoplay style="width:100%;max-height:70vh;background:#000;border-radius:10px;"></video>
+      <p style="margin:12px 0 0;font-size:12.5px;color:var(--muted);">MKV playback depends on browser codecs — if this doesn't play, open the file from the output folder: <code id="watchPath" class="m" style="font-size:12px;user-select:all;"></code></p>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+        <button type="button" class="btn btn-secondary" id="watchClose">Close</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -985,7 +997,9 @@ function renderJobs(data) {
                 : (escapeHtml(j.stage || "queued"));
     const barColor = j.status === "failed" || j.status === "cancelled" ? "background: var(--color-neutral-600);" : "";
     const act = (j.status === "queued" || j.status === "running") ? "Cancel" : "Remove";
-    const action = act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "";
+    const watch = j.has_file
+      ? `<button type="button" class="btn btn-ghost job-watch" data-id="${j.id}">Watch</button>` : "";
+    const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch;
     return `
       <tr>
         <td style="font-weight:600;">${escapeHtml(j.title)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}</td>
@@ -1242,11 +1256,40 @@ document.getElementById("pauseQueue").addEventListener("click", async () => {
   loadJobs();
 });
 document.getElementById("dubsBody").addEventListener("click", async e => {
+  const watchBtn = e.target.closest(".job-watch");
+  if (watchBtn) {
+    openWatch(watchBtn.dataset.id, jobs.lastData);
+    return;
+  }
   const btn = e.target.closest(".job-del"); if (!btn) return;
   btn.disabled = true;
   try { await fetch("api/jobs/" + btn.dataset.id, { method: "DELETE" }); } catch (err) {}
   loadJobs();
 });
+
+// ---- Watch modal (streams /api/jobs/{id}/file with Range support) ----
+const watchModal = document.getElementById("watchModal");
+const watchVideo = document.getElementById("watchVideo");
+
+function openWatch(jobId, data) {
+  const job = (data && data.jobs || []).find(j => j.id === jobId);
+  if (!job) return;
+  const key = localStorage.getItem("doblarr_api_key") || "";
+  watchVideo.src = "api/jobs/" + jobId + "/file" + (key ? "?api_key=" + encodeURIComponent(key) : "");
+  document.getElementById("watchTitle").textContent =
+    `${job.title}${job.kind === "tease" ? " (tease)" : ""}`;
+  document.getElementById("watchPath").textContent = job.output_file || "";
+  watchModal.hidden = false;
+}
+
+function closeWatch() {
+  watchVideo.pause();
+  watchVideo.removeAttribute("src");  // stop the stream
+  watchVideo.load();
+  watchModal.hidden = true;
+}
+document.getElementById("watchClose").addEventListener("click", closeWatch);
+watchModal.addEventListener("click", e => { if (e.target === watchModal) closeWatch(); });
 
 // Global search: filters the current page's list by title.
 document.getElementById("globalSearch").addEventListener("input", e => {

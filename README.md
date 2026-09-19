@@ -184,6 +184,7 @@ web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
 | GET/POST | `/api/jobs` | list / enqueue dub jobs (`force: true` ignores cached artifacts) |
 | POST | `/api/jobs/clear-finished` | remove done+failed+cancelled jobs |
 | DELETE | `/api/jobs/{id}` | remove one job (a *running* job is cancelled instead) |
+| GET | `/api/jobs/{id}/file` | stream the produced dub/tease (HTTP Range; only under output/work dirs) |
 | GET | `/api/events` | SSE stream of job/scan/log events (replay + live; `?api_key=` from browsers) |
 | POST | `/api/webhooks/radarr` | Radarr webhook (Download → debounced rescan; Test → 200) |
 | POST | `/api/webhooks/sonarr` | Sonarr webhook (same) |
