@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doblarr</title>
+<style>
+  /* ---- Design tokens (self-contained; replaces the _ds bundle) ---- */
+  .app {
+    --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-heading: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+    --color-bg: #f3efec;
+    --color-surface: #ffffff;
+    --color-text: #1c1a19;
+    --color-accent: #ec573c;
+    --color-accent-700: #cf4a2e;
+    --color-divider: rgba(0,0,0,0.12);
+    --color-neutral-100: #ffffff;
+    --color-neutral-200: #f5f1ed;
+    --color-neutral-300: #e7e1db;
+    --color-neutral-600: #6f6a66;
+    --color-neutral-700: #565250;
+    --color-neutral-800: #2f2c2a;
+    --color-neutral-900: #1c1a19;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+
+    --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+    --line: color-mix(in srgb, var(--color-text) 12%, transparent);
+    --line-strong: color-mix(in srgb, var(--color-text) 18%, transparent);
+    --muted: color-mix(in srgb, var(--color-text) 62%, transparent);
+    --panel: var(--color-neutral-100);
+  }
+  .app[data-theme="dark"] {
+    --color-bg: #191817; --color-surface: #232120; --color-text: #f2f0ef;
+    --color-accent: #ff6a50; --color-accent-700: #ff8f7c; --color-divider: rgba(255,255,255,0.16);
+    --color-neutral-100: #232120; --color-neutral-200: #2c2a28; --color-neutral-300: #3a3735;
+    --color-neutral-600: #9c9795; --color-neutral-700: #b4afac; --color-neutral-800: #d6d2cf; --color-neutral-900: #f2f0ef;
+    --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.16);
+    --muted: rgba(242,240,239,0.62); --panel: #201f1e;
+    color-scheme: dark;
+  }
+
+  /* ---- Reset-ish ---- */
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-bg); }
+  a { color: var(--color-accent-700); text-underline-offset: 3px; }
+  a:hover { color: var(--color-accent); }
+  h2, h3 { font-family: var(--font-heading); }
+
+  /* ---- Components (replaces classes the _ds bundle provided) ---- */
+  .btn { font-family: var(--font-body); font-size: 13px; font-weight: 600; line-height: 1;
+    padding: 9px 15px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px; background: transparent;
+    color: var(--color-text); white-space: nowrap; }
+  .btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+  .btn-primary:hover { filter: brightness(1.06); }
+  .btn-secondary { border-color: var(--line-strong); background: var(--color-surface); color: var(--color-text); }
+  .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+  .btn-ghost { color: var(--muted); background: transparent; padding: 7px 11px; }
+  .btn-ghost:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+
+  .input { font-family: var(--font-body); font-size: 14px; padding: 9px 13px; width: 100%;
+    border-radius: 10px; border: 1px solid var(--line-strong); background: var(--color-surface); color: var(--color-text); }
+  .input::placeholder { color: var(--muted); }
+  .input:focus { outline: 2px solid color-mix(in srgb, var(--color-accent) 45%, transparent); outline-offset: 1px; }
+
+  .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .table th { text-align: left; padding: 11px 10px; font-weight: 600; font-size: 12px;
+    border-bottom: 1px solid var(--line-strong); color: var(--muted); }
+  .table td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+
+  .tag { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600;
+    border: 1px solid transparent; border-radius: 999px; padding: 4px 11px; }
+  .tag-neutral { background: color-mix(in srgb, var(--color-text) 8%, transparent); color: var(--color-neutral-800); }
+  .tag-accent { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent-700); }
+  .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
+  .app[data-theme="dark"] .tag-neutral { background: rgba(255,255,255,0.08); color: var(--color-neutral-800); }
+  .app[data-theme="dark"] .tag-accent { background: rgba(255,106,80,0.16); color: #ffb4a3; }
+  .app[data-theme="dark"] .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
+
+  .card { border-radius: 14px; background: var(--panel); border: 1px solid var(--line); padding: 16px; }
+  .card-kicker { display: block; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .card-title { display: block; font-family: var(--font-heading); font-weight: 800; font-size: 17px; margin: 7px 0 8px; }
+  .card-body { font-size: 13px; color: var(--muted); margin: 0 0 12px; line-height: 1.45; }
+  .card-meta { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+
+  /* ---- App layout (from the original mockup) ---- */
+  .table th { border-bottom: 1px solid var(--line-strong); color: var(--muted); }
+  .table td { border-bottom: 1px solid var(--line); }
+  .m { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-feature-settings: "tnum" 1; }
+  .shell { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; }
+  .navitem { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 10px 14px; border-radius: 10px; font-family: var(--font-body); font-size: 14px;
+    color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+  .navitem:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); color: var(--color-text); }
+  .navitem[aria-current="page"] { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent-700); font-weight: 600; }
+  .dot9 { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; opacity: 0.55; }
+  .navitem[aria-current="page"] .dot9 { opacity: 1; background: var(--color-accent); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; max-width: 58ch; }
+  .bar { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 12%, transparent); overflow: hidden; }
+  .bar > span { display: block; height: 6px; border-radius: 999px; background: var(--color-accent); }
+  .themebtn { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 8%, transparent); }
+  .themebtn button { appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 6px 13px;
+    font-family: var(--font-body); font-size: 12.5px; color: var(--muted); background: transparent; }
+  .themebtn button[aria-pressed="true"] { background: var(--color-bg); color: var(--color-text); font-weight: 600; box-shadow: var(--shadow-sm); }
+  .tab { appearance: none; background: transparent; border: 1px solid transparent; border-radius: 999px;
+    font-size: 13px; color: var(--muted); padding: 7px 14px; cursor: pointer; white-space: nowrap; font-family: var(--font-body); }
+  .tab:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+  .tab[aria-current="page"] { color: var(--color-text); background: var(--panel); border-color: var(--line-strong); font-weight: 600; }
+  .frow { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 8px 28px; padding: 15px 0; align-items: start; }
+  .frow + .frow { border-top: 1px solid var(--line); }
+  .flabel { font-size: 13.5px; font-weight: 600; padding-top: 8px; }
+  .fkey { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); margin-top: 3px; word-break: break-all; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .opt { appearance: none; cursor: pointer; border: 1px solid var(--line-strong); background: transparent;
+    color: var(--muted); border-radius: 999px; padding: 6px 13px; font-family: var(--font-body); font-size: 12.5px; }
+  .opt:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+  .opt[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: #fff; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  [hidden] { display: none !important; }
+
+  @media (max-width: 1000px) { .frow { grid-template-columns: 1fr; gap: 6px; } .flabel { padding-top: 0; } }
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: 1fr; }
+    .side { position: static !important; height: auto !important; border-right: 0 !important; border-bottom: 1px solid var(--line) !important; }
+    .sidenav { flex-direction: row !important; overflow-x: auto; }
+    .navitem { width: auto; white-space: nowrap; }
+    .sidefoot { display: none !important; }
+  }
+  @media (max-width: 720px) {
+    .cards4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+    header .input { max-width: 160px !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app shell" data-theme="light" id="app" style="color: var(--color-text); font-family: var(--font-body);">
+
+  <aside class="side" style="border-right: 1px solid var(--line); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; background: var(--panel); padding: 18px 12px;">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px 20px;">
+      <span style="width: 26px; height: 26px; border-radius: 9px; background: var(--color-accent); display: block;"></span>
+      <span style="font-family: var(--font-heading); font-weight: 800; font-size: 18px; letter-spacing: -0.015em;">doblarr</span>
+    </div>
+    <nav class="sidenav" style="display: flex; flex-direction: column; gap: 3px;" id="nav">
+      <button type="button" class="navitem" data-page="Overview"><span class="dot9"></span>Overview</button>
+      <button type="button" class="navitem" data-page="Library"><span class="dot9"></span>Library</button>
+      <button type="button" class="navitem" data-page="Dubs"><span class="dot9"></span>Dubs</button>
+      <button type="button" class="navitem" data-page="Voices"><span class="dot9"></span>Voices</button>
+      <button type="button" class="navitem" data-page="Settings"><span class="dot9"></span>Settings</button>
+    </nav>
+    <div class="sidefoot panel" style="margin-top: auto; padding: 12px 14px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent); display: block;"></span>
+        <span class="m" style="font-size: 12px;">worker online · cuda:0</span>
+      </div>
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 8px;">
+        <span style="font-size: 12px; color: var(--muted);">Doblarr stable</span>
+        <span class="m" style="font-size: 12px; color: var(--muted);">0.4.1</span>
+      </div>
+    </div>
+  </aside>
+
+  <main style="min-width: 0; display: flex; flex-direction: column;">
+    <header style="display: flex; align-items: center; gap: 14px; padding: 14px 26px; border-bottom: 1px solid var(--line); background: var(--color-bg); position: sticky; top: 0; z-index: 10;">
+      <input class="input" type="search" placeholder="Search titles, speakers, jobs…" style="max-width: 420px;">
+      <div class="themebtn" style="margin-left: auto;" id="themebtn">
+        <button type="button" data-theme-set="light">Light</button>
+        <button type="button" data-theme-set="dark">Dark</button>
+      </div>
+      <span class="tag tag-neutral">Queue 14</span>
+      <button type="button" class="btn btn-primary">New dub</button>
+    </header>
+
+    <!-- ===== Overview ===== -->
+    <section data-view="Overview">
+      <div style="padding: 30px 26px 44px;">
+        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Overview</h2>
+        <p style="margin: 0 0 26px; font-size: 13.5px; color: var(--muted);">Watching Plex, Radarr and Sonarr · last scan 6 minutes ago · dubs written as non-destructive <span class="m">AI - EN</span> tracks</p>
+
+        <div class="cards4" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
+          <div class="panel" style="padding: 18px 20px;">
+            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0; color: var(--color-accent);">2</p>
+            <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">Jobs running</p>
+          </div>
+          <div class="panel" style="padding: 18px 20px;">
+            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">14</p>
+            <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">Queued</p>
+          </div>
+          <div class="panel" style="padding: 18px 20px;">
+            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">128</p>
+            <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">Flagged <span class="m">needs-dub</span></p>
+          </div>
+          <div class="panel" style="padding: 18px 20px;">
+            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">74%</p>
+            <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">cuda:0 · 11.2 / 16 GB</p>
+          </div>
+        </div>
+
+        <h3 style="font-size: 18px; margin: 32px 0 14px;">In progress</h3>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="panel" style="padding: 18px 20px;">
+            <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
+              <span style="font-family: var(--font-heading); font-weight: 800; font-size: 16px;">Alice in Borderland — S02E05</span>
+              <span class="m" style="font-size: 12.5px; color: var(--muted);">ja → en · chatterbox-multilingual · 6 speakers</span>
+              <span class="tag tag-accent" style="margin-left: auto;">Synthesize</span>
+            </div>
+            <div class="bar" style="margin-top: 14px;"><span style="width: 68%;"></span></div>
+            <div style="display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; align-items: center;">
+              <span class="m" style="font-size: 12.5px;">68% · line 412 / 604</span>
+              <span class="m" style="font-size: 12.5px; color: var(--muted);">stretch p95 1.14 · 2m 10s left</span>
+              <button type="button" class="btn btn-ghost" style="margin-left: auto;">Pause</button>
+              <button type="button" class="btn btn-ghost">Job log</button>
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px;">
+              <span class="tag tag-neutral">probe ✓</span>
+              <span class="tag tag-neutral">transcribe ✓</span>
+              <span class="tag tag-neutral">diarize ✓</span>
+              <span class="tag tag-neutral">translate ✓</span>
+              <span class="tag tag-neutral">clone ✓</span>
+              <span class="tag tag-accent">synthesize</span>
+              <span class="tag tag-neutral" style="opacity: 0.5;">fit</span>
+              <span class="tag tag-neutral" style="opacity: 0.5;">mix</span>
+              <span class="tag tag-neutral" style="opacity: 0.5;">mux</span>
+            </div>
+          </div>
+          <div class="panel" style="padding: 18px 20px;">
+            <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
+              <span style="font-family: var(--font-heading); font-weight: 800; font-size: 16px;">Squid Game — S01E01</span>
+              <span class="m" style="font-size: 12.5px; color: var(--muted);">ko → es · htdemucs_ft · −16 LUFS</span>
+              <span class="tag tag-accent" style="margin-left: auto;">Mix &amp; mux</span>
+            </div>
+            <div class="bar" style="margin-top: 14px;"><span style="width: 91%;"></span></div>
+            <div style="display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; align-items: center;">
+              <span class="m" style="font-size: 12.5px;">91% · writing AI - ES</span>
+              <span class="m" style="font-size: 12.5px; color: var(--muted);">40s left</span>
+              <button type="button" class="btn btn-ghost" style="margin-left: auto;">Pause</button>
+              <button type="button" class="btn btn-ghost">Job log</button>
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-size: 18px; margin: 32px 0 6px;">Recent activity</h3>
+        <div class="panel" style="padding: 6px 18px 10px;">
+          <table class="table">
+            <thead>
+              <tr><th style="width: 100px;">Time</th><th>Event</th><th>Item</th><th style="width: 190px;">Result</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="m" style="font-size: 13px;">14:02</td><td>Muxed dub track</td><td>Call My Agent — S03E02</td><td><span class="tag tag-neutral">AI - EN · track 3</span></td></tr>
+              <tr><td class="m" style="font-size: 13px;">13:47</td><td>Preview clip held for approval</td><td>Alice in Borderland — S02E05</td><td><span class="tag tag-outline">Awaiting review</span></td></tr>
+              <tr><td class="m" style="font-size: 13px;">13:31</td><td>Diarization below min confidence</td><td>Tokyo Vice — S01E07</td><td><span class="tag tag-outline">Needs review</span></td></tr>
+              <tr><td class="m" style="font-size: 13px;">13:12</td><td>Labelled in Plex</td><td>Money Heist — S02E11</td><td><span class="tag tag-neutral">needs-dub</span></td></tr>
+              <tr><td class="m" style="font-size: 13px;">12:58</td><td>Radarr import scanned</td><td>Anime · root /media/anime</td><td><span class="tag tag-neutral">412 items</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Library ===== -->
+    <section data-view="Library" hidden>
+      <div style="padding: 30px 26px 44px;">
+        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Library</h2>
+        <p style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Titles whose audio tracks were read with ffprobe, matched against your target languages.</p>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px;">
+          <div class="opts" data-single>
+            <button type="button" class="opt" aria-pressed="true">All</button>
+            <button type="button" class="opt" aria-pressed="false">needs-dub</button>
+            <button type="button" class="opt" aria-pressed="false">ai-dubbed</button>
+            <button type="button" class="opt" aria-pressed="false">en-available</button>
+            <button type="button" class="opt" aria-pressed="false">Ignored</button>
+          </div>
+          <button type="button" class="btn btn-secondary" style="margin-left: auto;">Rescan sources</button>
+        </div>
+        <div class="panel" style="padding: 6px 18px 10px;">
+          <table class="table">
+            <thead>
+              <tr><th>Title</th><th style="width: 110px;">Original</th><th style="width: 160px;">Source</th><th style="width: 170px;">Existing audio</th><th style="width: 150px;">Plex label</th><th style="width: 110px;">Auto-dub</th></tr>
+            </thead>
+            <tbody>
+              <tr><td style="font-weight: 600;">Alice in Borderland</td><td class="m" style="font-size: 13px;">ja</td><td>Plex · Anime</td><td class="m" style="font-size: 13px;">ja · AI-EN (5/16)</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
+              <tr><td style="font-weight: 600;">Squid Game</td><td class="m" style="font-size: 13px;">ko</td><td>Sonarr · Shows</td><td class="m" style="font-size: 13px;">ko · AI-ES (8/9)</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
+              <tr><td style="font-weight: 600;">Dark</td><td class="m" style="font-size: 13px;">de</td><td>Sonarr · Shows</td><td class="m" style="font-size: 13px;">de · AI-EN (26/26)</td><td><span class="tag tag-neutral">ai-dubbed</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
+              <tr><td style="font-weight: 600;">Money Heist</td><td class="m" style="font-size: 13px;">es</td><td>Plex · Shows</td><td class="m" style="font-size: 13px;">es only</td><td><span class="tag tag-accent">needs-dub</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
+              <tr><td style="font-weight: 600;">Tokyo Vice</td><td class="m" style="font-size: 13px;">ja</td><td>Plex · Shows</td><td class="m" style="font-size: 13px;">ja · en (6/10)</td><td><span class="tag tag-outline">review</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
+              <tr><td style="font-weight: 600;">Frieren</td><td class="m" style="font-size: 13px;">ja</td><td>Sonarr · Anime</td><td class="m" style="font-size: 13px;">ja only</td><td><span class="tag tag-neutral">ignored</span></td><td class="m" style="font-size: 12.5px; color: var(--muted);">Off</td></tr>
+              <tr><td style="font-weight: 600;">Parasite</td><td class="m" style="font-size: 13px;">ko</td><td>Radarr · Films</td><td class="m" style="font-size: 13px;">ko · AI-EN</td><td><span class="tag tag-neutral">ai-dubbed</span></td><td class="m" style="font-size: 12.5px;">On</td></tr>
+              <tr><td style="font-weight: 600;">The Bear</td><td class="m" style="font-size: 13px;">en</td><td>Plex · Shows</td><td class="m" style="font-size: 13px;">en</td><td><span class="tag tag-neutral">en-available</span></td><td class="m" style="font-size: 12.5px; color: var(--muted);">Off</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Dubs ===== -->
+    <section data-view="Dubs" hidden>
+      <div style="padding: 30px 26px 44px;">
+        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Dubs</h2>
+        <p style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">2 running · 14 queued · 1 held at the review gate</p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center;">
+          <button type="button" class="btn btn-secondary">Pause queue</button>
+          <button type="button" class="btn btn-secondary">Clear finished</button>
+          <span class="tag tag-neutral">Paused 19:00 – 23:00</span>
+          <span class="tag tag-accent" style="margin-left: auto;">1 of 1 worker busy</span>
+        </div>
+        <div class="panel" style="padding: 6px 18px 10px;">
+          <table class="table">
+            <thead>
+              <tr><th>Item</th><th style="width: 100px;">Track</th><th>Stage</th><th style="width: 130px;">Progress</th><th style="width: 140px;">Status</th><th style="width: 90px;"></th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 600;">Alice in Borderland — S02E05</td>
+                <td class="m" style="font-size: 13px;">ja → en</td>
+                <td>Synthesize · speaker 4 of 6</td>
+                <td><div class="bar"><span style="width: 68%;"></span></div></td>
+                <td><span class="tag tag-accent">Running</span></td>
+                <td><button type="button" class="btn btn-ghost">Log</button></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">Squid Game — S01E01</td>
+                <td class="m" style="font-size: 13px;">ko → es</td>
+                <td>Mix · ducking 12:1 · muxing AI - ES</td>
+                <td><div class="bar"><span style="width: 91%;"></span></div></td>
+                <td><span class="tag tag-accent">Running</span></td>
+                <td><button type="button" class="btn btn-ghost">Log</button></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">Tokyo Vice — S01E07</td>
+                <td class="m" style="font-size: 13px;">ja → en</td>
+                <td>Held · 30s preview clip ready to approve</td>
+                <td><div class="bar"><span style="width: 42%; background: var(--color-neutral-600);"></span></div></td>
+                <td><span class="tag tag-outline">Review gate</span></td>
+                <td><button type="button" class="btn btn-ghost">Play</button></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">Money Heist — S02E11</td>
+                <td class="m" style="font-size: 13px;">es → en</td>
+                <td>Queued · position 1</td>
+                <td><div class="bar"></div></td>
+                <td><span class="tag tag-neutral">Waiting</span></td>
+                <td><button type="button" class="btn btn-ghost">Cancel</button></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">Money Heist — S02E12</td>
+                <td class="m" style="font-size: 13px;">es → en</td>
+                <td>Queued · position 2</td>
+                <td><div class="bar"></div></td>
+                <td><span class="tag tag-neutral">Waiting</span></td>
+                <td><button type="button" class="btn btn-ghost">Cancel</button></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">Call My Agent — S03E02</td>
+                <td class="m" style="font-size: 13px;">fr → en</td>
+                <td>Muxed · AI - EN · track 3 · 6m 41s</td>
+                <td><div class="bar"><span style="width: 100%; background: var(--color-neutral-600);"></span></div></td>
+                <td><span class="tag tag-neutral">Complete</span></td>
+                <td><button type="button" class="btn btn-ghost">Log</button></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">Oldboy</td>
+                <td class="m" style="font-size: 13px;">ko → en</td>
+                <td>Failed · 19% of lines over max stretch</td>
+                <td><div class="bar"><span style="width: 74%; background: var(--color-neutral-600);"></span></div></td>
+                <td><span class="tag tag-outline">Rejected</span></td>
+                <td><button type="button" class="btn btn-ghost">Retry</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Voices ===== -->
+    <section data-view="Voices" hidden>
+      <div style="padding: 30px 26px 44px;">
+        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Voices</h2>
+        <p style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Cloned once per speaker from the separated dialogue stem, then locked for the whole series.</p>
+
+        <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
+          <h3 style="font-size: 18px; margin: 0;">Cast — Alice in Borderland</h3>
+          <span class="m" style="font-size: 12.5px; color: var(--muted);">pyannote · 6 speakers · 41 min of reference</span>
+          <button type="button" class="btn btn-secondary" style="margin-left: auto;">Re-run diarization</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 16px;">
+          <div class="card">
+            <span class="card-kicker">Speaker 01 · 38% of lines</span>
+            <span class="card-title">Arisu</span>
+            <p class="card-body">Cloned from 96s of longest-clean reference. Male · young · warm mid.</p>
+            <div class="card-meta"><span class="tag tag-neutral">clone</span><span class="m">sim 0.93</span></div>
+          </div>
+          <div class="card">
+            <span class="card-kicker">Speaker 02 · 21% of lines</span>
+            <span class="card-title">Usagi</span>
+            <p class="card-body">Cloned from 74s of longest-clean reference. Female · young · bright.</p>
+            <div class="card-meta"><span class="tag tag-neutral">clone</span><span class="m">sim 0.90</span></div>
+          </div>
+          <div class="card">
+            <span class="card-kicker">Speaker 03 · 14% of lines</span>
+            <span class="card-title">Chishiya</span>
+            <p class="card-body">Preset voice assigned by hand — reference audio was too crowded to clone.</p>
+            <div class="card-meta"><span class="tag tag-accent">preset</span><span class="m">sim 0.71</span></div>
+          </div>
+          <div class="card">
+            <span class="card-kicker">Speaker 04 · 9% of lines</span>
+            <span class="card-title">Unmatched</span>
+            <p class="card-body">Only 11s isolated — under the minimum reference length.</p>
+            <div class="card-meta"><span class="tag tag-outline">needs a voice</span><span class="m">sim 0.38</span></div>
+          </div>
+        </div>
+
+        <h3 style="font-size: 18px; margin: 32px 0 6px;">Voice library</h3>
+        <div class="panel" style="padding: 6px 18px 10px;">
+          <table class="table">
+            <thead>
+              <tr><th>Voice</th><th style="width: 200px;">Engine</th><th style="width: 150px;">Character</th><th style="width: 120px;">Reference</th><th style="width: 120px;">Used in</th><th style="width: 100px;"></th></tr>
+            </thead>
+            <tbody>
+              <tr><td style="font-weight: 600;">ao-narrator</td><td class="m" style="font-size: 13px;">chatterbox-multilingual</td><td>Male · 30s · flat</td><td class="m" style="font-size: 13px;">3m 12s</td><td class="m" style="font-size: 13px;">4 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
+              <tr><td style="font-weight: 600;">kestrel</td><td class="m" style="font-size: 13px;">chatterbox-multilingual</td><td>Female · 20s · bright</td><td class="m" style="font-size: 13px;">2m 48s</td><td class="m" style="font-size: 13px;">6 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
+              <tr><td style="font-weight: 600;">gravel</td><td class="m" style="font-size: 13px;">qwen3-tts</td><td>Male · 50s · low</td><td class="m" style="font-size: 13px;">1m 55s</td><td class="m" style="font-size: 13px;">2 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
+              <tr><td style="font-weight: 600;">lantern</td><td class="m" style="font-size: 13px;">chatterbox-multilingual</td><td>Female · 40s · warm</td><td class="m" style="font-size: 13px;">4m 02s</td><td class="m" style="font-size: 13px;">1 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Settings ===== -->
+    <section data-view="Settings" hidden>
+      <div style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+        <div style="display: flex; gap: 6px; padding: 14px 26px 0; overflow-x: auto;" id="settingsTabs"></div>
+        <div style="padding: 26px 26px 0; flex: 1;">
+          <div style="display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;">
+            <div>
+              <h2 style="font-size: 23px; margin: 0 0 4px; letter-spacing: -0.015em;" id="tabTitle"></h2>
+              <p style="margin: 0; font-size: 13.5px; color: var(--muted); max-width: 72ch;" id="tabDesc"></p>
+            </div>
+            <button type="button" class="opt" id="toggleKeys" aria-pressed="false" style="margin-left: auto;">Show config keys</button>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 16px;" id="settingsGroups"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 16px 26px; margin-top: 24px; border-top: 1px solid var(--line); background: var(--panel); position: sticky; bottom: 0;">
+          <button type="button" class="btn btn-secondary">Docs</button>
+          <span class="m" style="font-size: 12px; color: var(--muted);">/config/doblarr.yml</span>
+          <button type="button" class="btn btn-secondary" style="margin-left: auto;">Dry run</button>
+          <button type="button" class="btn btn-secondary">Test</button>
+          <button type="button" class="btn btn-primary">Save changes</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+// ---- Settings model (carried over verbatim from the mockup) ----
+const T = (k, l, v, h) => ({ k, l, v, h, t: "text" });
+const C = (k, l, o, v, h) => ({ k, l, o, v, h, t: "choice" });
+const B = (k, l, v, h) => ({ k, l, o: ["On", "Off"], v: v ? "On" : "Off", h, t: "choice" });
+const L = (k, l, items, h) => ({ k, l, items, h, t: "list" });
+
+const TABS = [
+  { id: "connections", title: "Connections", desc: "The services Doblarr reads from and writes back to.", groups: [
+    { title: "Plex", desc: "Doblarr scans this server, writes labels on it, and refreshes items after a mux.", fields: [
+      T("connect.plex_url", "Hostname or URL", "http://192.168.0.49:32400", ""),
+      T("connect.plex_token", "Token", "••••••••••••••••", "Admin token — required to read sections and write labels."),
+      L("discovery.libraries", "Watched libraries", ["Movies", "TV Shows"], "Plex sections Doblarr is allowed to touch."),
+      B("mux.trigger_plex_refresh", "Refresh the item after muxing", true, "Single-item refresh, never a full library scan.") ] },
+    { title: "Radarr & Sonarr", desc: "Import events are what usually wake Doblarr up.", fields: [
+      T("connect.radarr_url", "Radarr URL", "http://host.docker.internal:7878", ""),
+      T("connect.sonarr_url", "Sonarr URL", "http://host.docker.internal:8989", ""),
+      L("discovery.sources", "Scan sources", ["plex", "radarr", "sonarr", "filesystem"], ""),
+      T("connect.api_keys_env", "API keys", "DOBLARR_*_API_KEY", "Read from the environment, never written into the config file.") ] },
+    { title: "Overseerr & voicebox", desc: "", fields: [
+      T("connect.seerr_url", "Overseerr / Jellyseerr URL", "http://host.docker.internal:5055", "Used by the dub-on-approval trigger."),
+      T("voicebox.base_url", "voicebox URL", "http://127.0.0.1:17493", "The local speech service Doblarr generates through."),
+      T("voicebox.timeout_seconds", "voicebox timeout", "120", "Seconds before a generation is considered dead.") ] } ] },
+
+  { id: "general", title: "General", desc: "Identity, target languages, and the default mode Doblarr runs in.", groups: [
+    { title: "Instance", desc: "", fields: [
+      T("general.instance_name", "Instance name", "Doblarr", "Shown in the UI and in notifications."),
+      T("general.timezone", "Timezone", "America/New_York", ""),
+      T("general.data_dir", "Data directory", "/config", ""),
+      C("general.log_level", "Log level", ["debug", "info", "warn", "error"], "info", "") ] },
+    { title: "What gets dubbed", desc: "", fields: [
+      L("general.target_languages", "Target languages", ["es", "en"], "The languages you want dubs in."),
+      B("general.original_languages_only", "Original language must differ", true, "Only process titles whose original language isn't already a target."),
+      B("general.dry_run_default", "Dry run by default", false, "Plan every job and write nothing until you say otherwise.") ] } ] },
+
+  { id: "discovery", title: "Discovery", desc: "How Doblarr finds the titles you can't watch.", groups: [
+    { title: "Scanning", desc: "", fields: [
+      B("discovery.enabled", "Discovery enabled", true, ""),
+      T("discovery.rescan_interval", "Rescan interval", "6h", ""),
+      C("discovery.audio_lang_source", "Read audio languages from", ["ffprobe", "plex_api", "radarr_api"], "ffprobe", "ffprobe opens the file; the APIs trust the metadata."),
+      C("discovery.detect_from", "Detection depth", ["metadata_only", "probe_files"], "probe_files", "Probing is accurate but slower on a big library.") ] },
+    { title: "What counts as missing", desc: "", fields: [
+      C("discovery.missing_when", "Flag a title when", ["no track in any target", "no track in all targets"], "no track in any target", ""),
+      C("discovery.treat_undefined_as", "Untagged audio counts as", ["unknown", "original", "target"], "unknown", "How to read tracks tagged und."),
+      B("discovery.only_original_foreign", "Skip English-original titles", true, "Even when they have no Spanish track.") ] },
+    { title: "Scope", desc: "Keep Doblarr away from trailers, extras and things you never want touched.", fields: [
+      T("discovery.min_year", "Earliest year", "1970", ""),
+      T("discovery.max_year", "Latest year", "", ""),
+      T("discovery.min_runtime", "Minimum runtime", "12m", ""),
+      T("discovery.max_runtime", "Maximum runtime", "240m", ""),
+      L("discovery.include_genres", "Include genres", ["all"], ""),
+      L("discovery.exclude_genres", "Exclude genres", ["Documentary", "Stand-Up"], ""),
+      L("discovery.ignore_list", "Never touch", ["Frieren", "tt0110912"], "Titles or IDs Doblarr must always leave alone.") ] } ] },
+
+  { id: "plexlabels", title: "Plex labels", desc: "Plex has no per-title hide API — Doblarr labels, and a smart collection or Kometa does the hiding.", groups: [
+    { title: "Labels", desc: "", fields: [
+      T("filtering.tag_missing_dub", "Missing a dub", "needs-dub", ""),
+      T("filtering.tag_has_ai_dub", "Already dubbed", "ai-dubbed", ""),
+      T("filtering.plex_label_available", "Target audio present", "en-available", "") ] },
+    { title: "Hiding and surfacing", desc: "", fields: [
+      C("filtering.hide_mode", "Hide mode", ["label_only", "smart_collection", "none"], "smart_collection", ""),
+      T("filtering.hidden_collection_name", "Hidden collection", "Not in your language", ""),
+      C("filtering.hide_scope", "Applies", ["per user", "library-wide"], "per user", ""),
+      T("filtering.surface_collection_name", "Surface collection", "Now available in English", "Doblarr fills this as dubs land."),
+      B("filtering.kometa_handoff", "Hand off to Kometa", true, "Emit a YAML fragment and let your existing Kometa run own the hide/show.") ] } ] },
+
+  { id: "source", title: "Source", desc: "Which audio and which transcript the dub is built from.", groups: [
+    { title: "Audio", desc: "", fields: [
+      C("source.audio_track_select", "Dub from", ["original", "first track", "by language", "widest"], "original", ""),
+      L("source.container_formats", "Allowed containers", ["mkv", "mp4", "mov"], "") ] },
+    { title: "Subtitles", desc: "Subtitles are the timing spine when they exist — cheaper and steadier than guessing.", fields: [
+      C("source.subtitle_mode", "Subtitle source", ["download", "embedded", "external file", "whisper"], "embedded", ""),
+      T("source.subtitle_language", "Subtitle language", "ja", ""),
+      C("source.subtitle_provider", "Provider", ["bazarr", "opensubtitles", "none"], "bazarr", "Reuses what you already run."),
+      B("source.prefer_forced_subs", "Prefer forced subs", false, ""),
+      B("source.strip_sdh", "Strip SDH", true, "Removes [door slams] and speaker prefixes before translation.") ] } ] },
+
+  { id: "speech", title: "Transcript", desc: "Turning the original dialogue into timed, speaker-split text.", groups: [
+    { title: "Transcription", desc: "", fields: [
+      C("transcribe.source", "Transcript from", ["subtitles", "whisper"], "whisper", ""),
+      T("transcribe.whisper_model", "Whisper model", "large-v3", ""),
+      C("transcribe.device", "Device", ["cuda", "cpu"], "cuda", ""),
+      C("transcribe.compute_type", "Compute type", ["float16", "int8"], "float16", "int8 halves VRAM at some accuracy cost."),
+      B("transcribe.word_timestamps", "Word timestamps", true, "Needed for tight lip alignment later."),
+      B("transcribe.correct_with_subtitles", "Correct against subtitles", true, ""),
+      B("transcribe.vad_filter", "Drop silence (VAD)", true, "") ] },
+    { title: "Speaker diarization", desc: "Who is speaking, and for how long.", fields: [
+      B("diarize.enabled", "Diarization enabled", true, ""),
+      T("diarize.model", "Model", "pyannote/speaker-diarization-3.1", ""),
+      T("diarize.hf_token_env", "HuggingFace token", "HF_TOKEN", "Env var holding the token."),
+      T("diarize.min_speakers", "Minimum speakers", "1", ""),
+      T("diarize.max_speakers", "Maximum speakers", "12", ""),
+      T("diarize.merge_threshold", "Merge threshold", "0.82", "Collapses near-identical voices into one speaker."),
+      B("diarize.single_speaker_fallback", "Single-speaker fallback", true, "Narration stops being split into phantom voices.") ] } ] },
+
+  { id: "translate", title: "Translation", desc: "Translated for dubbing, not for reading — every line is length-budgeted to fit the mouth it came from.", groups: [
+    { title: "Fitting the line", desc: "", fields: [
+      T("translate.length_budget_cps", "Length budget", "15 cps", "Characters per second the line has to fit into."),
+      T("translate.max_retry_shorten", "Shorten retries", "2", "Re-translates tighter when a line overruns."),
+      T("translate.batch_size", "Batch size", "40", "Lines per API call.") ] },
+    { title: "Keeping it coherent", desc: "", fields: [
+      T("translate.context_window", "Context window", "8 lines + plot summary", "Surrounding dialogue passed with each batch."),
+      L("translate.glossary", "Glossary", ["Arisu", "Borderland", "Beach"], "Locked terms and names that are never translated."),
+      C("translate.profanity", "Profanity", ["preserve", "soften"], "preserve", ""),
+      B("translate.cache", "Cache translations", true, "Re-runs reuse identical lines instead of paying twice.") ] } ] },
+
+  { id: "voices", title: "Voices", desc: "Generating the speech and matching it to the original cast.", groups: [
+    { title: "Engine", desc: "", fields: [
+      C("voicebox.engine", "Engine", ["chatterbox-multilingual", "qwen3-tts"], "chatterbox-multilingual", ""),
+      T("voicebox.model_size", "Model size", "large", ""),
+      T("voicebox.seed", "Seed", "1337", "A fixed seed keeps re-runs reproducible."),
+      B("voicebox.per_language_engine", "Per-language engine", false, "Override the engine for individual target languages."),
+      T("voicebox.concurrency", "Concurrency", "2", "Parallel generations against voicebox."),
+      T("voicebox.effects_preset", "Effects preset", "dialogue-dry", "") ] },
+    { title: "Cloning", desc: "A speaker is sampled once and keeps that voice for the whole series.", fields: [
+      C("clone.voice_mode", "Voice mode", ["clone", "preset"], "clone", ""),
+      T("clone.reference_seconds", "Reference length", "30s", "How much clean audio is pulled per speaker."),
+      C("clone.reference_pick", "Reference pick", ["longest clean", "first", "random"], "longest clean", ""),
+      T("clone.similarity_floor", "Similarity floor", "0.60", "Below this the speaker is flagged, not guessed at."),
+      B("clone.lock_per_series", "Lock the cast per series", true, ""),
+      B("clone.reuse_across_titles", "Reuse voices across titles", false, "Match the same actor in another show to the same voice.") ] } ] },
+
+  { id: "audio", title: "Timing & mix", desc: "Fitting the dub to the picture and laying it over the original bed.", groups: [
+    { title: "Timing", desc: "", fields: [
+      T("timing.max_stretch", "Max stretch", "1.30", "Past this it stops sounding like a person."),
+      C("timing.stretch_engine", "Stretch engine", ["rubberband", "ffmpeg_atempo"], "rubberband", ""),
+      B("timing.allow_overlap", "Allow overlap", true, "Permits slight overrun into neighbouring gaps."),
+      C("timing.pad_short_lines", "Short lines", ["silence pad", "leave gap"], "silence pad", ""),
+      B("timing.snap_to_scene", "Snap to scene boundaries", true, "") ] },
+    { title: "Mixing", desc: "The score and effects are never re-synthesized — only the dialogue stem is replaced.", fields: [
+      B("mix.keep_background", "Keep the original bed", true, "Overlay onto the separated music and effects."),
+      T("mix.separate_model", "Separation model", "htdemucs_ft", ""),
+      T("mix.ducking_ratio", "Ducking ratio", "12:1", ""),
+      T("mix.ducking_threshold", "Ducking threshold", "-24 dB", ""),
+      T("mix.attack", "Attack", "8 ms", ""),
+      T("mix.release", "Release", "180 ms", ""),
+      T("mix.dialogue_gain", "Dialogue gain", "+1.5 dB", ""),
+      T("mix.background_gain", "Background gain", "-2.0 dB", "") ] },
+    { title: "Output audio", desc: "", fields: [
+      C("mix.output_channels", "Channels", ["stereo", "5.1"], "stereo", ""),
+      T("mix.loudness_target", "Loudness target", "-16 LUFS", ""),
+      T("mix.sample_rate", "Sample rate", "48000", ""),
+      C("mix.codec", "Codec", ["aac", "eac3", "opus"], "aac", ""),
+      T("mix.bitrate", "Bitrate", "256k", "") ] } ] },
+
+  { id: "output", title: "Output", desc: "Nothing is overwritten — the dub is added as a new, tagged track.", groups: [
+    { title: "Muxing", desc: "", fields: [
+      C("mux.mode", "Mode", ["add track", "sidecar file"], "add track", "Adding a track is the non-destructive route."),
+      T("mux.track_name_template", "Track name", "AI - {language}", ""),
+      B("mux.set_language_tag", "Write ISO-639 language tag", true, ""),
+      B("mux.default_disposition", "Make the dub the default track", false, "Usually off — the original stays default."),
+      T("mux.output_dir", "Output directory", "in place", ""),
+      C("mux.remux_container", "Container", ["keep original", "force mkv"], "keep original", ""),
+      B("mux.overwrite_existing_ai_track", "Replace a previous Doblarr track", true, "On a re-run, swap the old AI track instead of stacking a second one.") ] },
+    { title: "Automation", desc: "What happens without you in the room.", fields: [
+      B("automation.auto_dub_new_foreign", "Auto-dub new foreign titles", true, ""),
+      B("automation.seerr_integration", "Dub on request approval", true, "Overseerr approves a request, Doblarr queues the dub."),
+      C("automation.tv_scope", "TV scope", ["whole series", "season", "episode"], "season", ""),
+      T("automation.priority_rules", "Priority", "requested > new > backlog", "Requested titles jump the queue.") ] } ] },
+
+  { id: "queue", title: "Queue & storage", desc: "Doblarr is meant to be a good neighbour on a single GPU.", groups: [
+    { title: "Queue", desc: "", fields: [
+      T("queue.max_concurrent_jobs", "Concurrent jobs", "1", ""),
+      T("queue.gpu_device", "GPU device", "cuda:0", ""),
+      T("queue.vram_limit", "VRAM limit", "14 GB", ""),
+      B("queue.cpu_only_fallback", "CPU-only fallback", true, ""),
+      B("queue.stage_parallelism", "Stage parallelism", true, "Runs independent stages of different jobs side by side."),
+      T("queue.pause_during_hours", "Pause during", "19:00 – 23:00", "Don't hog the GPU while you're watching."),
+      T("queue.retry_attempts", "Retry attempts", "3", ""),
+      T("queue.retry_backoff", "Retry backoff", "5m, 20m, 1h", ""),
+      B("queue.resume_partial", "Resume partial jobs", true, "Checkpoints so a long job survives a restart.") ] },
+    { title: "Storage", desc: "Stems and per-line clips are large. This is where they live and when they die.", fields: [
+      T("storage.work_dir", "Work directory", "/scratch/doblarr", ""),
+      B("storage.keep_intermediates", "Keep intermediates", false, "Keeps stems and clips around for debugging."),
+      B("storage.cleanup_on_success", "Clean up after a good mux", true, ""),
+      T("storage.max_cache_gb", "Max cache", "80 GB", ""),
+      T("storage.min_free_space_gb", "Minimum free space", "25 GB", "Refuses to start a job below this.") ] },
+    { title: "Review gate", desc: "Listen before it lands in the library.", fields: [
+      C("review.mode", "Mode", ["auto apply", "hold for approval"], "hold for approval", ""),
+      T("review.preview_clip_seconds", "Preview clip", "30s", "A short sample generated for you to approve first."),
+      T("review.min_confidence", "Minimum confidence", "0.75", "Flags shaky transcription for a manual check."),
+      T("review.reject_if_stretch_over", "Reject if stretched", "over 15% of lines", "Bails out rather than shipping a rushed dub.") ] } ] },
+
+  { id: "notifications", title: "Notifications", desc: "Quiet unless something finished or something broke.", groups: [
+    { title: "Events", desc: "", fields: [
+      B("notify.on_complete", "On complete", true, ""),
+      B("notify.on_error", "On error", true, ""),
+      B("notify.include_preview", "Attach a preview clip", true, "") ] },
+    { title: "Agents", desc: "", fields: [
+      T("notify.discord_webhook", "Discord webhook", "https://discord.com/api/webhooks/•••", "Or hand off to Notifiarr.") ] } ] },
+
+  { id: "advanced", title: "Advanced", desc: "How this interface is served, and what it writes down.", groups: [
+    { title: "Web UI & API", desc: "", fields: [
+      B("web.enabled", "Web UI enabled", true, ""),
+      T("web.host", "Host", "0.0.0.0", ""),
+      T("web.port", "Port", "6363", ""),
+      C("web.auth", "Auth", ["none", "basic", "api key"], "api key", ""),
+      T("web.api_key", "API key", "••••••••••••••••", ""),
+      T("web.base_url", "Base URL", "/doblarr", "For a reverse-proxy subpath."),
+      C("web.theme", "Theme", ["light", "dark", "system"], "system", "") ] },
+    { title: "Logging", desc: "", fields: [
+      C("logging.level", "Level", ["debug", "info", "warn", "error"], "info", ""),
+      T("logging.file", "Log file", "/config/logs/doblarr.log", ""),
+      C("logging.rotate", "Rotation", ["daily", "10mb", "off"], "daily", ""),
+      B("logging.per_job_log", "One log per job", true, "The fastest way to debug a bad dub.") ] } ] }
+];
+
+// ---- App state + rendering (vanilla, no framework) ----
+const app = document.getElementById("app");
+const state = { page: "Overview", tab: "connections", keys: false, vals: {} };
+
+function safeGet(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } }
+function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+function setTheme(theme) {
+  app.setAttribute("data-theme", theme);
+  document.querySelectorAll("#themebtn button").forEach(b =>
+    b.setAttribute("aria-pressed", b.dataset.themeSet === theme ? "true" : "false"));
+  safeSet("doblarr.theme", theme);
+}
+
+function setPage(page) {
+  state.page = page;
+  document.querySelectorAll("[data-view]").forEach(s =>
+    s.hidden = s.getAttribute("data-view") !== page);
+  document.querySelectorAll("#nav .navitem").forEach(n =>
+    n.setAttribute("aria-current", n.dataset.page === page ? "page" : "false"));
+  if (page === "Settings") renderSettings();
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "style") n.style.cssText = v;
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid != null) n.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return n;
+}
+
+function fieldValue(f) { return state.vals[f.k] ?? f.v; }
+
+function renderField(f) {
+  const row = el("div", { class: "frow" });
+  const left = el("div", {}, el("div", { class: "flabel" }, f.l));
+  if (state.keys) left.append(el("div", { class: "fkey" }, f.k));
+  row.append(left);
+
+  const right = el("div", {});
+  if (f.t === "text") {
+    right.append(el("input", {
+      class: "input m", type: "text", value: fieldValue(f), style: "max-width: 420px;",
+      oninput: e => { state.vals[f.k] = e.target.value; },
+    }));
+  } else if (f.t === "choice") {
+    const opts = el("div", { class: "opts" });
+    f.o.forEach(o => opts.append(el("button", {
+      type: "button", class: "opt", "aria-pressed": fieldValue(f) === o ? "true" : "false",
+      onclick: () => { state.vals[f.k] = o; renderSettings(); },
+    }, o)));
+    right.append(opts);
+  } else if (f.t === "list") {
+    const chips = el("div", { class: "chips" });
+    (f.items || []).forEach(c => chips.append(el("span", { class: "tag tag-neutral m" }, c)));
+    right.append(chips);
+  }
+  if (f.h) right.append(el("p", { class: "hint" }, f.h));
+  row.append(right);
+  return row;
+}
+
+function renderSettings() {
+  const cur = TABS.find(t => t.id === state.tab) || TABS[0];
+
+  const tabsBox = document.getElementById("settingsTabs");
+  tabsBox.replaceChildren(...TABS.map(t => el("button", {
+    type: "button", class: "tab", "aria-current": t.id === state.tab ? "page" : "false",
+    onclick: () => { state.tab = t.id; renderSettings(); },
+  }, t.title)));
+
+  document.getElementById("tabTitle").textContent = cur.title;
+  document.getElementById("tabDesc").textContent = cur.desc;
+  document.getElementById("toggleKeys").setAttribute("aria-pressed", state.keys ? "true" : "false");
+
+  const groups = document.getElementById("settingsGroups");
+  groups.replaceChildren(...cur.groups.map(g => {
+    const panel = el("div", { class: "panel", style: "padding: 20px 24px 22px;" },
+      el("h3", { style: "font-size: 17px; margin: 0 0 2px;" }, g.title));
+    if (g.desc) panel.append(el("p", { style: "margin: 0 0 8px; font-size: 13px; color: var(--muted); max-width: 70ch;" }, g.desc));
+    g.fields.forEach(f => panel.append(renderField(f)));
+    return panel;
+  }));
+}
+
+// ---- Wire up events ----
+document.getElementById("nav").addEventListener("click", e => {
+  const btn = e.target.closest(".navitem"); if (btn) setPage(btn.dataset.page);
+});
+document.getElementById("themebtn").addEventListener("click", e => {
+  const btn = e.target.closest("button"); if (btn) setTheme(btn.dataset.themeSet);
+});
+document.getElementById("toggleKeys").addEventListener("click", () => {
+  state.keys = !state.keys; renderSettings();
+});
+// Single-select pill groups on the Library page
+document.querySelectorAll(".opts[data-single]").forEach(group => {
+  group.addEventListener("click", e => {
+    const btn = e.target.closest(".opt"); if (!btn) return;
+    group.querySelectorAll(".opt").forEach(o => o.setAttribute("aria-pressed", "false"));
+    btn.setAttribute("aria-pressed", "true");
+  });
+});
+
+// ---- Init ----
+const savedTheme = safeGet("doblarr.theme", "light");
+setTheme(savedTheme === "dark" ? "dark" : "light");
+setPage("Overview");
+</script>
+</body>
+</html>
