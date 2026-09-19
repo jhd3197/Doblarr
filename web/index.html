@@ -488,6 +488,20 @@
       </div>
     </div>
   </div>
+
+  <!-- Voice cast editor -->
+  <div id="castModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;">
+    <div class="panel" style="width:min(560px,92vw);padding:22px 24px;max-height:84vh;overflow-y:auto;">
+      <h3 id="castTitle" style="margin:0 0 4px;font-size:18px;">Voice cast</h3>
+      <p style="margin:0 0 14px;font-size:13px;color:var(--muted);">One voice per speaker — reused by teases and the full dub.</p>
+      <div id="castRows"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;align-items:center;">
+        <span id="castStatus" style="margin-right:auto;font-size:12.5px;color:var(--muted);"></span>
+        <button type="button" class="btn btn-secondary" id="castCancel">Close</button>
+        <button type="button" class="btn btn-primary" id="castSave">Save cast</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -805,8 +819,12 @@ function renderLibrary() {
          <div class="poster-fallback" hidden>${escapeHtml(i.title)}</div>`
       : `<div class="poster-fallback">${escapeHtml(i.title)}</div>`;
     const action = (i.status === "needs-dub" || i.status === "partial")
-      ? `<button type="button" class="btn btn-ghost queue-dub" data-idx="${idx}">Queue dub</button>`
-      : "";
+      ? `<div style="display:flex;gap:2px;flex-wrap:wrap;">
+           <button type="button" class="btn btn-ghost queue-dub" data-idx="${idx}">Queue dub</button>
+           <button type="button" class="btn btn-ghost tease-dub" data-idx="${idx}">Tease</button>
+           <button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>
+         </div>`
+      : `<button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>`;
     return `
     <div class="poster-card">
       ${poster}
@@ -823,18 +841,19 @@ function renderLibrary() {
   }).join("");
 }
 
-async function queueDub(item, btn) {
-  btn.disabled = true; btn.textContent = "Queuing…";
+async function queueDub(item, btn, kind = "full") {
+  btn.disabled = true; btn.textContent = kind === "tease" ? "Teasing…" : "Queuing…";
   try {
     const res = await fetch("api/jobs", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: item.title, source: item.source, source_lang: item.original,
         target_lang: (library.targets && library.targets[0]) || "en", path: item.path,
+        kind,
       }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    btn.textContent = "Queued ✓";
+    btn.textContent = kind === "tease" ? "Teased ✓" : "Queued ✓";
   } catch (err) {
     btn.disabled = false; btn.textContent = "Retry";
   }
@@ -958,7 +977,7 @@ function renderJobs(data) {
     const action = act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "";
     return `
       <tr>
-        <td style="font-weight:600;">${escapeHtml(j.title)}</td>
+        <td style="font-weight:600;">${escapeHtml(j.title)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}</td>
         <td class="m" style="font-size:13px;">${track}</td>
         <td>${stage}</td>
         <td><div class="bar"><span style="width:${j.progress || 0}%;${barColor}"></span></div></td>
@@ -1211,9 +1230,11 @@ async function syncPlexLabels(apply) {
 }
 document.getElementById("syncLabelsBtn").addEventListener("click", () => syncPlexLabels(false));
 document.getElementById("libraryGrid").addEventListener("click", e => {
-  const btn = e.target.closest(".queue-dub"); if (!btn) return;
+  const btn = e.target.closest(".queue-dub, .tease-dub, .cast-edit"); if (!btn) return;
   const item = library.rendered[Number(btn.dataset.idx)];
-  if (item) queueDub(item, btn);
+  if (!item) return;
+  if (btn.classList.contains("cast-edit")) openCast(item);
+  else queueDub(item, btn, btn.classList.contains("tease-dub") ? "tease" : "full");
 });
 document.getElementById("clearFinished").addEventListener("click", async () => {
   try { await fetch("api/jobs/clear-finished", { method: "POST" }); } catch (e) {}
@@ -1269,6 +1290,87 @@ document.getElementById("ndQueue").addEventListener("click", async () => {
   closeNewDub();
   setPage("Dubs");
 });
+
+// ---- Voice cast editor (per-title, shared by teases and full dubs) ----
+const castModal = document.getElementById("castModal");
+const castState = { item: null, cast: [], voices: null };
+
+function castParams(item) {
+  const p = new URLSearchParams();
+  if (item.path) p.set("path", item.path);
+  else if (item.tmdb_id) p.set("tmdb_id", item.tmdb_id);
+  else if (item.tvdb_id) p.set("tvdb_id", item.tvdb_id);
+  else p.set("title", item.title);
+  return p;
+}
+
+function renderCastRows() {
+  const box = document.getElementById("castRows");
+  if (!castState.cast.length) {
+    box.innerHTML = `<p style="color:var(--muted);font-size:13px;">No cast yet — run a Tease to auto-assign voices by archetype, then adjust here.</p>`;
+    return;
+  }
+  const voiceOpts = cur => [`<option value="">(unassigned)</option>`]
+    .concat((castState.voices || []).map(v =>
+      `<option value="${escapeHtml(v.id)}"${v.id === cur ? " selected" : ""}>${escapeHtml(v.name)}</option>`))
+    .join("");
+  box.innerHTML = castState.cast.map((e, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">
+      <span style="font-weight:600;min-width:100px;">${escapeHtml(e.label)}</span>
+      <span class="lang-chip">${escapeHtml(e.category)}</span>
+      <span class="m" style="font-size:11.5px;color:var(--muted);">${escapeHtml(e.speaker_id)}</span>
+      <select class="input cast-voice" data-idx="${i}" style="margin-left:auto;max-width:210px;">${voiceOpts(e.voice)}</select>
+    </div>`).join("");
+  box.querySelectorAll(".cast-voice").forEach(sel =>
+    sel.addEventListener("change", () => {
+      castState.cast[Number(sel.dataset.idx)].voice = sel.value;
+    }));
+}
+
+async function openCast(item) {
+  castState.item = item;
+  document.getElementById("castTitle").textContent = `Voice cast — ${item.title}`;
+  const status = document.getElementById("castStatus");
+  status.textContent = "";
+  castModal.hidden = false;
+  try {
+    const fetches = [fetch("api/cast?" + castParams(item))];
+    if (!castState.voices) fetches.push(fetch("api/voices"));
+    const [cr, vr] = await Promise.all(fetches);
+    castState.cast = (await cr.json()).cast || [];
+    if (vr) castState.voices = (await vr.json()).voices || [];
+  } catch (e) {
+    castState.cast = [];
+    status.textContent = "Cast unavailable — is the API reachable?";
+  }
+  renderCastRows();
+}
+
+async function saveCast() {
+  const status = document.getElementById("castStatus");
+  const item = castState.item;
+  if (!item) return;
+  const body = { title: item.title, cast: castState.cast };
+  if (item.path) body.path = item.path;
+  else if (item.tmdb_id) body.tmdb_id = item.tmdb_id;
+  else if (item.tvdb_id) body.tvdb_id = item.tvdb_id;
+  status.textContent = "Saving…";
+  try {
+    const res = await fetch("api/cast", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    status.textContent = "Saved ✓";
+  } catch (err) {
+    status.textContent = "Save failed: " + err.message;
+  }
+}
+
+document.getElementById("castSave").addEventListener("click", saveCast);
+document.getElementById("castCancel").addEventListener("click", () => { castModal.hidden = true; });
+castModal.addEventListener("click", e => { if (e.target === castModal) castModal.hidden = true; });
 
 // ---- Init ----
 const savedTheme = safeGet("doblarr.theme", "light");

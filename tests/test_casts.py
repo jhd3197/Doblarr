@@ -90,10 +90,21 @@ def test_cast_api_round_trip(cast_client):
     assert c.put("/api/cast", headers=HEADERS, json=body).json()["saved"] == 1
     got = c.get("/api/cast", headers=HEADERS, params={"key": "title:film a"}).json()
     assert got["cast"][0]["label"] == "Adult M 1"
-    # ?title= works as an alias for ?key=
-    assert c.get("/api/cast", headers=HEADERS,
-                 params={"title": "title:film a"}).json()["cast"]
+    # raw identifiers are accepted too — the server computes the key
+    by_title = c.get("/api/cast", headers=HEADERS, params={"title": "Film A"}).json()
+    assert by_title["key"] == "title:film a" and by_title["cast"]
     assert c.get("/api/cast", headers=HEADERS).status_code == 400
+
+
+def test_cast_api_computes_key_from_path(cast_client):
+    c = cast_client
+    put = c.put("/api/cast", headers=HEADERS, json={
+        "path": "C:/Media/Film.mkv", "title": "Film", "cast": [
+            {"speaker_id": "S0", "label": "Narrator", "category": "narrator"}]})
+    key = put.json()["key"]
+    assert key == cast_key(path="C:/Media/Film.mkv")
+    got = c.get("/api/cast", headers=HEADERS, params={"path": "C:/Media/Film.mkv"})
+    assert got.json()["cast"][0]["label"] == "Narrator"
 
 
 def test_cast_api_validation(cast_client):

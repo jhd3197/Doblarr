@@ -33,7 +33,7 @@ from .logging_setup import attach_log_stream
 from .scheduler import Scheduler
 from .services import Services
 from .store import Database
-from .voices import CATEGORY_LABELS
+from .voices import CATEGORY_LABELS, cast_key
 from .webhooks import Debouncer, is_test_event, should_rescan
 
 log = logging.getLogger("doblarr.server")
@@ -72,7 +72,10 @@ class CastEntryIn(BaseModel):
 
 
 class CastPutIn(BaseModel):
-    key: str = Field(min_length=1)   # see doblarr.voices.cast_key
+    key: str | None = None       # explicit cast key, or computed from the rest
+    path: str | None = None
+    tmdb_id: int | None = None
+    tvdb_id: int | None = None
     title: str = ""
     cast: list[CastEntryIn]
 
@@ -372,20 +375,27 @@ def create_app(config: Config | None = None) -> FastAPI:
                     "warning": str(exc)}
 
     @api.get("/api/cast")
-    def get_cast(key: str | None = None, title: str | None = None):
-        k = key or title
-        if not k:
-            raise ConfigError("cast lookup needs a key "
-                              "(path / tmdb:<id> / tvdb:<id> / title:<name>)")
+    def get_cast(key: str | None = None, title: str | None = None,
+                 path: str | None = None, tmdb_id: int | None = None,
+                 tvdb_id: int | None = None):
+        """Cast lookup; the key is computed server-side from whatever is given."""
+        if key:
+            k = key
+        elif path or title or tmdb_id or tvdb_id:
+            k = cast_key(title=title, path=path, tmdb_id=tmdb_id, tvdb_id=tvdb_id)
+        else:
+            raise ConfigError("cast lookup needs key / path / tmdb_id / tvdb_id / title")
         saved = db.load_cast(k)
         return {"key": k, "title": (saved or {}).get("title", ""),
                 "cast": (saved or {}).get("cast", [])}
 
     @api.put("/api/cast")
     def put_cast(body: CastPutIn):
-        db.save_cast(body.key, body.title, [e.model_dump() for e in body.cast])
-        bus.publish("cast", {"type": "updated", "key": body.key})
-        return {"ok": True, "key": body.key, "saved": len(body.cast)}
+        k = body.key or cast_key(title=body.title, path=body.path,
+                                 tmdb_id=body.tmdb_id, tvdb_id=body.tvdb_id)
+        db.save_cast(k, body.title, [e.model_dump() for e in body.cast])
+        bus.publish("cast", {"type": "updated", "key": k})
+        return {"ok": True, "key": k, "saved": len(body.cast)}
 
     app.include_router(api)
 
