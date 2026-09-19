@@ -123,8 +123,14 @@ web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
 | GET | `/api/library` | scan Radarr+Sonarr, classify every title (`?refresh=true` bypasses the scan cache) |
 | GET/POST | `/api/config` | read (redacted) / save config |
 | GET/POST | `/api/jobs` | list / enqueue dub jobs |
-| POST | `/api/jobs/clear-finished` | remove done+failed jobs |
-| DELETE | `/api/jobs/{id}` | remove one job |
+| POST | `/api/jobs/clear-finished` | remove done+failed+cancelled jobs |
+| DELETE | `/api/jobs/{id}` | remove one job (a *running* job is cancelled instead) |
+| GET | `/api/events` | SSE stream of job/scan progress (replay + live; use `?api_key=` from browsers) |
+
+The UI consumes `/api/events` via `EventSource` for live job progress (slow polling
+as a fallback). Cancelling a running job stops it between pipeline stages and kills
+any in-flight ffmpeg process; a cancel while waiting on a voicebox generation aborts
+the wait but leaves the remote generation running (voicebox has no cancel endpoint).
 
 ## Development
 
