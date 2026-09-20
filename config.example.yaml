@@ -54,9 +54,13 @@ voicebox:
 
 # Translation
 translate:
-  provider: claude              # claude | voicebox | passthrough (stub)
-  model: claude-sonnet-5        # used when provider = claude (Anthropic model id)
-  # api_key is read from the ANTHROPIC_API_KEY env var, not stored here.
+  provider: claude              # claude | prompture | voicebox | passthrough (stub)
+  model: claude-sonnet-5        # claude: Anthropic model id · prompture: provider/model
+                                #   string, e.g. ollama/llama3.1:8b or lmstudio/<model>
+  # endpoint: http://127.0.0.1:1234/v1/chat/completions  # prompture URL override
+  # claude: api_key is read from the ANTHROPIC_API_KEY env var, not stored here.
+  # prompture: local servers need no key (OLLAMA_ENDPOINT / LMSTUDIO_ENDPOINT env
+  # vars work too); hosted providers use their usual env vars.
 
 # Transcription / alignment
 transcribe:

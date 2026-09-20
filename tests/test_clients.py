@@ -233,3 +233,132 @@ def test_claude_api_error_maps_to_arr_client_error(monkeypatch):
     except ArrClientError as exc:
         assert exc.status == 529
         assert "Claude" in str(exc)
+
+
+class FakeLLMClient:
+    def __init__(self, reply: str):
+        self.reply = reply
+        self.prompts: list[str] = []
+
+    def llm_generate(self, prompt: str, system: str | None = None) -> str:
+        self.prompts.append(prompt)
+        return self.reply
+
+
+def test_voicebox_translator_strips_prefix_and_quotes():
+    from doblarr.clients.translator import VoiceboxTranslator
+
+    client = FakeLLMClient('Translation: "Mi serpiente"')
+    t = VoiceboxTranslator(client)
+    assert t.translate("私の蛇", "ja", "es") == "Mi serpiente"
+    assert "ja" in client.prompts[0] and "es" in client.prompts[0]
+
+
+def test_voicebox_translator_keeps_multiline_clean():
+    from doblarr.clients.translator import VoiceboxTranslator
+
+    client = FakeLLMClient("Traducción: línea uno\nlínea dos")
+    t = VoiceboxTranslator(client)
+    assert t.translate("line one\nline two", "en", "es") == "línea uno\nlínea dos"
+
+
+def test_voicebox_translator_empty_reply_falls_back_to_source():
+    from doblarr.clients.translator import VoiceboxTranslator
+
+    t = VoiceboxTranslator(FakeLLMClient(""))
+    assert t.translate("原文", "ja", "es") == "原文"
+
+
+class FakePromptureDriver:
+    def __init__(self, replies: list[str]):
+        self.replies = replies
+        self.calls: list[list[dict]] = []
+
+    def generate_messages(self, messages, options):
+        self.calls.append(messages)
+        return {"text": self.replies.pop(0), "meta": {}}
+
+
+def fake_prompture(monkeypatch, replies: list[str]) -> FakePromptureDriver:
+    driver = FakePromptureDriver(replies)
+    fake = SimpleNamespace(get_driver_for_model=lambda model, **kw: driver)
+    monkeypatch.setitem(sys.modules, "prompture", fake)
+    return driver
+
+
+def test_prompture_translates_single_line(monkeypatch):
+    from doblarr.clients.translator import PromptureTranslator
+
+    driver = fake_prompture(monkeypatch, ['Translation: "Hola, ¿qué tal?"'])
+    t = PromptureTranslator(model="lmstudio/qwen2.5-7b")
+    assert t.translate("Hello, how are you?", "en", "es") == "Hola, ¿qué tal?"
+    system, user = driver.calls[0]
+    assert system["role"] == "system" and "en" in system["content"]
+    assert "es" in system["content"]
+    assert user["content"] == "Hello, how are you?"
+
+
+def test_prompture_multiline_numbered_batch(monkeypatch):
+    from doblarr.clients.translator import PromptureTranslator
+
+    driver = fake_prompture(monkeypatch, ["1. línea uno\n2. línea dos"])
+    t = PromptureTranslator(model="ollama/llama3.1:8b")
+    out = t.translate("line one\nline two", "en", "es", target_chars=40)
+    assert out == "línea uno\nlínea dos"
+    assert len(driver.calls) == 1                      # one batched call
+    assert "1. line one" in driver.calls[0][1]["content"]
+    assert "40" in driver.calls[0][0]["content"]       # length budget in system
+
+
+def test_prompture_count_mismatch_falls_back_per_line(monkeypatch):
+    from doblarr.clients.translator import PromptureTranslator
+
+    driver = fake_prompture(monkeypatch, ["1. solo una", "uno", "dos"])
+    t = PromptureTranslator(model="ollama/llama3.1:8b")
+    assert t.translate("one\ntwo", "en", "es") == "uno\ndos"
+    assert len(driver.calls) == 3                      # batch + two per-line
+
+
+def test_prompture_empty_reply_falls_back_to_source(monkeypatch):
+    from doblarr.clients.translator import PromptureTranslator
+
+    fake_prompture(monkeypatch, [""])
+    t = PromptureTranslator(model="local/whatever")
+    assert t.translate("原文", "ja", "es") == "原文"
+
+
+def test_prompture_missing_package_is_actionable(monkeypatch):
+    from doblarr.clients.translator import PromptureTranslator
+
+    monkeypatch.setitem(sys.modules, "prompture", None)  # import fails
+    try:
+        PromptureTranslator(model="ollama/llama3.1:8b").translate("hi", "en", "es")
+        raise AssertionError("expected RuntimeError")
+    except RuntimeError as exc:
+        assert "pip install prompture" in str(exc)
+
+
+def test_prompture_driver_init_failure_is_config_error(monkeypatch):
+    from doblarr.clients.translator import PromptureTranslator
+
+    def boom(model, **kw):
+        raise ConnectionRefusedError("no server at endpoint")
+
+    monkeypatch.setitem(sys.modules, "prompture",
+                        SimpleNamespace(get_driver_for_model=boom))
+    try:
+        PromptureTranslator(model="lmstudio/x",
+                            endpoint="http://127.0.0.1:1234/v1/chat/completions"
+                            ).translate("hi", "en", "es")
+        raise AssertionError("expected ConfigError")
+    except ConfigError as exc:
+        assert "127.0.0.1:1234" in str(exc)
+
+
+def test_build_translator_prompture(monkeypatch):
+    from doblarr.clients.translator import PromptureTranslator, build_translator
+
+    fake_prompture(monkeypatch, ["ok"])
+    t = build_translator("prompture", "ollama/llama3.1:8b")
+    assert isinstance(t, PromptureTranslator)
+    assert t.model == "ollama/llama3.1:8b"

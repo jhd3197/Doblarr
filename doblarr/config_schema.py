@@ -74,6 +74,7 @@ class VoiceboxModel(_Section):
 class TranslateModel(_Section):
     provider: str = "claude"
     model: str = "claude-sonnet-5"
+    endpoint: str | None = None  # prompture driver URL override (local LLMs)
 
 
 class TranscribeModel(_Section):

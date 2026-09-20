@@ -35,6 +35,27 @@ class _LineCountMismatch(Exception):
     """Claude's reply could not be mapped 1:1 onto the input lines."""
 
 
+# Small/local LLMs like to prefix the answer ("Translation: ...") despite
+# instructions — strip that so it never reaches the TTS.
+_LLM_PREFIX = re.compile(r"^\s*(?:translation|traducci[oó]n|traduction|ubersetzung|"
+                         r"übersetzung)\s*[:：]\s*", re.IGNORECASE)
+
+
+def _clean_llm_reply(out: str) -> str:
+    lines = [_LLM_PREFIX.sub("", ln).strip().strip('"').strip()
+             for ln in out.splitlines()]
+    return "\n".join(ln for ln in lines if ln)
+
+
+_DUB_SYSTEM = (
+    "You are a dubbing translator. Translate movie/TV dialogue from "
+    "{source_lang} to {target_lang} for voice-over: spoken, natural, concise "
+    "phrasing rather than a literal written rendering. Preserve meaning, tone "
+    "and speaker register; keep names and proper nouns.{budget} Reply with "
+    "ONLY the translations{format_instructions}."
+)
+
+
 _NUMBERED = re.compile(r"^\s*(\d+)[.)]\s*(.*)$")
 _BATCH_ATTEMPTS = 2
 
@@ -163,14 +184,90 @@ class VoiceboxTranslator:
             f"Translate this movie subtitle line from {source_lang} to {target_lang}. "
             f"Reply with ONLY the translation, no quotes or notes.{budget}\n\n{text}"
         )
-        out = self.client.llm_generate(prompt)
+        out = _clean_llm_reply(self.client.llm_generate(prompt))
         return out or text
 
 
-def build_translator(provider: str, model: str, voicebox_client=None) -> Translator:
+class PromptureTranslator:
+    """Translation through a Prompture driver — any `provider/model` string.
+
+    Local servers need no API key: `ollama/llama3.1:8b` (OLLAMA_ENDPOINT),
+    `lmstudio/<model>` (LMSTUDIO_ENDPOINT), `local/<model>` (any HTTP endpoint
+    taking {"prompt", "options"}). Hosted providers work too (`openai/...`,
+    `claude/...`) with the provider's usual env var. `endpoint` overrides the
+    driver's default URL.
+    """
+
+    def __init__(self, model: str, endpoint: str | None = None):
+        self.model = model
+        self.endpoint = endpoint
+        self._driver = None
+
+    def _get_driver(self):
+        if self._driver is None:
+            try:
+                import prompture
+            except ImportError as exc:
+                raise RuntimeError(
+                    "translate.provider is 'prompture' but the 'prompture' package "
+                    "is not installed. Run: pip install prompture") from exc
+            overrides = {"endpoint": self.endpoint} if self.endpoint else {}
+            try:
+                self._driver = prompture.get_driver_for_model(self.model, **overrides)
+            except Exception as exc:  # some drivers validate the connection on init
+                raise ConfigError(
+                    f"prompture could not initialize '{self.model}'"
+                    + (f" at {self.endpoint}" if self.endpoint else "")
+                    + f": {exc}") from exc
+        return self._driver
+
+    def _generate(self, user: str, source_lang: str, target_lang: str,
+                  target_chars: int | None, numbered: bool) -> str:
+        budget = (f" Keep each translated line under about {target_chars} "
+                  "characters so it fits the original time slot."
+                  if target_chars else "")
+        fmt = (", numbered exactly like the input, one translation per line"
+               if numbered else ", no quotes or notes")
+        system = _DUB_SYSTEM.format(source_lang=source_lang, target_lang=target_lang,
+                                    budget=budget, format_instructions=fmt)
+        resp = self._get_driver().generate_messages(
+            [{"role": "system", "content": system},
+             {"role": "user", "content": user}],
+            {"timeout": 300})
+        return str(resp.get("text") or "")
+
+    def translate(self, text: str, source_lang: str, target_lang: str,
+                  target_chars: int | None = None) -> str:
+        lines = text.splitlines()
+        if not lines:
+            return text
+        if len(lines) == 1:
+            out = _clean_llm_reply(
+                self._generate(text, source_lang, target_lang, target_chars,
+                               numbered=False))
+            return out or text
+        numbered = "\n".join(f"{i}. {line}" for i, line in enumerate(lines, 1))
+        try:
+            raw = self._generate(numbered, source_lang, target_lang, target_chars,
+                                 numbered=True)
+            parsed = ClaudeTranslator._parse_numbered(raw, len(lines))
+            return "\n".join(_clean_llm_reply(p) for p in parsed)
+        except _LineCountMismatch:
+            log.warning("prompture reply off — translating per line (%d)", len(lines))
+            return "\n".join(
+                _clean_llm_reply(
+                    self._generate(line, source_lang, target_lang, target_chars,
+                                   numbered=False)) or line
+                for line in lines)
+
+
+def build_translator(provider: str, model: str, voicebox_client=None,
+                     endpoint: str | None = None) -> Translator:
     provider = (provider or "passthrough").lower()
     if provider == "claude":
         return ClaudeTranslator(model=model)
+    if provider == "prompture":
+        return PromptureTranslator(model=model, endpoint=endpoint)
     if provider == "voicebox":
         if voicebox_client is None:
             raise ValueError("voicebox translator needs a voicebox client")

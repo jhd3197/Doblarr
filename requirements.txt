@@ -14,6 +14,7 @@ pydantic>=2           # request-body models + config schema validation
 # (kept out of the base install because torch is large and GPU-specific —
 #  install a torch build matching your platform first, from https://pytorch.org)
 # anthropic>=0.40      # Claude-based translation
+# prompture>=1.1       # multi-provider LLM translation (incl. local APIs)
 # torch                # match your CUDA build from https://pytorch.org
 # demucs>=4.0          # music/vocal source separation
 # whisperx             # transcription + word-level alignment

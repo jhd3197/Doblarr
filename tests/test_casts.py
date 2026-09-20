@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from doblarr.clients.voicebox import VoiceboxError
 from doblarr.jobs import JobStore
 from doblarr.store import SCHEMA_VERSION, Database
 from doblarr.voices import assign_default_cast, cast_key
@@ -158,8 +159,13 @@ def test_cast_api_validation(cast_client):
     assert cast_client.get("/api/cast", params={"key": "k"}).status_code == 401
 
 
-def test_voices_endpoint_falls_back_to_config(cast_client):
-    # voicebox is not running in tests -> config preset fallback
+def test_voices_endpoint_falls_back_to_config(cast_client, monkeypatch):
+    # voicebox unreachable -> config preset fallback (patched: a real voicebox
+    # may be running on the dev machine)
+    def down(self):
+        raise VoiceboxError("connection refused")
+
+    monkeypatch.setattr("doblarr.clients.voicebox.VoiceboxClient.list_voices", down)
     r = cast_client.get("/api/voices", headers=HEADERS)
     assert r.status_code == 200
     body = r.json()

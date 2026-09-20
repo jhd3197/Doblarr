@@ -51,7 +51,8 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     out = config.output_dir
     vb = (services or Services(config)).voicebox
     translator = build_translator(config["translate"]["provider"],
-                                  config["translate"]["model"], voicebox_client=vb)
+                                  config["translate"]["model"], voicebox_client=vb,
+                                  endpoint=config["translate"].get("endpoint"))
     seg_limit = config["dub"].get("segment_limit")
     teaser_s = (int(config["dub"].get("teaser_minutes", 10)) * 60
                 if job.kind == "tease" else None)

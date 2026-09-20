@@ -26,6 +26,7 @@ dependencies = [
 # whisperx/pyannote pull in torch, but you want the right wheel for your GPU.
 real = [
     "anthropic>=0.40",      # Claude-based translation
+    "prompture>=1.1",       # multi-provider LLM translation (incl. local APIs)
     "demucs>=4.0",          # music/vocal source separation
     "whisperx",             # transcription + word-level alignment
     "pyannote.audio>=3.1",  # speaker diarization (needs a HuggingFace token)

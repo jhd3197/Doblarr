@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 from ..models import DubJob, Speaker
 from .common import DryRunPlan, dry, stage
@@ -29,10 +30,11 @@ def _load_pipeline(token: str):
     """Load the pyannote diarization pipeline, on GPU when one is available."""
     from pyannote.audio import Pipeline
 
+    from_pretrained: Any = Pipeline.from_pretrained
     try:
-        pipe = Pipeline.from_pretrained(MODEL_ID, use_auth_token=token)
+        pipe = from_pretrained(MODEL_ID, use_auth_token=token)
     except TypeError:  # pyannote.audio >= 4 renamed the kwarg
-        pipe = Pipeline.from_pretrained(MODEL_ID, token=token)
+        pipe = from_pretrained(MODEL_ID, token=token)
 
     import torch
 
