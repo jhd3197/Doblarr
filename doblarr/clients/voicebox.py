@@ -71,11 +71,11 @@ class VoiceboxClient(ArrClient):
         """Available voices (voicebox profiles) as [{id, name}]."""
         data = self._get("/profiles")
         profiles = data if isinstance(data, list) else data.get("profiles", [])
-        return [{"id": p.get("id") or p.get("profile_id"),
-                 "name": p.get("name", "?")} for p in profiles]
+        return [
+            {"id": p.get("id") or p.get("profile_id"), "name": p.get("name", "?")} for p in profiles
+        ]
 
-    def create_profile(self, name: str, language: str,
-                       description: str = "") -> str:
+    def create_profile(self, name: str, language: str, description: str = "") -> str:
         payload = {"name": name, "language": language, "description": description}
         data = self._post("/profiles", json=payload)
         profile_id = data.get("id") or data.get("profile_id")
@@ -83,25 +83,59 @@ class VoiceboxClient(ArrClient):
             raise VoiceboxError(f"no profile id in response: {data}")
         return profile_id
 
+    def voice_profiles(self):
+        data = self._get("/profiles")
+        return data if isinstance(data, list) else data.get("profiles", [])
+
+    def preset_voices(self, engine):
+        return self._get(f"/profiles/presets/{engine}").get("voices", [])
+
+    def register_preset(self, voice, engine):
+        for profile in self.voice_profiles():
+            if (
+                profile.get("preset_engine") == engine
+                and profile.get("preset_voice_id") == voice["voice_id"]
+            ):
+                return profile["id"]
+        data = self._post(
+            "/profiles",
+            json={
+                "name": voice["name"],
+                "language": voice["language"],
+                "voice_type": "preset",
+                "preset_engine": engine,
+                "preset_voice_id": voice["voice_id"],
+                "default_engine": engine,
+            },
+        )
+        return data["id"]
+
     def add_sample(self, profile_id: str, sample: Path, reference_text: str) -> dict:
         with open(sample, "rb") as fh:
             files = {"file": (sample.name, fh)}
             data = {"reference_text": reference_text}
-            return self._post(f"/profiles/{profile_id}/samples",
-                              files=files, data=data)
+            return self._post(f"/profiles/{profile_id}/samples", files=files, data=data)
 
     # -- speech generation ------------------------------------------------
-    def generate(self, profile_id: str, text: str, language: str,
-                 seed: int | None = None, model_size: str | None = None,
-                 engine: str | None = None, instruct: str | None = None) -> str:
+    def generate(
+        self,
+        profile_id: str,
+        text: str,
+        language: str,
+        seed: int | None = None,
+        model_size: str | None = None,
+        engine: str | None = None,
+        instruct: str | None = None,
+    ) -> str:
         payload: dict = {"profile_id": profile_id, "text": text, "language": language}
         if seed is not None:
             payload["seed"] = seed
         if model_size is not None:
             payload["model_size"] = model_size
         if engine is not None:
-            payload["engine"] = {"chatterbox-multilingual": "chatterbox",
-                                 "qwen3-tts": "qwen"}.get(engine, engine)
+            payload["engine"] = {"chatterbox-multilingual": "chatterbox", "qwen3-tts": "qwen"}.get(
+                engine, engine
+            )
         if instruct:
             if payload.get("engine") not in {"qwen", "qwen_custom_voice"}:
                 raise VoiceboxError("delivery instructions require a Qwen engine")
@@ -113,8 +147,7 @@ class VoiceboxClient(ArrClient):
             raise VoiceboxError(f"no generation id in response: {data}")
         return gen_id
 
-    def wait_for(self, generation_id: str, poll: float = 0.15,
-                 cancel_event=None) -> None:
+    def wait_for(self, generation_id: str, poll: float = 0.15, cancel_event=None) -> None:
         """Block until a generation reports a terminal status.
 
         Status lives on the generation record at /history/{id} (the
@@ -136,7 +169,8 @@ class VoiceboxClient(ArrClient):
                 return
             if status in {"failed", "error", "cancelled", "canceled"}:
                 raise GenerationFailed(
-                    f"generation {generation_id} failed: {data.get('error') or data}")
+                    f"generation {generation_id} failed: {data.get('error') or data}"
+                )
             if cancel_event is not None:
                 cancel_event.wait(delay)
             else:
@@ -158,12 +192,18 @@ class VoiceboxClient(ArrClient):
         return dest
 
     # -- convenience ------------------------------------------------------
-    def synthesize_to_file(self, profile_id: str, text: str, language: str,
-                           dest: Path, cancel_event=None, **kwargs) -> Path:
+    def synthesize_to_file(
+        self, profile_id: str, text: str, language: str, dest: Path, cancel_event=None, **kwargs
+    ) -> Path:
         """Full round-trip: generate -> wait -> download."""
         receipt = dest.with_suffix(".request.json")
-        request = {"server": self.base_url, "profile": profile_id, "text": text,
-                   "language": language, "options": kwargs}
+        request = {
+            "server": self.base_url,
+            "profile": profile_id,
+            "text": text,
+            "language": language,
+            "options": kwargs,
+        }
         saved = read_json(receipt)
         gen_id = saved.get("generation_id") if saved.get("request") == request else None
         if not gen_id:

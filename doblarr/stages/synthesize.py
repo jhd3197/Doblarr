@@ -227,13 +227,14 @@ def run(
             raise JobCancelled("cancelled before speech generation")
         spk = job.speakers[seg.speaker]
         delivery = seg.delivery or cast.get(seg.speaker, {}).get("delivery", "")
+        voice_engine = cast.get(seg.speaker, {}).get("engine") or engine
         dest = clips_dir / f"line_{seg.index:04d}.wav"
         text = spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
         signature = {
             "text": text,
             "language": job.target_lang,
             "profile": seg.voice or spk.voicebox_profile_id,
-            "engine": engine,
+            "engine": voice_engine,
             "model_size": model_size,
             "seed": seed,
             "delivery": delivery,
@@ -256,7 +257,7 @@ def run(
             count("tts_cache_hits")
             log.info("  line %d/%d kept (already synthesized)", position, total)
             return
-        kwargs = {"engine": engine} if engine else {}
+        kwargs = {"engine": voice_engine} if voice_engine else {}
         if model_size:
             kwargs["model_size"] = model_size
         if seed is not None:

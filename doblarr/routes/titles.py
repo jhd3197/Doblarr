@@ -20,6 +20,7 @@ class CastEntryIn(BaseModel):
     category: str
     voice: str = ""            # voicebox profile id; "" = unassigned
     previewed: bool = False
+    engine: str = Field(default="", max_length=50)
     delivery: str = Field(default="", max_length=500)
     revision: int = Field(default=0, ge=0)
 

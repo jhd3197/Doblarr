@@ -17,6 +17,7 @@ log = logging.getLogger("doblarr.voices")
 # Archetype categories: (key, display label base). Entries are auto-numbered
 # per category ("Adult M 1", "Adult M 2"); the narrator stays singular.
 CATEGORIES = [
+    ("speaker", "Speaker"),
     ("narrator", "Narrator"),
     ("child_f", "Child F"),
     ("child_m", "Child M"),
@@ -69,8 +70,8 @@ def cast_key(
 def assign_default_cast(speakers, existing: list[dict] | None = None) -> list[dict]:
     """Map speaker ids to default archetype assignments.
 
-    Deterministic: a lone speaker is the Narrator; multiple speakers alternate
-    Adult M / Adult F, auto-numbered per category. Existing entries keep the
+    A lone speaker is the Narrator; multiple speakers get neutral numbered labels.
+    Existing entries keep the
     user's choices (voice, label); only genuinely new speakers get defaults.
     Nothing is dropped — a teaser re-run never loses full-dub assignments.
     """
@@ -84,13 +85,8 @@ def assign_default_cast(speakers, existing: list[dict] | None = None) -> list[di
     for spk in speakers:
         if spk in known:
             continue
-        if len(speakers) == 1:
-            category = "narrator"
-        else:
-            # balance the genders: the underrepresented side gets the next voice
-            category = (
-                "adult_m" if counts.get("adult_m", 0) <= counts.get("adult_f", 0) else "adult_f"
-            )
+        # Diarization identifies turns, not age or gender.
+        category = "narrator" if len(speakers) == 1 else "speaker"
         counts[category] = counts.get(category, 0) + 1
         base = CATEGORY_LABELS[category]
         label = base if category == "narrator" else f"{base} {counts[category]}"

@@ -78,7 +78,7 @@ def test_ensure_cast_tease_creates_and_publishes(tmp_path):
     job = _tease_job(tmp_path)
     job.speakers = {"S0": Speaker("S0"), "S1": Speaker("S1")}
     cast = ensure_cast(job, db, events=FakeBus())
-    assert [e["label"] for e in cast] == ["Adult M 1", "Adult F 1"]
+    assert [e["label"] for e in cast] == ["Speaker 1", "Speaker 2"]
     assert db.load_cast(cast_key_for(job)) is not None
     assert bus_events == [("cast", {"type": "updated", "key": cast_key_for(job),
                                     "speakers": 2})]

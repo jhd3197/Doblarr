@@ -49,14 +49,53 @@ test('show page lists seasons and queues explicit episodes in the chosen languag
 test('narrator choice and direction persist and episode cast uses the file identity', async ({ page }) => {
   await showPage(page);
   await page.locator('[data-episode="1"]').getByRole('button', { name: 'Voices', exact: true }).click();
-  await expect(page.locator('#castScope')).toContainText('S1E1');
+  await expect(page.locator('#castScope')).toContainText('S01E01');
   await page.getByLabel('Voice', { exact: true }).selectOption('warm');
   await page.getByLabel('Voice engine', { exact: true }).selectOption('qwen');
   await page.getByLabel('Delivery direction').fill('Warm and calm, with gentle pauses.');
   await page.getByRole('button', { name: 'Save narrator', exact: true }).click();
   await expect(page.locator('#narratorStatus')).toHaveText('Saved ✓');
+  await expect(page).toHaveURL(/\/episode\/1$/);
   await page.reload();
   await page.getByRole('button', { name: 'Speakers & voices', exact: true }).click();
   await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('warm');
   await expect(page.getByLabel('Delivery direction')).toHaveValue('Warm and calm, with gentle pauses.');
+});
+
+test('episode voice catalog ranks character traits, previews and saves the selected engine', async ({ page }) => {
+  await page.route('**/api/cast?*', route => route.fulfill({ json: { cast: [
+    { speaker_id:'S0', label:'Village elder', category:'elderly_m', voice:'' },
+  ] } }));
+  await page.route('**/api/voice-catalog', route => route.fulfill({json:{warnings:[],voices:[
+    {key:'preset:qwen_custom_voice:elder',name:'Weathered storyteller',language:'es',engine:'qwen_custom_voice',kind:'preset',gender:'male',age:'older',description:'A low, measured voice'},
+    {key:'preset:kokoro:young',name:'Young voice',language:'es',engine:'kokoro',kind:'preset',gender:'female',age:'young',description:''},
+  ]}}));
+  await page.route('**/api/voice-catalog/preview', route => route.fulfill({json:{id:'sample'}}));
+  await page.route('**/api/voice-catalog/preview/sample', route => route.fulfill({json:{status:'completed'}}));
+  await page.route('**/api/voice-catalog/preview/sample/audio', route => route.fulfill({body:'audio',contentType:'audio/wav'}));
+  await page.route('**/api/voice-catalog/select', route => route.fulfill({json:{profile_id:'elder-profile',engine:'qwen_custom_voice',name:'Weathered storyteller'}}));
+  await showPage(page);
+  await page.getByRole('link',{name:'The Green Seat',exact:true}).click();
+  await expect(page).toHaveURL(/\/episode\/1$/);
+  await page.getByRole('button',{name:'Find matching voice'}).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByLabel('Character age',{exact:true})).toHaveValue('older');
+  await expect(page.getByRole('heading',{name:'Weathered storyteller'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Young voice'})).toHaveCount(0);
+  await page.getByRole('button',{name:'Generate sample'}).click();
+  await expect(page.locator('.picker-audio')).toBeVisible();
+  await page.screenshot({path:'test-results/voice-catalog.png'});
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('body')).toHaveJSProperty('scrollWidth',390);
+  await page.screenshot({path:'test-results/voice-catalog-mobile.png'});
+  await page.getByRole('button',{name:'Use this voice'}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const saved=page.waitForResponse(r=>r.url().endsWith('/api/cast') && r.request().method()==='PUT');
+  await page.getByRole('button',{name:'Save cast',exact:true}).click();
+  const response=await saved;
+  expect(response.request().postDataJSON().cast[0]).toMatchObject({voice:'elder-profile',engine:'qwen_custom_voice'});
+  expect(response.request().postDataJSON().path).toBe('/shows/Mushi-Shi/first.mkv');
+  await page.getByRole('button',{name:'← Mushi-Shi',exact:true}).click();
+  await expect(page).toHaveURL(/\/title\/tvdb-79214$/);
+  await expect(page.getByRole('heading',{name:'Episodes',exact:true})).toBeVisible();
 });

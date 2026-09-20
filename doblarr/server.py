@@ -27,6 +27,7 @@ from .routes import jobs as job_routes
 from .routes import library as library_routes
 from .routes import series as series_routes
 from .routes import titles as title_routes
+from .routes import voice_catalog as catalog_routes
 from .scheduler import Scheduler
 from .services import Services
 from .store import Database
@@ -141,6 +142,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(job_routes.build_router(config, store, worker, bus))
     api.include_router(title_routes.build_router(config, db, bus, services))
     api.include_router(series_routes.build_router(config, services, store, bus))
+    api.include_router(catalog_routes.build_router(config, services, db))
     app.include_router(api)
 
     # SPA fallback (History API routing): any GET that isn't /api/* and doesn't

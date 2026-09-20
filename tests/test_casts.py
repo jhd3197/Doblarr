@@ -77,8 +77,8 @@ def test_assign_default_cast_numbering():
                        "category": "narrator", "voice": "", "previewed": False}]
     multi = assign_default_cast(["S0", "S1", "S2", "S3"])
     assert [(e["label"], e["category"]) for e in multi] == [
-        ("Adult M 1", "adult_m"), ("Adult F 1", "adult_f"),
-        ("Adult M 2", "adult_m"), ("Adult F 2", "adult_f"),
+        ("Speaker 1", "speaker"), ("Speaker 2", "speaker"),
+        ("Speaker 3", "speaker"), ("Speaker 4", "speaker"),
     ]
 
 
@@ -87,9 +87,9 @@ def test_assign_default_cast_merges_existing():
                  "voice": "custom-voice", "previewed": True}]
     merged = assign_default_cast(["S0", "S1"], existing=existing)
     assert merged[0]["voice"] == "custom-voice"      # user choice preserved
-    assert merged[1]["label"] == "Adult F 1"          # new speaker numbered fresh
+    assert merged[1]["label"] == "Speaker 1"          # new speaker numbered fresh
     again = assign_default_cast(["S0", "S1", "S2"], existing=merged)
-    assert again[2]["label"] == "Adult M 2"           # numbering continues
+    assert again[2]["label"] == "Speaker 2"           # numbering continues
     assert len(again) == 3                            # nothing dropped
 
 

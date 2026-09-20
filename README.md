@@ -145,6 +145,27 @@ for configuration, benchmark acceptance, and current limitations.
 
 ### Shows and narrator voices
 
+Click an episode title to open its own page at
+`/title/tvdb-<show-id>/episode/<sonarr-episode-id>`. Voice assignments, narrator
+settings, audition actions, plans, and jobs are scoped to that episode; the back
+button returns to its show. Episode plans initially inherit the show's saved plan.
+
+**Browse all voices & samples** and **Find matching voice** expose saved profiles
+and both preset catalogs provided by the connected Voicebox version (Kokoro and
+Qwen CustomVoice). Filtering and ranking use language, declared voice gender, and
+listening tags. Set a character role such as **Older man**, audition a candidate,
+then save the cast. Unknown ages stay unknown, and diarization creates neutral
+speaker labels rather than guessing age/gender. Voice traits can be tagged after
+listening. Each cast assignment saves its engine so mixed-engine casts work.
+
+Catalog browsing is read-only. Selecting a preset registers it as a Voicebox
+profile if necessary; **Generate sample** submits a short TTS request. Qwen accepts
+delivery directions, while Kokoro presets require their declared language. Model
+availability and the resulting age/timbre still need auditioning. Text-only voice
+design is not enabled: the installed Voicebox exposes its metadata but does not
+implement the full generation path. Closing the picker stops polling/playback;
+a submitted preview can finish in Voicebox history.
+
 TV show pages open on **Episodes**, grouped by season, including episodes Sonarr
 knows about that are not downloaded. Select the dub language to see source audio,
 completed AI outputs, active jobs, and missing dubs separately. Queue individual

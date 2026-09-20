@@ -16,7 +16,7 @@ const { jobStatusTag, updateDryRunTag, renderJobs, loadJobs, loadOverview, start
       renderTitleJobs(jobsFor(titleState.item, data.jobs || []));
   },
 });
-const { renderTitle, renderTitleJobs } = createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch });
+const { renderTitle: renderTitleView, renderTitleJobs } = createTitle({ goTitle, goEpisode, findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch });
 const { loadConfig, saveSettings, renderSettings } = createSettings({
   setPage, onConfigLoaded: () => { updateDryRunTag(); if (state.page === "Title") renderTitle(); },
 });
@@ -46,7 +46,8 @@ function routeFromPath() {
     page,
     tab: page === "Settings" ? (parts[1] || null) : null,
     // Only the first segment is lowercased — the title key keeps its case.
-    titleKey: page === "Title" ? decodeURIComponent(parts.slice(1).join("/")) : null,
+    titleKey: page === "Title" ? decodeURIComponent(parts[1] || "") : null,
+    episodeId: page === "Title" && parts[2] === "episode" ? Number(parts[3]) : null,
   };
 }
 
@@ -79,8 +80,46 @@ function goTitle(item, dtab) {
   applyRoute();
 }
 
+function goEpisode(item, episode) {
+  history.pushState({}, '', `/title/${encodeURIComponent(itemKey(item))}/episode/${episode.id}`);
+  titleState.dtab = 'voices';
+  applyRoute();
+}
+
+let episodeRequest = 0, episodeLoaded = '', episodePending = '';
+function renderTitle() {
+  if (state.page !== 'Title') return;
+  const parent = findItemByKey(state.titleKey);
+  if (!state.episodeId) {
+    episodeRequest++; episodePending = ''; episodeLoaded = '';
+    if (titleState.item !== parent) { titleState.item = parent; titleState.plan = null; }
+    renderTitleView(); return;
+  }
+  if (!parent) { renderTitleView(); return; }
+  const key = `${state.titleKey}:${state.episodeId}`;
+  if (episodeLoaded === key) { renderTitleView(); return; }
+  if (episodePending === key) return;
+  episodePending = key;
+  const request = ++episodeRequest;
+  const episodeId = state.episodeId;
+  document.getElementById('titleRoot').textContent = 'Loading episode…';
+  api(`series/${parent.tvdb_id}/episodes?target_lang=${encodeURIComponent(library.targets?.[0] || 'en')}`).then(data => {
+    if (request !== episodeRequest || state.page !== 'Title') return;
+    const ep = data.episodes.find(e => e.id === episodeId);
+    if (!ep) throw new Error('Episode not found in Sonarr');
+    titleState.item = { ...parent, parent, media_type: 'episode', episode_id: ep.id,
+      season: ep.season, episode_number: ep.episode, path: ep.path,
+      title: `${parent.title} · S${String(ep.season).padStart(2,'0')}E${String(ep.episode).padStart(2,'0')} — ${ep.title}`,
+      audio_langs: ep.audio_langs, label: ep.status, status: ep.status };
+    titleState.plan = null; titleState.dtab = 'voices';
+    episodeLoaded = key; episodePending = ''; renderTitleView();
+  }).catch(error => { if (request === episodeRequest) {
+    episodePending = ''; document.getElementById('titleRoot').textContent = error.message;
+  } });
+}
+
 function applyRoute() {
-  const { page, tab, titleKey } = routeFromPath();
+  const { page, tab, titleKey, episodeId } = routeFromPath();
   state.page = page;
   document.title = "Doblarr — " + page;
   document.querySelectorAll("[data-view]").forEach(s =>
@@ -94,6 +133,7 @@ function applyRoute() {
   }
   if (page === "Title") {
     state.titleKey = titleKey;
+    state.episodeId = episodeId;
     if (!state.config) loadConfig();  // inherited plan values come from here
     if (!library.loaded) loadLibrary().then(renderTitle); else renderTitle();
   }
