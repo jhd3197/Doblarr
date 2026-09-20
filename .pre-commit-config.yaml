@@ -12,6 +12,7 @@ repos:
         args: [doblarr/]
         additional_dependencies:
           - requests
+          - types-requests
           - PyYAML
           - fastapi
           - pydantic

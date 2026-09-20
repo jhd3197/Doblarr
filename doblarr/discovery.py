@@ -33,6 +33,16 @@ ISO3_TO_ISO2 = {
     "mal": "ml", "tam": "ta", "tel": "te", "per": "fa", "fas": "fa",
 }
 
+# ISO 639-1 -> English language name (for display, e.g. the muxed track title).
+ISO2_TO_NAME = {"en": "English", "es": "Spanish", "ja": "Japanese", "fr": "French",
+                "de": "German", "it": "Italian", "pt": "Portuguese", "ko": "Korean",
+                "zh": "Chinese", "hi": "Hindi", "ru": "Russian", "ar": "Arabic"}
+
+
+def lang_name(code: str) -> str:
+    """'es' -> 'Spanish'; unknown codes fall back to the uppercased code."""
+    return ISO2_TO_NAME.get(code.strip().lower(), code.strip().upper())
+
 
 @dataclass
 class LibraryItem:

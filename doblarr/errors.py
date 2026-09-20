@@ -27,6 +27,12 @@ class NotFoundError(DoblarrError):
     http_status = 404
 
 
+class ForbiddenError(DoblarrError):
+    """The request targets something outside the allowed roots."""
+
+    http_status = 403
+
+
 class JobCancelled(DoblarrError):
     """A dub job was cancelled — by the user, or by killing its ffmpeg run."""
 
