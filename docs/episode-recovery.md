@@ -49,6 +49,29 @@ Timing compression is capped at 1.3x; warnings flag lines that remain too long.
 Listen to the result before considering it a finished performance. Translation,
 speaker casting, music separation and pronunciation may still need refinement.
 
+## Regenerating with a character cast
+
+Use `--script <reviewed.script.json>` to keep existing reviewed translations and
+`--cast-file <cast.json>` instead of `--profile` to assign character voices. Each
+spoken cue must appear exactly once; missing or duplicate assignments fail before
+speech generation. Existing per-line voice overrides are cleared in favor of the cast.
+
+```json
+{
+  "speakers": {
+    "NARRATOR": {"voice": "narrator-profile-id", "engine": "kokoro", "segments": [0, 1]},
+    "CHARACTER": {"voice": "character-profile-id", "engine": "kokoro", "segments": [2, 3]}
+  }
+}
+```
+
+Choose a separate `--work-dir` and `--output-dir` to preserve the previous render.
+Add `--normalize` to balance dialogue loudness across voices and
+`--track-name "{language_name} AI (multi-voice)"` to identify the version in Plex.
+The MKV dub is encoded to AAC while original audio streams and video are copied.
+The result report records the cast and speech cache metrics. Character assignments
+in this workflow are editorial decisions; they are not automatically verified diarization.
+
 ## Source-language checks
 
 The normal extraction stage now explicitly selects the requested audio language
