@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from doblarr.models import DubJob, Segment
+from doblarr.models import DubJob, Segment, Speaker
 from doblarr.stages import extract, mix, mux, synthesize
 from doblarr.stages.common import CachedPlan, cached
 
@@ -69,10 +69,24 @@ def test_synthesize_checkpoint_restores_clip_paths(tmp_path):
     job = _job(tmp_path)
     job.segments = [Segment(0, 0.0, 1.0, "a"), Segment(1, 1.0, 2.0, "b")]
     work = tmp_path / "work"
-    _fresh(work / "clips" / "line_0000.wav")
-    _fresh(work / "clips" / "line_0001.wav")
-    synthesize.run(job, vb=None, work_dir=work)  # no voicebox client touched
-    assert job.segments[0].audio_clip == work / "clips" / "line_0000.wav"
+    job.source_audio = tmp_path / "source.wav"
+    job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00", voicebox_profile_id="voice")}
+    calls = []
+
+    class Voicebox:
+        def synthesize_to_file(self, profile, text, lang, dest, **kwargs):
+            calls.append(text)
+            _fresh(dest)
+
+    synthesize.run(job, Voicebox(), work)
+    synthesize.run(job, Voicebox(), work)
+    assert calls == ["a", "b"]  # resumed without generating either line
+    job.segments[0].text_translated = "changed"
+    synthesize.run(job, Voicebox(), work)
+    assert calls == ["a", "b", "changed"]  # only changed text is regenerated
+    job.segments[1].audio_clip.write_bytes(b"truncated")
+    synthesize.run(job, Voicebox(), work)
+    assert calls[-1] == "b"  # a damaged download is not a checkpoint
     assert job.segments[1].audio_clip.name == "line_0001.wav"
 
 

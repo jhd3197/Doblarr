@@ -81,12 +81,15 @@ class VoiceboxClient(ArrClient):
 
     # -- speech generation ------------------------------------------------
     def generate(self, profile_id: str, text: str, language: str,
-                 seed: int | None = None, model_size: str | None = None) -> str:
+                 seed: int | None = None, model_size: str | None = None,
+                 engine: str | None = None) -> str:
         payload: dict = {"profile_id": profile_id, "text": text, "language": language}
         if seed is not None:
             payload["seed"] = seed
         if model_size is not None:
             payload["model_size"] = model_size
+        if engine is not None:
+            payload["engine"] = engine
         data = self._post("/generate", json=payload)
         gen_id = data.get("id") or data.get("generation_id")
         if not gen_id:
@@ -106,6 +109,7 @@ class VoiceboxClient(ArrClient):
         deadline = time.time() + self.timeout
         while time.time() < deadline:
             if cancel_event is not None and cancel_event.is_set():
+                self._cancel_quietly(generation_id)
                 raise JobCancelled(f"cancelled while waiting for {generation_id}")
             data = self._get(f"/history/{generation_id}", timeout=30)
             status = (data.get("status") or "").lower()
@@ -126,7 +130,9 @@ class VoiceboxClient(ArrClient):
     def download_audio(self, generation_id: str, dest: Path) -> Path:
         resp = self._request("GET", f"/audio/{generation_id}")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(resp.content)
+        temp = dest.with_suffix(dest.suffix + ".partial")
+        temp.write_bytes(resp.content)
+        temp.replace(dest)
         return dest
 
     # -- convenience ------------------------------------------------------

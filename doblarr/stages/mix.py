@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import replace
 from pathlib import Path
 
 from ..ffmpeg import FFmpegError, run_ffmpeg
 from ..models import DubJob
 from .common import Plan, cached, dry, stage, work_stem
+from .fit_timing import _duration
 
 log = logging.getLogger("doblarr.mix")
 
@@ -82,9 +84,39 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     if not segs:
         raise RuntimeError("mix: no generated clips to place")
     bed = job.background or job.source_audio
-    win_start = min(s.start for s in segs)
-    win_end = max(s.end for s in segs) + 3.0
-    dur = win_end - win_start
+    if len(segs) != len(job.segments):
+        raise RuntimeError("mix: missing generated dialogue clips")
+    if bed is None:
+        raise RuntimeError("mix: no background audio")
+    # Keep the video timeline, including the intro and closing credits.
+    win_start = 0.0
+    dur = _duration(job.source_audio or bed, cancel=cancel)
+
+    # Bound the number of inputs and command length (especially on Windows).
+    # Each partial bus starts at its first line; the final mix places it back
+    # on the absolute timeline. Original line clips remain resumable.
+    if len(segs) > 24:
+        bus_dir = work_dir / f"{work_stem(job)}.{job.target_lang}.buses"
+        bus_dir.mkdir(parents=True, exist_ok=True)
+        buses = []
+        for offset in range(0, len(segs), 24):
+            group = segs[offset:offset + 24]
+            start = min(s.start for s in group)
+            bus = bus_dir / f"bus_{offset:04d}.wav"
+            bus_args = ["-y"]
+            filters = []
+            for i, s in enumerate(group):
+                bus_args += ["-i", str(s.audio_clip)]
+                delay = max(0, round((s.start - start) * 1000))
+                filters.append(f"[{i}:a]adelay={delay}:all=1,"
+                               f"aformat=channel_layouts=stereo[c{i}]")
+            inputs = "".join(f"[c{i}]" for i in range(len(group)))
+            filters.append(f"{inputs}amix=inputs={len(group)}:normalize=0[out]")
+            run_ffmpeg(bus_args + ["-filter_complex", ";".join(filters),
+                       "-map", "[out]", "-ar", "48000", "-c:a", "pcm_s16le", str(bus)],
+                       cancel=cancel)
+            buses.append(replace(group[0], start=start, audio_clip=bus))
+        segs = buses
 
     args = ["-y", "-ss", str(win_start), "-t", str(dur), "-i", str(bed)]
     for s in segs:
@@ -93,14 +125,16 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     out.parent.mkdir(parents=True, exist_ok=True)
 
     ratio = _parse_ratio(ducking_ratio)
+    temp = out.with_suffix(".partial.wav")
     try:
         run_ffmpeg(args + ["-filter_complex", _filter_graph(segs, win_start, dur, ratio),
-                           "-map", "[out]", str(out)], cancel=cancel)
+                           "-map", "[out]", "-t", str(dur), str(temp)], cancel=cancel)
     except FFmpegError as e:
         if "No such filter" not in str(e):
             raise
         log.warning("mix: ffmpeg lacks sidechaincompress; falling back to flat mix")
         run_ffmpeg(args + ["-filter_complex", _filter_graph(segs, win_start, dur, None),
-                           "-map", "[out]", str(out)], cancel=cancel)
+                           "-map", "[out]", "-t", str(dur), str(temp)], cancel=cancel)
+    temp.replace(out)
     log.info("mix -> %s (%.0fs window, %d lines)", out.name, dur, len(segs))
     return None

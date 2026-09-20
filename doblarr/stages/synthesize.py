@@ -8,6 +8,8 @@ diarization.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 from pathlib import Path
@@ -15,7 +17,7 @@ from pathlib import Path
 from ..clients.voicebox import VoiceboxError
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob, Speaker
-from .common import Plan, cached, dry, stage
+from .common import Plan, dry, stage, work_stem
 
 log = logging.getLogger("doblarr.synthesize")
 
@@ -57,8 +59,10 @@ def _bad_ref_text(text: str) -> bool:
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         dry_run: bool = False, cancel: threading.Event | None = None,
         force: bool = False, cast: dict | None = None,
-        progress=None) -> Plan | None:
+        progress=None, engine: str | None = None) -> Plan | None:
     clips_dir = work_dir / ("clips-tease" if job.kind == "tease" else "clips")
+    identity = hashlib.sha256(str(job.input_file.resolve()).encode()).hexdigest()[:12]
+    clips_dir = clips_dir / f"{work_stem(job)}-{identity}" / job.target_lang
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
 
     if dry_run:
@@ -66,14 +70,6 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
             seg.audio_clip = clips_dir / f"line_{seg.index:04d}.wav"
         return dry(f"would clone a voice + generate {len(job.segments)} clips "
                    "via voicebox")
-
-    # Checkpoint: resume from the per-line clips that already exist.
-    clips = [clips_dir / f"line_{s.index:04d}.wav" for s in job.segments]
-    hit = cached(clips, job.input_file, force)
-    if hit:
-        for seg, clip in zip(job.segments, clips, strict=True):
-            seg.audio_clip = clip
-        return hit
 
     if not job.segments:
         raise RuntimeError("nothing to synthesize (no segments)")
@@ -136,16 +132,23 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
     total = len(job.segments)
     for seg in job.segments:
         dest = clips_dir / f"line_{seg.index:04d}.wav"
-        if not force and dest.exists() and dest.stat().st_size > 0:
+        text = seg.text_translated or seg.text_src
+        signature = {"text": text, "language": job.target_lang,
+                     "profile": spk.voicebox_profile_id, "engine": engine}
+        receipt = dest.with_suffix(".json")
+        saved = json.loads(receipt.read_text()) if receipt.exists() else {}
+        if (not force and dest.exists() and dest.stat().st_size > 0
+                and saved.get("request") == signature
+                and saved.get("sha256") == hashlib.sha256(dest.read_bytes()).hexdigest()):
             seg.audio_clip = dest
             log.info("  line %d/%d kept (already synthesized)", seg.index + 1, total)
             if progress:
                 progress(seg.index + 1, total, f"line {seg.index + 1}/{total} (cached)")
             continue
-        text = seg.text_translated or seg.text_src
+        kwargs = {"engine": engine} if engine else {}
         try:
             vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang,
-                                  dest, cancel_event=cancel)
+                                  dest, cancel_event=cancel, **kwargs)
         except VoiceboxError:
             # One fresh retry: a wedged server-side generation shouldn't kill
             # the whole job. The stuck remote generation is cancelled first so
@@ -153,7 +156,12 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
             log.warning("  line %d/%d generation failed — retrying once",
                         seg.index + 1, total)
             vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang,
-                                  dest, cancel_event=cancel)
+                                  dest, cancel_event=cancel, **kwargs)
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        temp = receipt.with_suffix(".partial.json")
+        temp.write_text(json.dumps({"request": signature,
+                                   "sha256": hashlib.sha256(dest.read_bytes()).hexdigest()}))
+        temp.replace(receipt)
         seg.audio_clip = dest
         log.info("  line %d/%d done", seg.index + 1, total)
         if progress:

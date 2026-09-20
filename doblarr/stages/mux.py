@@ -6,12 +6,13 @@ subtitles; just appends the dub, tagged with its language and a friendly title.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from pathlib import Path
 
 from ..discovery import lang_name
-from ..ffmpeg import run_ffmpeg
+from ..ffmpeg import run_ffmpeg, run_ffprobe
 from ..models import DubJob
 from .common import Plan, cached, dry, stage
 
@@ -32,12 +33,26 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_nam
     else:
         out = output_dir / job.input_file.name
     job.output_file = out
+    if out.resolve() == job.input_file.resolve():
+        raise ValueError("output must not overwrite the original video")
     # e.g. "English AI", teases "Spanish AI (tease)"; {language} stays the code.
     title = track_name_template.format(language=job.target_lang.upper(),
                                        language_name=lang_name(job.target_lang))
     if job.kind == "tease":
         title += " (tease)"
     lang3 = _LANG3.get(job.target_lang, job.target_lang)
+
+    if not dry_run:
+        hit = cached(out, job.input_file, force)
+        if hit and (not job.dubbed_track or cached(out, job.dubbed_track)):
+            return hit
+        probe = json.loads(run_ffprobe([
+            "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
+            "-of", "json", str(job.input_file)], cancel=cancel))
+        audio_index = len(probe.get("streams", []))
+    else:
+        audio_index = 1
+    temp = out.with_name(out.stem + ".partial" + out.suffix)
 
     args = [
         "-y",
@@ -51,17 +66,15 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_nam
         "-map", "1:a",          # plus the new dub audio
         "-c", "copy",
         "-c:a:0", "copy",
-        "-metadata:s:a:1", f"language={lang3}",
-        "-metadata:s:a:1", f"title={title}",
-        "-disposition:a:1", "0",
-        str(out),
+        f"-metadata:s:a:{audio_index}", f"language={lang3}",
+        f"-metadata:s:a:{audio_index}", f"title={title}",
+        f"-disposition:a:{audio_index}", "0",
+        str(temp),
     ]
     log.info("mux new track '%s' (%s) -> %s", title, lang3, out.name)
     if dry_run:
         return dry("ffmpeg " + " ".join(args))
-    hit = cached(out, job.input_file, force)
-    if hit:
-        return hit
     out.parent.mkdir(parents=True, exist_ok=True)
     run_ffmpeg(args, cancel=cancel)
+    temp.replace(out)
     return None

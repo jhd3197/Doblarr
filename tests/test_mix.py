@@ -73,7 +73,8 @@ def test_mix_ducks_bed_under_dialogue(tmp_path):
     out = tmp_path / "work" / "movie.es.dub.wav"
     assert out == job.dubbed_track and out.exists()
 
-    # window is [2s, 6s] of the bed -> output [0s, 4s]; dialogue sits in [0, 1]
-    during = _mean_volume_db(out, 0.2, 0.6)
-    after = _mean_volume_db(out, 2.5, 1.0)   # bed alone, past the release tail
+    # Original timestamps and the complete eight-second bed are preserved.
+    assert mix._duration(out) == pytest.approx(8.0, abs=0.01)
+    during = _mean_volume_db(out, 2.2, 0.6)
+    after = _mean_volume_db(out, 5.5, 1.0)   # bed alone, past the release tail
     assert during < after - 10               # bed ducked by at least 10 dB

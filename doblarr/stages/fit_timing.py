@@ -67,9 +67,6 @@ def run(job: DubJob, work_dir: Path, enabled: bool = True, dry_run: bool = False
         log.info("fit_timing: no generated clips to fit")
         return None
 
-    clips_dir = work_dir / ("clips-tease" if job.kind == "tease" else "clips")
-    fit_dir = clips_dir.with_name(clips_dir.name + "-fit")
-
     plan: list[tuple[Segment, Path, float, float]] = []  # seg, dest, actual, factor
     for s, src in clips:
         if s.duration <= 0:
@@ -78,21 +75,18 @@ def run(job: DubJob, work_dir: Path, enabled: bool = True, dry_run: bool = False
         if actual <= s.duration * FIT_SLACK:
             continue
         factor = min(actual / s.duration, MAX_STRETCH)
-        plan.append((s, fit_dir / src.name, actual, factor))
+        plan.append((s, src.parent / "fit" / src.name, actual, factor))
 
     if not plan:
         log.info("fit_timing: every clip fits its slot")
         return None
 
-    hit = cached([dest for _, dest, _, _ in plan], job.input_file, force)
-    if hit:
-        for s, dest, _, _ in plan:
-            s.audio_clip = dest
-        return hit
-
-    fit_dir.mkdir(parents=True, exist_ok=True)
     by_start = sorted(job.segments, key=lambda t: t.start)
     for s, dest, actual, factor in plan:
+        if cached(dest, Path(s.audio_clip), force):
+            s.audio_clip = dest
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
         run_ffmpeg(["-y", "-i", str(s.audio_clip), "-af", _atempo_chain(factor),
                     "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(dest)],
                    cancel=cancel)

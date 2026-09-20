@@ -84,6 +84,10 @@ def save_script(job, work_dir: Path) -> Path:
     """
     p = script_path(job, work_dir)
     payload = {
+        "identity": {"input": str(job.input_file.resolve()),
+                     "source_lang": job.source_lang, "target_lang": job.target_lang,
+                     "subtitles": (str(job.subtitle_file.resolve())
+                                   if job.subtitle_file else None)},
         "script_is_target": job.script_is_target,
         "speakers": [s.label for s in job.speakers.values()],
         "segments": [
@@ -93,7 +97,10 @@ def save_script(job, work_dir: Path) -> Path:
             for s in job.segments
         ],
     }
-    p.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    temp = p.with_suffix(".partial.json")
+    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    temp.replace(p)
     return p
 
 
@@ -105,6 +112,13 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     if cached(p, job.input_file, force) is None:
         return None
     payload = json.loads(p.read_text(encoding="utf-8"))
+    identity = {"input": str(job.input_file.resolve()),
+                "source_lang": job.source_lang, "target_lang": job.target_lang,
+                "subtitles": str(job.subtitle_file.resolve()) if job.subtitle_file else None}
+    if payload.get("identity") != identity:
+        return None
+    if job.subtitle_file and cached(p, job.subtitle_file) is None:
+        return None
     job.segments = [Segment(index=s["index"], start=float(s["start"]),
                             end=float(s["end"]), text_src=s["text_src"],
                             speaker=s.get("speaker", "SPEAKER_00"),

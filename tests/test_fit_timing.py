@@ -62,8 +62,8 @@ def test_long_clip_stretched_and_repointed(tmp_path, monkeypatch):
     fit_timing.run(job, tmp_path / "work")
     assert len(calls) == 1
     assert "atempo=1.2000" in calls[0]
-    assert Path(calls[0][-1]).parent.name == "clips-fit"
-    assert job.segments[0].audio_clip.parent.name == "clips-fit"
+    assert Path(calls[0][-1]).parent.name == "fit"
+    assert job.segments[0].audio_clip.parent.name == "fit"
 
 
 def test_overlong_clip_clamped_and_warned(tmp_path, monkeypatch, caplog):
@@ -97,4 +97,4 @@ def test_fresh_fitted_clips_skip_but_repoint(tmp_path, monkeypatch):
     job2 = _job(tmp_path, [(0.0, 2.0)])
     fit_timing.run(job2, tmp_path / "work")
     assert len(calls) == 1  # cached: no second stretch
-    assert job2.segments[0].audio_clip.parent.name == "clips-fit"
+    assert job2.segments[0].audio_clip.parent.name == "fit"
