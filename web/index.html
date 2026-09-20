@@ -1,166 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<base href="/">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Doblarr</title>
-<style>
-  /* ---- Design tokens (self-contained; replaces the _ds bundle) ---- */
-  .app {
-    --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --font-heading: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-
-    --color-bg: #f3efec;
-    --color-surface: #ffffff;
-    --color-text: #1c1a19;
-    --color-accent: #ec573c;
-    --color-accent-700: #cf4a2e;
-    --color-divider: rgba(0,0,0,0.12);
-    --color-neutral-100: #ffffff;
-    --color-neutral-200: #f5f1ed;
-    --color-neutral-300: #e7e1db;
-    --color-neutral-600: #6f6a66;
-    --color-neutral-700: #565250;
-    --color-neutral-800: #2f2c2a;
-    --color-neutral-900: #1c1a19;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-
-    --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
-    --line: color-mix(in srgb, var(--color-text) 12%, transparent);
-    --line-strong: color-mix(in srgb, var(--color-text) 18%, transparent);
-    --muted: color-mix(in srgb, var(--color-text) 62%, transparent);
-    --panel: var(--color-neutral-100);
-  }
-  .app[data-theme="dark"] {
-    --color-bg: #191817; --color-surface: #232120; --color-text: #f2f0ef;
-    --color-accent: #ff6a50; --color-accent-700: #ff8f7c; --color-divider: rgba(255,255,255,0.16);
-    --color-neutral-100: #232120; --color-neutral-200: #2c2a28; --color-neutral-300: #3a3735;
-    --color-neutral-600: #9c9795; --color-neutral-700: #b4afac; --color-neutral-800: #d6d2cf; --color-neutral-900: #f2f0ef;
-    --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.16);
-    --muted: rgba(242,240,239,0.62); --panel: #201f1e;
-    color-scheme: dark;
-  }
-
-  /* ---- Reset-ish ---- */
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--color-bg); }
-  a { color: var(--color-accent-700); text-underline-offset: 3px; }
-  a:hover { color: var(--color-accent); }
-  h2, h3 { font-family: var(--font-heading); }
-
-  /* ---- Components (replaces classes the _ds bundle provided) ---- */
-  .btn { font-family: var(--font-body); font-size: 13px; font-weight: 600; line-height: 1;
-    padding: 9px 15px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 8px; background: transparent;
-    color: var(--color-text); white-space: nowrap; }
-  .btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
-  .btn-primary:hover { filter: brightness(1.06); }
-  .btn-secondary { border-color: var(--line-strong); background: var(--color-surface); color: var(--color-text); }
-  .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
-  .btn-ghost { color: var(--muted); background: transparent; padding: 7px 11px; }
-  .btn-ghost:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 7%, transparent); }
-
-  .input { font-family: var(--font-body); font-size: 14px; padding: 9px 13px; width: 100%;
-    border-radius: 10px; border: 1px solid var(--line-strong); background: var(--color-surface); color: var(--color-text); }
-  .input::placeholder { color: var(--muted); }
-  .input:focus { outline: 2px solid color-mix(in srgb, var(--color-accent) 45%, transparent); outline-offset: 1px; }
-
-  .table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .table th { text-align: left; padding: 11px 10px; font-weight: 600; font-size: 12px;
-    border-bottom: 1px solid var(--line-strong); color: var(--muted); }
-  .table td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-  .table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
-
-  .tag { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600;
-    border: 1px solid transparent; border-radius: 999px; padding: 4px 11px; }
-  .tag-neutral { background: color-mix(in srgb, var(--color-text) 8%, transparent); color: var(--color-neutral-800); }
-  .tag-accent { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent-700); }
-  .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
-  .app[data-theme="dark"] .tag-neutral { background: rgba(255,255,255,0.08); color: var(--color-neutral-800); }
-  .app[data-theme="dark"] .tag-accent { background: rgba(255,106,80,0.16); color: #ffb4a3; }
-  .app[data-theme="dark"] .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
-
-  .card { border-radius: 14px; background: var(--panel); border: 1px solid var(--line); padding: 16px; }
-  .card-kicker { display: block; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
-  .card-title { display: block; font-family: var(--font-heading); font-weight: 800; font-size: 17px; margin: 7px 0 8px; }
-  .card-body { font-size: 13px; color: var(--muted); margin: 0 0 12px; line-height: 1.45; }
-  .card-meta { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
-
-  /* ---- Library poster grid ---- */
-  .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
-  .poster-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    overflow: hidden; display: flex; flex-direction: column; }
-  .poster-card:hover { border-color: var(--line-strong); }
-  .poster-img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; display: block;
-    background: var(--color-neutral-200); }
-  .poster-fallback { width: 100%; aspect-ratio: 2 / 3; display: flex; align-items: center;
-    justify-content: center; text-align: center; padding: 12px; font-weight: 700;
-    font-size: 14px; line-height: 1.35; background: var(--color-neutral-200); color: var(--muted); }
-  .poster-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-  .lang-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-  .lang-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px;
-    font-weight: 600; padding: 2px 7px; border-radius: 6px;
-    border: 1px solid var(--line); background: var(--color-neutral-200); color: var(--color-neutral-700); }
-  .lang-chip.missing { border: 1px dashed var(--color-accent); background: transparent;
-    color: var(--color-accent-700); }
-  .app[data-theme="dark"] .lang-chip.missing { color: var(--color-accent); }
-
-  /* ---- App layout (from the original mockup) ---- */
-  .table th { border-bottom: 1px solid var(--line-strong); color: var(--muted); }
-  .table td { border-bottom: 1px solid var(--line); }
-  .m { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-feature-settings: "tnum" 1; }
-  .shell { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; }
-  .navitem { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
-    padding: 10px 14px; border-radius: 10px; font-family: var(--font-body); font-size: 14px;
-    color: var(--muted); background: transparent; border: 0; cursor: pointer; }
-  .navitem:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); color: var(--color-text); }
-  .navitem[aria-current="page"] { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent-700); font-weight: 600; }
-  .dot9 { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; opacity: 0.55; }
-  .navitem[aria-current="page"] .dot9 { opacity: 1; background: var(--color-accent); }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
-  .hint { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; max-width: 58ch; }
-  .bar { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 12%, transparent); overflow: hidden; }
-  .bar > span { display: block; height: 6px; border-radius: 999px; background: var(--color-accent); }
-  .themebtn { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 8%, transparent); }
-  .themebtn button { appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 6px 13px;
-    font-family: var(--font-body); font-size: 12.5px; color: var(--muted); background: transparent; }
-  .themebtn button[aria-pressed="true"] { background: var(--color-bg); color: var(--color-text); font-weight: 600; box-shadow: var(--shadow-sm); }
-  .tab { appearance: none; background: transparent; border: 1px solid transparent; border-radius: 999px;
-    font-size: 13px; color: var(--muted); padding: 7px 14px; cursor: pointer; white-space: nowrap; font-family: var(--font-body); }
-  .tab:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 6%, transparent); }
-  .tab[aria-current="page"] { color: var(--color-text); background: var(--panel); border-color: var(--line-strong); font-weight: 600; }
-  .frow { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 8px 28px; padding: 15px 0; align-items: start; }
-  .frow + .frow { border-top: 1px solid var(--line); }
-  .flabel { font-size: 13.5px; font-weight: 600; padding-top: 8px; }
-  .fkey { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); margin-top: 3px; word-break: break-all; }
-  .opts { display: flex; flex-wrap: wrap; gap: 6px; }
-  .opt { appearance: none; cursor: pointer; border: 1px solid var(--line-strong); background: transparent;
-    color: var(--muted); border-radius: 999px; padding: 6px 13px; font-family: var(--font-body); font-size: 12.5px; }
-  .opt:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 6%, transparent); }
-  .opt[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: #fff; font-weight: 600; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  [hidden] { display: none !important; }
-
-  @media (max-width: 1000px) { .frow { grid-template-columns: 1fr; gap: 6px; } .flabel { padding-top: 0; } }
-  @media (max-width: 980px) {
-    .shell { grid-template-columns: 1fr; }
-    .side { position: static !important; height: auto !important; border-right: 0 !important; border-bottom: 1px solid var(--line) !important; }
-    .sidenav { flex-direction: row !important; overflow-x: auto; }
-    .navitem { width: auto; white-space: nowrap; }
-    .sidefoot { display: none !important; }
-  }
-  @media (max-width: 720px) {
-    .cards4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
-    header .input { max-width: 160px !important; }
-  }
-</style>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3efec">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191817">
+<meta name="application-name" content="Doblarr">
+<meta name="description" content="AI dubbing for your media library">
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 <div class="app shell" data-theme="light" id="app" style="color: var(--color-text); font-family: var(--font-body);">
 
   <aside class="side" style="border-right: 1px solid var(--line); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; background: var(--panel); padding: 18px 12px;">
     <div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px 20px;">
-      <span style="width: 26px; height: 26px; border-radius: 9px; background: var(--color-accent); display: block;"></span>
+      <img src="logo.png" alt="" width="26" height="26" style="display: block;">
       <span style="font-family: var(--font-heading); font-weight: 800; font-size: 18px; letter-spacing: -0.015em;">doblarr</span>
     </div>
     <nav class="sidenav" style="display: flex; flex-direction: column; gap: 3px;" id="nav">
@@ -195,9 +56,6 @@
     <!-- ===== Overview ===== -->
     <section data-view="Overview">
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Overview</h2>
-        <p style="margin: 0 0 26px; font-size: 13.5px; color: var(--muted);">Watching Radarr and Sonarr · last scan <span id="lastScan">—</span> · dubs added as non-destructive AI audio tracks</p>
-
         <div class="cards4" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
           <div class="panel" style="padding: 18px 20px;">
             <p id="statRunning" class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0; color: var(--color-accent);">0</p>
@@ -216,6 +74,9 @@
             <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">cuda:0 · 11.2 / 16 GB</p>
           </div>
         </div>
+
+        <h3 style="font-size: 18px; margin: 32px 0 14px;">Recent titles</h3>
+        <div id="recentTitles" class="poster-grid" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));"></div>
 
         <h3 style="font-size: 18px; margin: 32px 0 14px;">In progress</h3>
         <div id="inProgress" style="display: flex; flex-direction: column; gap: 12px;">
@@ -288,14 +149,16 @@
     <!-- ===== Library ===== -->
     <section data-view="Library" hidden>
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Library</h2>
-        <p id="libraryMeta" style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Reading audio languages from Radarr, matched against your target languages.</p>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px;">
           <div class="opts" data-single id="libraryFilters">
             <button type="button" class="opt" aria-pressed="true" data-filter="all">All</button>
             <button type="button" class="opt" aria-pressed="false" data-filter="needs-dub">needs-dub</button>
             <button type="button" class="opt" aria-pressed="false" data-filter="partial">partial</button>
             <button type="button" class="opt" aria-pressed="false" data-filter="available">available</button>
+          </div>
+          <div class="opts" data-single id="librarySort">
+            <button type="button" class="opt" aria-pressed="true" data-sort="default">Default order</button>
+            <button type="button" class="opt" aria-pressed="false" data-sort="recent">Recently active</button>
           </div>
           <button type="button" class="btn btn-secondary" style="margin-left: auto;" id="syncLabelsBtn">Sync Plex labels</button>
           <button type="button" class="btn btn-secondary" id="rescanBtn">Rescan sources</button>
@@ -305,15 +168,19 @@
       </div>
     </section>
 
+    <!-- ===== Title (library item detail — a full page, not a popup) ===== -->
+    <section data-view="Title" hidden>
+      <div id="titleRoot" style="padding: 22px 26px 46px; display: flex; flex-direction: column; gap: 18px;"></div>
+    </section>
+
     <!-- ===== Dubs ===== -->
     <section data-view="Dubs" hidden>
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Dubs</h2>
-        <p id="dubsMeta" style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Loading jobs…</p>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center;">
           <button type="button" class="btn btn-secondary" id="pauseQueue">Pause queue</button>
           <button type="button" class="btn btn-secondary" id="clearFinished">Clear finished</button>
           <span class="tag tag-outline" id="pausedTag" hidden>Queue paused</span>
+          <span class="tag tag-outline" id="dryRunTag" hidden>Dry run — jobs are planned only, nothing is written to Plex</span>
           <span class="tag tag-accent" style="margin-left: auto;" id="workerTag">worker idle</span>
         </div>
         <div class="panel" style="padding: 6px 18px 10px;">
@@ -387,9 +254,6 @@
     <!-- ===== Voices ===== -->
     <section data-view="Voices" hidden>
       <div style="padding: 30px 26px 44px;">
-        <h2 style="font-size: 27px; margin: 0 0 4px; letter-spacing: -0.015em;">Voices</h2>
-        <p style="margin: 0 0 22px; font-size: 13.5px; color: var(--muted);">Cloned once per speaker from the separated dialogue stem, then locked for the whole series.</p>
-
         <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
           <h3 style="font-size: 18px; margin: 0;">Cast — Alice in Borderland</h3>
           <span class="m" style="font-size: 12.5px; color: var(--muted);">pyannote · 6 speakers · 41 min of reference</span>
@@ -446,10 +310,6 @@
         <div style="display: flex; gap: 6px; padding: 14px 26px 0; overflow-x: auto;" id="settingsTabs"></div>
         <div style="padding: 26px 26px 0; flex: 1;">
           <div style="display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;">
-            <div>
-              <h2 style="font-size: 23px; margin: 0 0 4px; letter-spacing: -0.015em;" id="tabTitle"></h2>
-              <p style="margin: 0; font-size: 13.5px; color: var(--muted); max-width: 72ch;" id="tabDesc"></p>
-            </div>
             <button type="button" class="opt" id="toggleKeys" aria-pressed="false" style="margin-left: auto;">Show config keys</button>
           </div>
           <div style="display: flex; flex-direction: column; gap: 16px;" id="settingsGroups"></div>
@@ -484,899 +344,25 @@
       <input id="ndPath" class="input m" type="text" placeholder="M:/Plex/Movies/…/film.mkv">
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
         <button type="button" class="btn btn-secondary" id="ndCancel">Cancel</button>
+        <span id="ndStatus" role="alert" style="color:var(--muted);margin-right:auto;"></span>
         <button type="button" class="btn btn-primary" id="ndQueue">Queue dub</button>
       </div>
     </div>
   </div>
 
-  <!-- Voice cast editor -->
-  <div id="castModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;">
-    <div class="panel" style="width:min(560px,92vw);padding:22px 24px;max-height:84vh;overflow-y:auto;">
-      <h3 id="castTitle" style="margin:0 0 4px;font-size:18px;">Voice cast</h3>
-      <p style="margin:0 0 14px;font-size:13px;color:var(--muted);">One voice per speaker — reused by teases and the full dub.</p>
-      <div id="castRows"></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;align-items:center;">
-        <span id="castStatus" style="margin-right:auto;font-size:12.5px;color:var(--muted);"></span>
-        <button type="button" class="btn btn-secondary" id="castCancel">Close</button>
-        <button type="button" class="btn btn-primary" id="castSave">Save cast</button>
+  <!-- Watch a produced dub/tease -->
+  <div id="watchModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:100;">
+    <div class="panel" style="width:min(860px,94vw);padding:20px 22px;">
+      <h3 id="watchTitle" style="margin:0 0 12px;font-size:18px;">Watch</h3>
+      <video id="watchVideo" controls autoplay style="width:100%;max-height:70vh;background:#000;border-radius:10px;"></video>
+      <p style="margin:12px 0 0;font-size:12.5px;color:var(--muted);">MKV playback depends on browser codecs — if this doesn't play, open the file from the output folder: <code id="watchPath" class="m" style="font-size:12px;user-select:all;"></code></p>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+        <button type="button" class="btn btn-secondary" id="watchClose">Close</button>
       </div>
     </div>
   </div>
 </div>
 
-<script>
-// ---- API-key aware fetch (wraps window.fetch; all api/* calls go through it) ----
-(function () {
-  const rawFetch = window.fetch.bind(window);
-  let apiKey = localStorage.getItem("doblarr_api_key") || "";
-  window.fetch = async (url, opts = {}) => {
-    const headers = { ...(opts.headers || {}) };
-    if (apiKey) headers["X-Api-Key"] = apiKey;
-    let res = await rawFetch(url, { ...opts, headers });
-    if ((res.status === 401 || res.status === 403) && String(url).includes("api/")) {
-      const entered = prompt("Doblarr needs its API key (web.api_key in config.yaml):", "");
-      if (entered) {
-        apiKey = entered;
-        localStorage.setItem("doblarr_api_key", entered);
-        window.dispatchEvent(new Event("doblarr-api-key"));
-        headers["X-Api-Key"] = entered;
-        res = await rawFetch(url, { ...opts, headers });
-      }
-    }
-    return res;
-  };
-})();
-
-// ---- Settings model (carried over verbatim from the mockup) ----
-const T = (k, l, v, h) => ({ k, l, v, h, t: "text" });
-const C = (k, l, o, v, h) => ({ k, l, o, v, h, t: "choice" });
-const B = (k, l, v, h) => ({ k, l, o: ["On", "Off"], v: v ? "On" : "Off", h, t: "choice" });
-const L = (k, l, items, h) => ({ k, l, items, h, t: "list" });
-
-const TABS = [
-  { id: "connections", title: "Connections", desc: "The services Doblarr reads from and writes back to.", groups: [
-    { title: "Plex", desc: "Doblarr scans this server, writes labels on it, and refreshes items after a mux.", fields: [
-      T("connect.plex_url", "Hostname or URL", "http://192.168.0.49:32400", ""),
-      T("connect.plex_token", "Token", "••••••••••••••••", "Admin token — required to read sections and write labels."),
-      L("discovery.libraries", "Watched libraries", ["Movies", "TV Shows"], "Plex sections Doblarr is allowed to touch."),
-      B("mux.trigger_plex_refresh", "Refresh the item after muxing", true, "Single-item refresh, never a full library scan.") ] },
-    { title: "Radarr & Sonarr", desc: "Import events are what usually wake Doblarr up.", fields: [
-      T("connect.radarr_url", "Radarr URL", "http://host.docker.internal:7878", ""),
-      T("connect.sonarr_url", "Sonarr URL", "http://host.docker.internal:8989", ""),
-      L("discovery.sources", "Scan sources", ["plex", "radarr", "sonarr", "filesystem"], ""),
-      T("connect.api_keys_env", "API keys", "DOBLARR_*_API_KEY", "Read from the environment, never written into the config file.") ] },
-    { title: "Overseerr & voicebox", desc: "", fields: [
-      T("connect.seerr_url", "Overseerr / Jellyseerr URL", "http://host.docker.internal:5055", "Used by the dub-on-approval trigger."),
-      T("voicebox.base_url", "voicebox URL", "http://127.0.0.1:17493", "The local speech service Doblarr generates through."),
-      T("voicebox.timeout_seconds", "voicebox timeout", "120", "Seconds before a generation is considered dead.") ] } ] },
-
-  { id: "general", title: "General", desc: "Identity, target languages, and the default mode Doblarr runs in.", groups: [
-    { title: "Instance", desc: "", fields: [
-      T("general.instance_name", "Instance name", "Doblarr", "Shown in the UI and in notifications."),
-      T("general.timezone", "Timezone", "America/New_York", ""),
-      T("general.data_dir", "Data directory", "/config", ""),
-      C("general.log_level", "Log level", ["debug", "info", "warn", "error"], "info", "") ] },
-    { title: "What gets dubbed", desc: "", fields: [
-      L("general.target_languages", "Target languages", ["es", "en"], "The languages you want dubs in."),
-      B("general.original_languages_only", "Original language must differ", true, "Only process titles whose original language isn't already a target."),
-      B("general.dry_run_default", "Dry run by default", false, "Plan every job and write nothing until you say otherwise.") ] } ] },
-
-  { id: "discovery", title: "Discovery", desc: "How Doblarr finds the titles you can't watch.", groups: [
-    { title: "Scanning", desc: "", fields: [
-      B("discovery.enabled", "Discovery enabled", true, ""),
-      B("discovery.auto_scan", "Auto-scan on the interval", false, "Rescan the library automatically every rescan interval."),
-      T("discovery.rescan_interval", "Rescan interval", "6h", ""),
-      C("discovery.audio_lang_source", "Read audio languages from", ["ffprobe", "plex_api", "radarr_api"], "ffprobe", "ffprobe opens the file; the APIs trust the metadata."),
-      C("discovery.detect_from", "Detection depth", ["metadata_only", "probe_files"], "probe_files", "Probing is accurate but slower on a big library.") ] },
-    { title: "What counts as missing", desc: "", fields: [
-      C("discovery.missing_when", "Flag a title when", ["no track in any target", "no track in all targets"], "no track in any target", ""),
-      C("discovery.treat_undefined_as", "Untagged audio counts as", ["unknown", "original", "target"], "unknown", "How to read tracks tagged und."),
-      B("discovery.only_original_foreign", "Skip English-original titles", true, "Even when they have no Spanish track.") ] },
-    { title: "Scope", desc: "Keep Doblarr away from trailers, extras and things you never want touched.", fields: [
-      T("discovery.min_year", "Earliest year", "1970", ""),
-      T("discovery.max_year", "Latest year", "", ""),
-      T("discovery.min_runtime", "Minimum runtime", "12m", ""),
-      T("discovery.max_runtime", "Maximum runtime", "240m", ""),
-      L("discovery.include_genres", "Include genres", ["all"], ""),
-      L("discovery.exclude_genres", "Exclude genres", ["Documentary", "Stand-Up"], ""),
-      L("discovery.ignore_list", "Never touch", ["Frieren", "tt0110912"], "Titles or IDs Doblarr must always leave alone.") ] } ] },
-
-  { id: "plexlabels", title: "Plex labels", desc: "Plex has no per-title hide API — Doblarr labels, and a smart collection or Kometa does the hiding.", groups: [
-    { title: "Labels", desc: "", fields: [
-      T("filtering.tag_missing_dub", "Missing a dub", "needs-dub", ""),
-      T("filtering.tag_has_ai_dub", "Already dubbed", "ai-dubbed", ""),
-      T("filtering.plex_label_available", "Target audio present", "en-available", "") ] },
-    { title: "Hiding and surfacing", desc: "", fields: [
-      C("filtering.hide_mode", "Hide mode", ["label_only", "smart_collection", "none"], "smart_collection", ""),
-      T("filtering.hidden_collection_name", "Hidden collection", "Not in your language", ""),
-      C("filtering.hide_scope", "Applies", ["per user", "library-wide"], "per user", ""),
-      T("filtering.surface_collection_name", "Surface collection", "Now available in English", "Doblarr fills this as dubs land."),
-      B("filtering.kometa_handoff", "Hand off to Kometa", true, "Emit a YAML fragment and let your existing Kometa run own the hide/show."),
-      B("filtering.auto_label", "Auto-apply labels on each scan", false, "When auto-scan runs, label needs-dub titles in Plex automatically.") ] } ] },
-
-  { id: "source", title: "Source", desc: "Which audio and which transcript the dub is built from.", groups: [
-    { title: "Audio", desc: "", fields: [
-      C("source.audio_track_select", "Dub from", ["original", "first track", "by language", "widest"], "original", ""),
-      L("source.container_formats", "Allowed containers", ["mkv", "mp4", "mov"], "") ] },
-    { title: "Subtitles", desc: "Subtitles are the timing spine when they exist — cheaper and steadier than guessing.", fields: [
-      C("source.subtitle_mode", "Subtitle source", ["download", "embedded", "external file", "whisper"], "embedded", ""),
-      T("source.subtitle_language", "Subtitle language", "ja", ""),
-      C("source.subtitle_provider", "Provider", ["bazarr", "opensubtitles", "none"], "bazarr", "Reuses what you already run."),
-      B("source.prefer_forced_subs", "Prefer forced subs", false, ""),
-      B("source.strip_sdh", "Strip SDH", true, "Removes [door slams] and speaker prefixes before translation.") ] } ] },
-
-  { id: "speech", title: "Transcript", desc: "Turning the original dialogue into timed, speaker-split text.", groups: [
-    { title: "Transcription", desc: "", fields: [
-      C("transcribe.source", "Transcript from", ["subtitles", "whisper"], "whisper", ""),
-      T("transcribe.whisper_model", "Whisper model", "large-v3", ""),
-      C("transcribe.device", "Device", ["cuda", "cpu"], "cuda", ""),
-      C("transcribe.compute_type", "Compute type", ["float16", "int8"], "float16", "int8 halves VRAM at some accuracy cost."),
-      B("transcribe.word_timestamps", "Word timestamps", true, "Needed for tight lip alignment later."),
-      B("transcribe.correct_with_subtitles", "Correct against subtitles", true, ""),
-      B("transcribe.vad_filter", "Drop silence (VAD)", true, "") ] },
-    { title: "Speaker diarization", desc: "Who is speaking, and for how long.", fields: [
-      B("diarize.enabled", "Diarization enabled", true, ""),
-      T("diarize.model", "Model", "pyannote/speaker-diarization-3.1", ""),
-      T("diarize.hf_token_env", "HuggingFace token", "HF_TOKEN", "Env var holding the token."),
-      T("diarize.min_speakers", "Minimum speakers", "1", ""),
-      T("diarize.max_speakers", "Maximum speakers", "12", ""),
-      T("diarize.merge_threshold", "Merge threshold", "0.82", "Collapses near-identical voices into one speaker."),
-      B("diarize.single_speaker_fallback", "Single-speaker fallback", true, "Narration stops being split into phantom voices.") ] } ] },
-
-  { id: "translate", title: "Translation", desc: "Translated for dubbing, not for reading — every line is length-budgeted to fit the mouth it came from.", groups: [
-    { title: "Fitting the line", desc: "", fields: [
-      T("translate.length_budget_cps", "Length budget", "15 cps", "Characters per second the line has to fit into."),
-      T("translate.max_retry_shorten", "Shorten retries", "2", "Re-translates tighter when a line overruns."),
-      T("translate.batch_size", "Batch size", "40", "Lines per API call.") ] },
-    { title: "Keeping it coherent", desc: "", fields: [
-      T("translate.context_window", "Context window", "8 lines + plot summary", "Surrounding dialogue passed with each batch."),
-      L("translate.glossary", "Glossary", ["Arisu", "Borderland", "Beach"], "Locked terms and names that are never translated."),
-      C("translate.profanity", "Profanity", ["preserve", "soften"], "preserve", ""),
-      B("translate.cache", "Cache translations", true, "Re-runs reuse identical lines instead of paying twice.") ] } ] },
-
-  { id: "voices", title: "Voices", desc: "Generating the speech and matching it to the original cast.", groups: [
-    { title: "Engine", desc: "", fields: [
-      C("voicebox.engine", "Engine", ["chatterbox-multilingual", "qwen3-tts"], "chatterbox-multilingual", ""),
-      T("voicebox.model_size", "Model size", "large", ""),
-      T("voicebox.seed", "Seed", "1337", "A fixed seed keeps re-runs reproducible."),
-      B("voicebox.per_language_engine", "Per-language engine", false, "Override the engine for individual target languages."),
-      T("voicebox.concurrency", "Concurrency", "2", "Parallel generations against voicebox."),
-      T("voicebox.effects_preset", "Effects preset", "dialogue-dry", "") ] },
-    { title: "Cloning", desc: "A speaker is sampled once and keeps that voice for the whole series.", fields: [
-      C("clone.voice_mode", "Voice mode", ["clone", "preset"], "clone", ""),
-      T("clone.reference_seconds", "Reference length", "30s", "How much clean audio is pulled per speaker."),
-      C("clone.reference_pick", "Reference pick", ["longest clean", "first", "random"], "longest clean", ""),
-      T("clone.similarity_floor", "Similarity floor", "0.60", "Below this the speaker is flagged, not guessed at."),
-      B("clone.lock_per_series", "Lock the cast per series", true, ""),
-      B("clone.reuse_across_titles", "Reuse voices across titles", false, "Match the same actor in another show to the same voice.") ] } ] },
-
-  { id: "audio", title: "Timing & mix", desc: "Fitting the dub to the picture and laying it over the original bed.", groups: [
-    { title: "Timing", desc: "", fields: [
-      T("timing.max_stretch", "Max stretch", "1.30", "Past this it stops sounding like a person."),
-      C("timing.stretch_engine", "Stretch engine", ["rubberband", "ffmpeg_atempo"], "rubberband", ""),
-      B("timing.allow_overlap", "Allow overlap", true, "Permits slight overrun into neighbouring gaps."),
-      C("timing.pad_short_lines", "Short lines", ["silence pad", "leave gap"], "silence pad", ""),
-      B("timing.snap_to_scene", "Snap to scene boundaries", true, "") ] },
-    { title: "Mixing", desc: "The score and effects are never re-synthesized — only the dialogue stem is replaced.", fields: [
-      B("mix.keep_background", "Keep the original bed", true, "Overlay onto the separated music and effects."),
-      T("mix.separate_model", "Separation model", "htdemucs_ft", ""),
-      T("mix.ducking_ratio", "Ducking ratio", "12:1", ""),
-      T("mix.ducking_threshold", "Ducking threshold", "-24 dB", ""),
-      T("mix.attack", "Attack", "8 ms", ""),
-      T("mix.release", "Release", "180 ms", ""),
-      T("mix.dialogue_gain", "Dialogue gain", "+1.5 dB", ""),
-      T("mix.background_gain", "Background gain", "-2.0 dB", "") ] },
-    { title: "Output audio", desc: "", fields: [
-      C("mix.output_channels", "Channels", ["stereo", "5.1"], "stereo", ""),
-      T("mix.loudness_target", "Loudness target", "-16 LUFS", ""),
-      T("mix.sample_rate", "Sample rate", "48000", ""),
-      C("mix.codec", "Codec", ["aac", "eac3", "opus"], "aac", ""),
-      T("mix.bitrate", "Bitrate", "256k", "") ] } ] },
-
-  { id: "output", title: "Output", desc: "Nothing is overwritten — the dub is added as a new, tagged track.", groups: [
-    { title: "Muxing", desc: "", fields: [
-      C("mux.mode", "Mode", ["add track", "sidecar file"], "add track", "Adding a track is the non-destructive route."),
-      T("mux.track_name_template", "Track name", "AI - {language}", ""),
-      B("mux.set_language_tag", "Write ISO-639 language tag", true, ""),
-      B("mux.default_disposition", "Make the dub the default track", false, "Usually off — the original stays default."),
-      T("mux.output_dir", "Output directory", "in place", ""),
-      C("mux.remux_container", "Container", ["keep original", "force mkv"], "keep original", ""),
-      B("mux.overwrite_existing_ai_track", "Replace a previous Doblarr track", true, "On a re-run, swap the old AI track instead of stacking a second one.") ] },
-    { title: "Automation", desc: "What happens without you in the room.", fields: [
-      B("automation.auto_dub_new_foreign", "Auto-dub new foreign titles", true, ""),
-      B("automation.seerr_integration", "Dub on request approval", true, "Overseerr approves a request, Doblarr queues the dub."),
-      C("automation.tv_scope", "TV scope", ["whole series", "season", "episode"], "season", ""),
-      T("automation.priority_rules", "Priority", "requested > new > backlog", "Requested titles jump the queue.") ] } ] },
-
-  { id: "queue", title: "Queue & storage", desc: "Doblarr is meant to be a good neighbour on a single GPU.", groups: [
-    { title: "Queue", desc: "", fields: [
-      T("queue.max_concurrent_jobs", "Concurrent jobs", "1", ""),
-      T("queue.gpu_device", "GPU device", "cuda:0", ""),
-      T("queue.vram_limit", "VRAM limit", "14 GB", ""),
-      B("queue.cpu_only_fallback", "CPU-only fallback", true, ""),
-      B("queue.stage_parallelism", "Stage parallelism", true, "Runs independent stages of different jobs side by side."),
-      T("queue.pause_during_hours", "Pause during", "19:00 – 23:00", "Don't hog the GPU while you're watching."),
-      T("queue.retry_attempts", "Retry attempts", "3", ""),
-      T("queue.retry_backoff", "Retry backoff", "5m, 20m, 1h", ""),
-      B("queue.resume_partial", "Resume partial jobs", true, "Checkpoints so a long job survives a restart.") ] },
-    { title: "Storage", desc: "Stems and per-line clips are large. This is where they live and when they die.", fields: [
-      T("storage.work_dir", "Work directory", "/scratch/doblarr", ""),
-      B("storage.keep_intermediates", "Keep intermediates", false, "Keeps stems and clips around for debugging."),
-      B("storage.cleanup_on_success", "Clean up after a good mux", true, ""),
-      T("storage.max_cache_gb", "Max cache", "80 GB", ""),
-      T("storage.min_free_space_gb", "Minimum free space", "25 GB", "Refuses to start a job below this.") ] },
-    { title: "Review gate", desc: "Listen before it lands in the library.", fields: [
-      C("review.mode", "Mode", ["auto apply", "hold for approval"], "hold for approval", ""),
-      T("review.preview_clip_seconds", "Preview clip", "30s", "A short sample generated for you to approve first."),
-      T("review.min_confidence", "Minimum confidence", "0.75", "Flags shaky transcription for a manual check."),
-      T("review.reject_if_stretch_over", "Reject if stretched", "over 15% of lines", "Bails out rather than shipping a rushed dub.") ] } ] },
-
-  { id: "notifications", title: "Notifications", desc: "Quiet unless something finished or something broke.", groups: [
-    { title: "Events", desc: "", fields: [
-      B("notify.on_complete", "On complete", true, ""),
-      B("notify.on_error", "On error", true, ""),
-      B("notify.include_preview", "Attach a preview clip", true, "") ] },
-    { title: "Agents", desc: "", fields: [
-      T("notify.discord_webhook", "Discord webhook", "https://discord.com/api/webhooks/•••", "Or hand off to Notifiarr.") ] } ] },
-
-  { id: "advanced", title: "Advanced", desc: "How this interface is served, and what it writes down.", groups: [
-    { title: "Web UI & API", desc: "", fields: [
-      B("web.enabled", "Web UI enabled", true, ""),
-      T("web.host", "Host", "0.0.0.0", ""),
-      T("web.port", "Port", "6363", ""),
-      C("web.auth", "Auth", ["none", "basic", "api key"], "api key", ""),
-      T("web.api_key", "API key", "••••••••••••••••", ""),
-      T("web.base_url", "Base URL", "/doblarr", "For a reverse-proxy subpath."),
-      C("web.theme", "Theme", ["light", "dark", "system"], "system", "") ] },
-    { title: "Logging", desc: "", fields: [
-      C("logging.level", "Level", ["debug", "info", "warn", "error"], "info", ""),
-      T("logging.file", "Log file", "/config/logs/doblarr.log", ""),
-      C("logging.rotate", "Rotation", ["daily", "10mb", "off"], "daily", ""),
-      B("logging.per_job_log", "One log per job", true, "The fastest way to debug a bad dub.") ] } ] }
-];
-
-// ---- App state + rendering (vanilla, no framework) ----
-const app = document.getElementById("app");
-const state = { page: "Overview", tab: "connections", keys: false, vals: {}, config: null, search: "" };
-
-function matchesSearch(title) {
-  return !state.search || String(title).toLowerCase().includes(state.search);
-}
-
-// Flat lookup of every settings field by its config key.
-const FIELD_BY_KEY = {};
-TABS.forEach(t => t.groups.forEach(g => g.fields.forEach(f => { FIELD_BY_KEY[f.k] = f; })));
-
-function cfgGet(dotted) {
-  if (!state.config) return undefined;
-  return dotted.split(".").reduce((o, k) => (o && o[k] !== undefined) ? o[k] : undefined, state.config);
-}
-function isBoolField(f) { return f.t === "choice" && Array.isArray(f.o) && f.o[0] === "On"; }
-
-function safeGet(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } }
-function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-
-function setTheme(theme) {
-  app.setAttribute("data-theme", theme);
-  document.querySelectorAll("#themebtn button").forEach(b =>
-    b.setAttribute("aria-pressed", b.dataset.themeSet === theme ? "true" : "false"));
-  safeSet("doblarr.theme", theme);
-}
-
-function setPage(page) {
-  state.page = page;
-  document.querySelectorAll("[data-view]").forEach(s =>
-    s.hidden = s.getAttribute("data-view") !== page);
-  document.querySelectorAll("#nav .navitem").forEach(n =>
-    n.setAttribute("aria-current", n.dataset.page === page ? "page" : "false"));
-  if (page === "Settings") { if (state.config) renderSettings(); else loadConfig(); }
-  if (page === "Library" && !library.loaded) loadLibrary();
-  if (page === "Overview") loadOverview();
-  if (page === "Dubs") loadJobs();
-}
-
-// ---- Library (real data from /api/library) ----
-const library = { items: [], filter: "all", loaded: false };
-
-function statusTag(label) {
-  const cls = label === "needs-dub" ? "tag-accent"
-            : (label === "partial" || label === "review") ? "tag-outline" : "tag-neutral";
-  return `<span class="tag ${cls}">${label}</span>`;
-}
-
-// ISO 639-1 -> flag emoji. Windows browsers don't render regional-indicator
-// emoji, so chips ALWAYS carry the code text — the emoji is a bonus glyph.
-const LANG_FLAGS = {
-  en: "🇬🇧", es: "🇪🇸", ja: "🇯🇵", fr: "🇫🇷", de: "🇩🇪", it: "🇮🇹", pt: "🇵🇹",
-  ko: "🇰🇷", zh: "🇨🇳", hi: "🇮🇳", ru: "🇷🇺", ar: "🇸🇦",
-};
-
-function langChip(code, missing) {
-  const flag = LANG_FLAGS[code] ? LANG_FLAGS[code] + " " : "";
-  const tip = missing ? `no ${code.toUpperCase()} audio (target language)` : `${code.toUpperCase()} audio present`;
-  return `<span class="lang-chip${missing ? " missing" : ""}" title="${tip}">${flag}${escapeHtml(code.toUpperCase())}</span>`;
-}
-
-function renderLibrary() {
-  const grid = document.getElementById("libraryGrid");
-  const rows = library.items.filter(i =>
-    (library.filter === "all" || i.status === library.filter) && matchesSearch(i.title));
-  if (!rows.length) {
-    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">No titles match.</div>`;
-    return;
-  }
-  library.rendered = rows;
-  const targets = library.targets || [];
-  grid.innerHTML = rows.map((i, idx) => {
-    // Audio languages present; fall back to the original language when unprobed.
-    const present = new Set((i.audio_langs && i.audio_langs.length)
-      ? i.audio_langs : (i.original && i.original !== "??" ? [i.original] : []));
-    const chips = [...present].map(c => langChip(c, false)).join("")
-      + targets.filter(t => !present.has(t)).map(t => langChip(t, true)).join("");
-    const poster = i.poster
-      ? `<img class="poster-img" loading="lazy" src="${escapeHtml(i.poster)}" alt=""
-              onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
-         <div class="poster-fallback" hidden>${escapeHtml(i.title)}</div>`
-      : `<div class="poster-fallback">${escapeHtml(i.title)}</div>`;
-    const action = (i.status === "needs-dub" || i.status === "partial")
-      ? `<div style="display:flex;gap:2px;flex-wrap:wrap;">
-           <button type="button" class="btn btn-ghost queue-dub" data-idx="${idx}">Queue dub</button>
-           <button type="button" class="btn btn-ghost tease-dub" data-idx="${idx}">Tease</button>
-           <button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>
-         </div>`
-      : `<button type="button" class="btn btn-ghost cast-edit" data-idx="${idx}">Cast</button>`;
-    return `
-    <div class="poster-card">
-      ${poster}
-      <div class="poster-body">
-        <div style="font-weight:600;font-size:13.5px;line-height:1.3;">${escapeHtml(i.title)}${i.year ? ` <span class="m" style="color:var(--muted);font-size:12px;">${i.year}</span>` : ""}</div>
-        <div class="lang-chips">${chips}</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;">
-          ${statusTag(i.label)}
-          <span class="m" style="font-size:11.5px;color:var(--muted);">${escapeHtml(i.source.split(" ")[0])}</span>
-        </div>
-        ${action}
-      </div>
-    </div>`;
-  }).join("");
-}
-
-async function queueDub(item, btn, kind = "full") {
-  btn.disabled = true; btn.textContent = kind === "tease" ? "Teasing…" : "Queuing…";
-  try {
-    const res = await fetch("api/jobs", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: item.title, source: item.source, source_lang: item.original,
-        target_lang: (library.targets && library.targets[0]) || "en", path: item.path,
-        kind,
-      }),
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    btn.textContent = kind === "tease" ? "Teased ✓" : "Queued ✓";
-  } catch (err) {
-    btn.disabled = false; btn.textContent = "Retry";
-  }
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
-
-async function loadLibrary() {
-  const grid = document.getElementById("libraryGrid");
-  const meta = document.getElementById("libraryMeta");
-  grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">Scanning Radarr…</div>`;
-  try {
-    const res = await fetch("api/library");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
-    library.items = data.items || [];
-    library.targets = data.target_languages || ["en"];
-    library.loaded = true;
-    const c = data.counts || {};
-    const partial = c.partial ? ` · ${c.partial} partial` : "";
-    meta.textContent = `${c.total} titles scanned · ${c.needs_dub} need a dub${partial} · ${c.available} watchable in ${(data.target_languages || []).join(", ")}`;
-    if (data.warnings && data.warnings.length) meta.textContent += ` · ⚠ ${data.warnings.join("; ")}`;
-    renderLibrary();
-  } catch (err) {
-    library.loaded = false;
-    meta.textContent = "Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable?";
-    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">${escapeHtml(err.message)}</div>`;
-  }
-}
-
-function el(tag, attrs = {}, ...kids) {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === "class") n.className = v;
-    else if (k === "style") n.style.cssText = v;
-    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
-    else n.setAttribute(k, v);
-  }
-  for (const kid of kids) if (kid != null) n.append(kid.nodeType ? kid : document.createTextNode(kid));
-  return n;
-}
-
-function fieldDisplay(f) {
-  if (state.vals[f.k] !== undefined) return state.vals[f.k];
-  const c = cfgGet(f.k);
-  if (c === undefined || c === null) return f.v;
-  if (isBoolField(f)) return c ? "On" : "Off";
-  return c;
-}
-
-function renderField(f) {
-  const row = el("div", { class: "frow" });
-  const left = el("div", {}, el("div", { class: "flabel" }, f.l));
-  if (state.keys) left.append(el("div", { class: "fkey" }, f.k));
-  row.append(left);
-
-  const right = el("div", {});
-  if (f.t === "text") {
-    right.append(el("input", {
-      class: "input m", type: "text", value: fieldDisplay(f), style: "max-width: 420px;",
-      oninput: e => { state.vals[f.k] = e.target.value; },
-    }));
-  } else if (f.t === "choice") {
-    const opts = el("div", { class: "opts" });
-    f.o.forEach(o => opts.append(el("button", {
-      type: "button", class: "opt", "aria-pressed": fieldDisplay(f) === o ? "true" : "false",
-      onclick: () => { state.vals[f.k] = o; renderSettings(); },
-    }, o)));
-    right.append(opts);
-  } else if (f.t === "list") {
-    const chips = el("div", { class: "chips" });
-    const items = Array.isArray(cfgGet(f.k)) ? cfgGet(f.k) : (f.items || []);
-    items.forEach(c => chips.append(el("span", { class: "tag tag-neutral m" }, c)));
-    right.append(chips);
-  }
-  if (f.h) right.append(el("p", { class: "hint" }, f.h));
-  row.append(right);
-  return row;
-}
-
-// ---- Jobs (real queue from /api/jobs) ----
-const jobs = { pollTimer: null };
-
-function jobStatusTag(s) {
-  const cls = s === "running" ? "tag-accent"
-            : s === "failed" || s === "cancelled" ? "tag-outline" : "tag-neutral";
-  return `<span class="tag ${cls}">${s}</span>`;
-}
-
-function renderJobs(data) {
-  jobs.lastData = data;
-  const body = document.getElementById("dubsBody");
-  const meta = document.getElementById("dubsMeta");
-  const list = (data.jobs || []).filter(j => matchesSearch(j.title));
-  const c = data.counts || {};
-  meta.textContent = `${c.running || 0} running · ${c.queued || 0} queued · ${c.done || 0} done · ${c.failed || 0} failed`;
-
-  // toolbar state
-  const paused = !!data.paused;
-  const pauseBtn = document.getElementById("pauseQueue");
-  if (pauseBtn) pauseBtn.textContent = paused ? "Resume queue" : "Pause queue";
-  const pausedTag = document.getElementById("pausedTag");
-  if (pausedTag) pausedTag.hidden = !paused;
-  const workerTag = document.getElementById("workerTag");
-  if (workerTag) workerTag.textContent = (c.running || 0) ? `processing ${c.running}` : "worker idle";
-
-  if (!list.length) {
-    body.innerHTML = `<tr><td colspan="6" style="padding:22px 10px;color:var(--muted);">No jobs yet — queue one from the Library.</td></tr>`;
-    return;
-  }
-  body.innerHTML = list.map(j => {
-    const track = `${escapeHtml(j.source_lang)} → ${escapeHtml(j.target_lang)}`;
-    const stage = j.status === "done" ? escapeHtml(j.message || "done")
-                : j.status === "failed" ? escapeHtml(j.message || "failed")
-                : j.status === "cancelled" ? escapeHtml(j.message || "cancelled")
-                : (escapeHtml(j.stage || "queued"));
-    const barColor = j.status === "failed" || j.status === "cancelled" ? "background: var(--color-neutral-600);" : "";
-    const act = (j.status === "queued" || j.status === "running") ? "Cancel" : "Remove";
-    const action = act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "";
-    return `
-      <tr>
-        <td style="font-weight:600;">${escapeHtml(j.title)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}</td>
-        <td class="m" style="font-size:13px;">${track}</td>
-        <td>${stage}</td>
-        <td><div class="bar"><span style="width:${j.progress || 0}%;${barColor}"></span></div></td>
-        <td>${jobStatusTag(j.status)}</td>
-        <td>${action}</td>
-      </tr>`;
-  }).join("");
-}
-
-async function loadJobs() {
-  try {
-    const res = await fetch("api/jobs");
-    const data = await res.json();
-    renderJobs(data);
-    setOverviewJobStats(data.counts || {});
-  } catch (e) {
-    const meta = document.getElementById("dubsMeta");
-    if (meta) meta.textContent = "Jobs unavailable — is Doblarr running (doblarr serve)?";
-  }
-}
-
-function startJobPolling() {
-  stopJobPolling();
-  jobs.pollTimer = setInterval(loadJobs, 30000);  // slow fallback when SSE is down
-}
-function stopJobPolling() {
-  if (jobs.pollTimer) { clearInterval(jobs.pollTimer); jobs.pollTimer = null; }
-}
-
-// Live updates via SSE (/api/events); falls back to slow polling if the stream
-// keeps failing. EventSource can't set headers, so the API key goes on the URL.
-function startEventStream() {
-  stopEventStream();
-  const key = localStorage.getItem("doblarr_api_key") || "";
-  const es = new EventSource("api/events" + (key ? "?api_key=" + encodeURIComponent(key) : ""));
-  jobs.eventSource = es;
-  es.onmessage = (e) => {
-    jobs.eventFailures = 0;
-    stopJobPolling();  // stream is healthy — no fallback needed
-    let evt;
-    try { evt = JSON.parse(e.data); } catch { return; }
-    if (evt.topic === "log") { appendLogLine(evt); return; }
-    if (evt.topic === "job") loadJobs();
-    if (state.page === "Overview") loadOverview();
-  };
-  es.onerror = () => {
-    jobs.eventFailures = (jobs.eventFailures || 0) + 1;
-    if (jobs.eventFailures >= 3) startJobPolling();
-  };
-}
-function stopEventStream() {
-  if (jobs.eventSource) { jobs.eventSource.close(); jobs.eventSource = null; }
-}
-window.addEventListener("doblarr-api-key", startEventStream);  // reconnect with the new key
-
-// ---- Live log panel (SSE topic: log) ----
-const logLines = [];
-function appendLogLine(evt) {
-  const box = document.getElementById("logBox");
-  if (!box) return;
-  logLines.push(`${(evt.at || "").slice(11)} ${evt.level.padEnd(7)} ${evt.logger} | ${evt.message}`);
-  if (logLines.length > 200) logLines.splice(0, logLines.length - 200);
-  box.textContent = logLines.join("\n");
-  box.scrollTop = box.scrollHeight;
-}
-
-function setOverviewJobStats(counts) {
-  const r = document.getElementById("statRunning");
-  const q = document.getElementById("statQueued");
-  if (r) r.textContent = counts.running || 0;
-  if (q) q.textContent = counts.queued || 0;
-}
-
-function renderInProgress(list) {
-  const box = document.getElementById("inProgress");
-  const active = list.filter(j => j.status === "running" || j.status === "queued");
-  if (!active.length) {
-    box.innerHTML = `<div class="panel" style="padding:18px 20px;color:var(--muted);">Nothing in progress — queue a dub from the Library.</div>`;
-    return;
-  }
-  box.innerHTML = active.map(j => `
-    <div class="panel" style="padding:18px 20px;">
-      <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;">
-        <span style="font-family:var(--font-heading);font-weight:800;font-size:16px;">${escapeHtml(j.title)}</span>
-        <span class="m" style="font-size:12.5px;color:var(--muted);">${escapeHtml(j.source_lang)} → ${escapeHtml(j.target_lang)}</span>
-        <span class="tag ${j.status === "running" ? "tag-accent" : "tag-neutral"}" style="margin-left:auto;">${j.status === "running" ? escapeHtml(j.stage || "running") : "queued"}</span>
-      </div>
-      <div class="bar" style="margin-top:14px;"><span style="width:${j.progress || 0}%;"></span></div>
-    </div>`).join("");
-}
-
-function renderActivity(list) {
-  const body = document.getElementById("activityBody");
-  const recent = [...list].sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || "")).slice(0, 6);
-  if (!recent.length) {
-    body.innerHTML = `<tr><td colspan="4" style="padding:18px 10px;color:var(--muted);">No activity yet.</td></tr>`;
-    return;
-  }
-  const evt = { done: "Dub completed", failed: "Job failed", running: "Processing", queued: "Queued" };
-  const cls = { done: "tag-neutral", failed: "tag-outline", running: "tag-accent", queued: "tag-neutral" };
-  body.innerHTML = recent.map(j => `
-    <tr>
-      <td class="m" style="font-size:13px;">${escapeHtml((j.updated_at || "").slice(11, 16))}</td>
-      <td>${escapeHtml(evt[j.status] || j.status)}</td>
-      <td>${escapeHtml(j.title)}</td>
-      <td><span class="tag ${cls[j.status] || "tag-neutral"}">${escapeHtml(j.status)}</span></td>
-    </tr>`).join("");
-}
-
-function relTime(iso) {
-  if (!iso) return "not yet";
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return Math.floor(s / 60) + "m ago";
-  if (s < 86400) return Math.floor(s / 3600) + "h ago";
-  return Math.floor(s / 86400) + "d ago";
-}
-
-async function loadOverview() {
-  try {
-    const jr = await fetch("api/jobs"); const d = await jr.json();
-    setOverviewJobStats(d.counts || {});
-    renderInProgress(d.jobs || []);
-    renderActivity(d.jobs || []);
-  } catch (e) {}
-  try {
-    const sr = await fetch("api/status"); const st = await sr.json();
-    const ls = document.getElementById("lastScan");
-    if (ls) ls.textContent = relTime(st.last_scan);
-    const nd = document.getElementById("statNeedsDub");
-    if (nd && st.counts) nd.textContent = st.counts.needs_dub ?? "—";
-  } catch (e) {}
-  // If no scan has run yet, trigger one so the needs-dub count is populated.
-  const nd = document.getElementById("statNeedsDub");
-  if (nd && nd.textContent === "—") {
-    try {
-      const lr = await fetch("api/library");
-      nd.textContent = ((await lr.json()).counts || {}).needs_dub ?? "—";
-      const sr = await fetch("api/status"); const ls = document.getElementById("lastScan");
-      if (ls) ls.textContent = relTime((await sr.json()).last_scan);
-    } catch (e) {}
-  }
-}
-
-async function loadConfig() {
-  try {
-    const res = await fetch("api/config");
-    state.config = res.ok ? await res.json() : null;
-  } catch (e) { state.config = null; }
-  renderSettings();
-}
-
-async function saveSettings() {
-  const status = document.getElementById("saveStatus");
-  const payload = {};
-  for (const [k, v] of Object.entries(state.vals)) {
-    const f = FIELD_BY_KEY[k];
-    const val = (f && isBoolField(f)) ? (v === "On") : v;
-    const parts = k.split(".");
-    let node = payload;
-    parts.forEach((p, i) => { if (i === parts.length - 1) node[p] = val; else node = (node[p] = node[p] || {}); });
-  }
-  if (!Object.keys(payload).length) { status.textContent = "Nothing changed."; return; }
-  status.textContent = "Saving…";
-  try {
-    const res = await fetch("api/config", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
-    state.config = data.config;
-    state.vals = {};
-    library.loaded = false;   // connect.* may have changed — rescan next visit
-    status.textContent = "Saved ✓";
-    renderSettings();
-  } catch (err) {
-    status.textContent = "Save failed: " + err.message;
-  }
-}
-
-function renderSettings() {
-  const cur = TABS.find(t => t.id === state.tab) || TABS[0];
-
-  const tabsBox = document.getElementById("settingsTabs");
-  tabsBox.replaceChildren(...TABS.map(t => el("button", {
-    type: "button", class: "tab", "aria-current": t.id === state.tab ? "page" : "false",
-    onclick: () => { state.tab = t.id; renderSettings(); },
-  }, t.title)));
-
-  document.getElementById("tabTitle").textContent = cur.title;
-  document.getElementById("tabDesc").textContent = cur.desc;
-  document.getElementById("toggleKeys").setAttribute("aria-pressed", state.keys ? "true" : "false");
-
-  const groups = document.getElementById("settingsGroups");
-  groups.replaceChildren(...cur.groups.map(g => {
-    const panel = el("div", { class: "panel", style: "padding: 20px 24px 22px;" },
-      el("h3", { style: "font-size: 17px; margin: 0 0 2px;" }, g.title));
-    if (g.desc) panel.append(el("p", { style: "margin: 0 0 8px; font-size: 13px; color: var(--muted); max-width: 70ch;" }, g.desc));
-    g.fields.forEach(f => panel.append(renderField(f)));
-    return panel;
-  }));
-}
-
-// ---- Wire up events ----
-document.getElementById("nav").addEventListener("click", e => {
-  const btn = e.target.closest(".navitem"); if (btn) setPage(btn.dataset.page);
-});
-document.getElementById("themebtn").addEventListener("click", e => {
-  const btn = e.target.closest("button"); if (btn) setTheme(btn.dataset.themeSet);
-});
-document.getElementById("toggleKeys").addEventListener("click", () => {
-  state.keys = !state.keys; renderSettings();
-});
-// Single-select pill groups on the Library page
-document.querySelectorAll(".opts[data-single]").forEach(group => {
-  group.addEventListener("click", e => {
-    const btn = e.target.closest(".opt"); if (!btn) return;
-    group.querySelectorAll(".opt").forEach(o => o.setAttribute("aria-pressed", "false"));
-    btn.setAttribute("aria-pressed", "true");
-    if (btn.dataset.filter) { library.filter = btn.dataset.filter; renderLibrary(); }
-  });
-});
-document.getElementById("rescanBtn").addEventListener("click", loadLibrary);
-document.getElementById("saveSettings").addEventListener("click", saveSettings);
-
-async function syncPlexLabels(apply) {
-  const s = document.getElementById("labelStatus");
-  s.textContent = apply ? "Applying Plex labels…" : "Previewing…";
-  try {
-    const res = await fetch("api/plex/labels", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apply }),
-    });
-    const r = await res.json();
-    if (!res.ok) throw new Error(r.error || ("HTTP " + res.status));
-    const unm = (r.unmatched || []).length;
-    if (apply) {
-      s.innerHTML = `Labelled <b>${r.added}</b> as “${escapeHtml(r.label)}”, removed <b>${r.removed}</b> stale · matched ${r.matched}` +
-        (unm ? ` · ${unm} not found in Plex` : "") +
-        (r.kometa_file ? ` · Kometa fragment written` : "");
-    } else {
-      s.innerHTML = `Preview: would label <b>${r.added}</b> as “${escapeHtml(r.label)}” (matched ${r.matched}` +
-        (unm ? `, ${unm} unmatched` : "") + `), remove <b>${r.removed}</b> stale. ` +
-        `<button type="button" class="btn btn-primary" id="applyLabels" style="margin-left:8px;padding:5px 12px;">Apply</button>`;
-      document.getElementById("applyLabels").addEventListener("click", () => syncPlexLabels(true));
-    }
-  } catch (err) {
-    s.textContent = "Plex labels: " + err.message;
-  }
-}
-document.getElementById("syncLabelsBtn").addEventListener("click", () => syncPlexLabels(false));
-document.getElementById("libraryGrid").addEventListener("click", e => {
-  const btn = e.target.closest(".queue-dub, .tease-dub, .cast-edit"); if (!btn) return;
-  const item = library.rendered[Number(btn.dataset.idx)];
-  if (!item) return;
-  if (btn.classList.contains("cast-edit")) openCast(item);
-  else queueDub(item, btn, btn.classList.contains("tease-dub") ? "tease" : "full");
-});
-document.getElementById("clearFinished").addEventListener("click", async () => {
-  try { await fetch("api/jobs/clear-finished", { method: "POST" }); } catch (e) {}
-  loadJobs();
-});
-document.getElementById("pauseQueue").addEventListener("click", async () => {
-  const resuming = document.getElementById("pauseQueue").textContent.startsWith("Resume");
-  try { await fetch(resuming ? "api/queue/resume" : "api/queue/pause", { method: "POST" }); } catch (e) {}
-  loadJobs();
-});
-document.getElementById("dubsBody").addEventListener("click", async e => {
-  const btn = e.target.closest(".job-del"); if (!btn) return;
-  btn.disabled = true;
-  try { await fetch("api/jobs/" + btn.dataset.id, { method: "DELETE" }); } catch (err) {}
-  loadJobs();
-});
-
-// Global search: filters the current page's list by title.
-document.getElementById("globalSearch").addEventListener("input", e => {
-  state.search = e.target.value.trim().toLowerCase();
-  if (state.page === "Library" && library.loaded) renderLibrary();
-  else if (state.page === "Dubs" && jobs.lastData) renderJobs(jobs.lastData);
-});
-
-// New dub modal (manual enqueue).
-const newDubModal = document.getElementById("newDubModal");
-function openNewDub() {
-  document.getElementById("ndTitle").value = "";
-  document.getElementById("ndFrom").value = "auto";
-  document.getElementById("ndTo").value = (library.targets && library.targets[0]) || "en";
-  document.getElementById("ndPath").value = "";
-  newDubModal.hidden = false;
-  document.getElementById("ndTitle").focus();
-}
-function closeNewDub() { newDubModal.hidden = true; }
-document.getElementById("newDubBtn").addEventListener("click", openNewDub);
-document.getElementById("ndCancel").addEventListener("click", closeNewDub);
-newDubModal.addEventListener("click", e => { if (e.target === newDubModal) closeNewDub(); });
-document.getElementById("ndQueue").addEventListener("click", async () => {
-  const title = document.getElementById("ndTitle").value.trim();
-  if (!title) { document.getElementById("ndTitle").focus(); return; }
-  try {
-    await fetch("api/jobs", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title, source: "manual",
-        source_lang: document.getElementById("ndFrom").value.trim() || "auto",
-        target_lang: document.getElementById("ndTo").value.trim() || "en",
-        path: document.getElementById("ndPath").value.trim() || null,
-      }),
-    });
-  } catch (e) {}
-  closeNewDub();
-  setPage("Dubs");
-});
-
-// ---- Voice cast editor (per-title, shared by teases and full dubs) ----
-const castModal = document.getElementById("castModal");
-const castState = { item: null, cast: [], voices: null };
-
-function castParams(item) {
-  const p = new URLSearchParams();
-  if (item.path) p.set("path", item.path);
-  else if (item.tmdb_id) p.set("tmdb_id", item.tmdb_id);
-  else if (item.tvdb_id) p.set("tvdb_id", item.tvdb_id);
-  else p.set("title", item.title);
-  return p;
-}
-
-function renderCastRows() {
-  const box = document.getElementById("castRows");
-  if (!castState.cast.length) {
-    box.innerHTML = `<p style="color:var(--muted);font-size:13px;">No cast yet — run a Tease to auto-assign voices by archetype, then adjust here.</p>`;
-    return;
-  }
-  const voiceOpts = cur => [`<option value="">(unassigned)</option>`]
-    .concat((castState.voices || []).map(v =>
-      `<option value="${escapeHtml(v.id)}"${v.id === cur ? " selected" : ""}>${escapeHtml(v.name)}</option>`))
-    .join("");
-  box.innerHTML = castState.cast.map((e, i) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">
-      <span style="font-weight:600;min-width:100px;">${escapeHtml(e.label)}</span>
-      <span class="lang-chip">${escapeHtml(e.category)}</span>
-      <span class="m" style="font-size:11.5px;color:var(--muted);">${escapeHtml(e.speaker_id)}</span>
-      <select class="input cast-voice" data-idx="${i}" style="margin-left:auto;max-width:210px;">${voiceOpts(e.voice)}</select>
-    </div>`).join("");
-  box.querySelectorAll(".cast-voice").forEach(sel =>
-    sel.addEventListener("change", () => {
-      castState.cast[Number(sel.dataset.idx)].voice = sel.value;
-    }));
-}
-
-async function openCast(item) {
-  castState.item = item;
-  document.getElementById("castTitle").textContent = `Voice cast — ${item.title}`;
-  const status = document.getElementById("castStatus");
-  status.textContent = "";
-  castModal.hidden = false;
-  try {
-    const fetches = [fetch("api/cast?" + castParams(item))];
-    if (!castState.voices) fetches.push(fetch("api/voices"));
-    const [cr, vr] = await Promise.all(fetches);
-    castState.cast = (await cr.json()).cast || [];
-    if (vr) castState.voices = (await vr.json()).voices || [];
-  } catch (e) {
-    castState.cast = [];
-    status.textContent = "Cast unavailable — is the API reachable?";
-  }
-  renderCastRows();
-}
-
-async function saveCast() {
-  const status = document.getElementById("castStatus");
-  const item = castState.item;
-  if (!item) return;
-  const body = { title: item.title, cast: castState.cast };
-  if (item.path) body.path = item.path;
-  else if (item.tmdb_id) body.tmdb_id = item.tmdb_id;
-  else if (item.tvdb_id) body.tvdb_id = item.tvdb_id;
-  status.textContent = "Saving…";
-  try {
-    const res = await fetch("api/cast", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
-    status.textContent = "Saved ✓";
-  } catch (err) {
-    status.textContent = "Save failed: " + err.message;
-  }
-}
-
-document.getElementById("castSave").addEventListener("click", saveCast);
-document.getElementById("castCancel").addEventListener("click", () => { castModal.hidden = true; });
-castModal.addEventListener("click", e => { if (e.target === castModal) castModal.hidden = true; });
-
-// ---- Init ----
-const savedTheme = safeGet("doblarr.theme", "light");
-setTheme(savedTheme === "dark" ? "dark" : "light");
-setPage("Overview");
-startEventStream();
-</script>
+<script type="module" src="/js/app.js"></script>
 </body>
 </html>

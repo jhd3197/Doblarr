@@ -10,6 +10,7 @@ import logging
 import threading
 from pathlib import Path
 
+from ..discovery import lang_name
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob
 from .common import Plan, cached, dry, stage
@@ -22,7 +23,7 @@ _LANG3 = {"en": "eng", "es": "spa", "ko": "kor", "ja": "jpn", "fr": "fre",
 
 
 @stage("mux")
-def run(job: DubJob, output_dir: Path, track_name_template: str = "AI - {language}",
+def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_name} AI",
         dry_run: bool = False, cancel: threading.Event | None = None,
         force: bool = False, duration: int | None = None) -> Plan | None:
     if job.kind == "tease":
@@ -31,7 +32,9 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "AI - {languag
     else:
         out = output_dir / job.input_file.name
     job.output_file = out
-    title = track_name_template.format(language=job.target_lang.upper())
+    # e.g. "English AI", teases "Spanish AI (tease)"; {language} stays the code.
+    title = track_name_template.format(language=job.target_lang.upper(),
+                                       language_name=lang_name(job.target_lang))
     if job.kind == "tease":
         title += " (tease)"
     lang3 = _LANG3.get(job.target_lang, job.target_lang)

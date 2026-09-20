@@ -56,8 +56,19 @@ def _v2_teasers_and_casts(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _v3_title_plans(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        CREATE TABLE title_plans (
+            title_key  TEXT PRIMARY KEY,   -- see doblarr.voices.cast_key
+            title      TEXT NOT NULL DEFAULT '',
+            plan       TEXT NOT NULL DEFAULT '{}',   -- JSON: per-title config overrides
+            updated_at TEXT NOT NULL
+        );
+    """)
+
+
 # Ordered migrations; MIGRATIONS[i] brings a db from version i to i+1.
-MIGRATIONS = [_v1_initial, _v2_teasers_and_casts]
+MIGRATIONS = [_v1_initial, _v2_teasers_and_casts, _v3_title_plans]
 
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -127,6 +138,25 @@ class Database:
         if row is None:
             return None
         return {"title": row["title"], "cast": json.loads(row["cast_data"]),
+                "updated_at": row["updated_at"]}
+
+    # -- per-title dub plans (config overrides, one row per title) ----------
+    def save_plan(self, title_key: str, title: str, plan: dict) -> None:
+        self.execute(
+            "INSERT INTO title_plans (title_key, title, plan, updated_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(title_key) DO UPDATE SET "
+            "title=excluded.title, plan=excluded.plan, "
+            "updated_at=excluded.updated_at",
+            (title_key, title, json.dumps(plan),
+             _dt.datetime.now().isoformat(timespec="seconds")))
+
+    def load_plan(self, title_key: str) -> dict | None:
+        row = self.query_one(
+            "SELECT title, plan, updated_at FROM title_plans WHERE title_key = ?",
+            (title_key,))
+        if row is None:
+            return None
+        return {"title": row["title"], "plan": json.loads(row["plan"]),
                 "updated_at": row["updated_at"]}
 
     def close(self) -> None:

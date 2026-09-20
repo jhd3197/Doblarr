@@ -40,6 +40,10 @@ filtering:
   kometa_handoff: true          # write a Kometa fragment that hides the labelled titles
   kometa_file: null             # defaults to <output_dir>/doblarr-kometa.yml
 
+# Plex behaviour after a dub is muxed
+plex:
+  auto_refresh: true            # refresh the item so the new track shows up
+
 # voicebox service (the TTS + voice-cloning engine Doblarr calls)
 voicebox:
   # Installed/native app default: 17493.  Docker maps host 17600 -> 17493.
@@ -74,4 +78,4 @@ dub:
   duration_match: true          # time-fit each line to the original slot
   max_fit_attempts: 5           # shorten/retranslate to fit before stretching
   ducking_ratio: "12:1"         # sidechain ducking of background under speech
-  track_name_template: "AI - {language}"   # label muxed into the container
+  track_name_template: "{language_name} AI"   # track title; {language}=code, {language_name}=name

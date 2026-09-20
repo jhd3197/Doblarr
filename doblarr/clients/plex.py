@@ -74,3 +74,18 @@ class PlexClient(ArrClient):
             "type": type_num, "id": rating_key,
             "label[].tag.tag-": label, "label.locked": 1,
         })
+
+    def refresh_item(self, rating_key: str) -> None:
+        """Refresh one item's metadata (picks up newly muxed audio tracks).
+
+        Documented as PUT; older Plex versions only accept POST, so fall back.
+        The response body is empty, hence `_request` instead of `_put`/`_post`.
+        """
+        path = f"/library/metadata/{rating_key}/refresh"
+        try:
+            self._request("PUT", path)
+        except PlexError as exc:
+            if exc.status in (404, 405):
+                self._request("POST", path)
+            else:
+                raise
