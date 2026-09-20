@@ -1,5 +1,8 @@
 """Voice cast tests — store migration + CRUD, assignment logic, cast/voices API."""
 
+import ntpath
+import posixpath
+from types import SimpleNamespace
 
 import pytest
 
@@ -52,10 +55,19 @@ def test_cast_crud_round_trip(tmp_path):
 
 
 def test_cast_key_priority():
-    assert cast_key(path="C:\\Media\\Film.mkv") == "c:\\media\\film.mkv"
     assert cast_key(title="Film", tmdb_id=42) == "tmdb:42"
     assert cast_key(title="Film", tvdb_id=7) == "tvdb:7"
     assert cast_key(title="  My Film ") == "title:my film"
+
+
+@pytest.mark.parametrize(("path_module", "path", "expected"), [
+    (ntpath, "C:\\Media\\Film.mkv", "c:\\media\\film.mkv"),
+    (posixpath, "/Media/Film.mkv", "/Media/Film.mkv"),
+])
+def test_cast_key_respects_platform_path_case(monkeypatch, path_module, path, expected):
+    # Windows folds case; POSIX must preserve distinct, case-sensitive filenames.
+    monkeypatch.setattr("doblarr.voices.os", SimpleNamespace(path=path_module))
+    assert cast_key(path=path, tmdb_id=42, title="Film") == expected
 
 
 def test_assign_default_cast_numbering():
