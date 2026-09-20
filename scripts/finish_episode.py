@@ -216,6 +216,9 @@ def main():
         config = Config.load().with_overrides({
             "dub.version_name": args.version_name, "dub.voice_mode": "preset",
             "dub.track_name_template": args.track_name,
+            "dub.dry_run": False, "dub.background_volume": 1.0,
+            "dub.ducking_ratio": "4:1", "dub.output_codec": "aac",
+            "translate.provider": "prompture", "translate.model": args.model,
             "voicebox.default_engine": args.engine, "voicebox.model_size": args.model_size,
             "voicebox.seed": args.seed, "quality.asr": args.verify_speech,
             "quality.normalize": args.normalize,
