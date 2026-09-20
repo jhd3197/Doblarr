@@ -16,9 +16,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from doblarr.clients.translator import PromptureTranslator  # noqa: E402
 from doblarr.clients.voicebox import VoiceboxClient  # noqa: E402
+from doblarr.discovery import lang_name  # noqa: E402
+from doblarr.ffmpeg import run_ffmpeg  # noqa: E402
 from doblarr.models import DubJob, Speaker  # noqa: E402
 from doblarr.stages import fit_timing, mix, mux, synthesize, transcribe  # noqa: E402
 from doblarr.stages.common import save_script  # noqa: E402
+
+
+def export_mp4(job: DubJob, output: Path, subtitles: Path) -> Path:
+    """Portable copy with the dub selected and optional translated captions."""
+    if output.resolve() == job.input_file.resolve():
+        raise ValueError("MP4 output must not overwrite the original")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temp = output.with_suffix(".partial.mp4")
+    lang = mux._LANG3.get(job.target_lang, job.target_lang)
+    run_ffmpeg([
+        "-y", "-i", str(job.input_file), "-i", str(job.dubbed_track), "-i", str(subtitles),
+        "-map", "0:v:0", "-map", "1:a:0", "-map", "2:s:0",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-c:s", "mov_text",
+        "-metadata:s:a:0", f"language={lang}", "-metadata:s:a:0",
+        f"title={lang_name(job.target_lang)} AI preview",
+        "-metadata:s:s:0", f"language={lang}", "-disposition:a:0", "default",
+        "-disposition:s:0", "0", "-movflags", "+faststart", str(temp)])
+    temp.replace(output)
+    return output
 
 
 def main():
@@ -34,6 +55,9 @@ def main():
                         help="Language of the supplied subtitle script")
     parser.add_argument("--to", dest="target", default="es")
     parser.add_argument("--model", default="ollama/qwen3:8b")
+    parser.add_argument("--script-edits", type=Path,
+                        help="JSON with exclude indices and per-index text/start/end edits")
+    parser.add_argument("--mp4", type=Path, help="Also write an MP4 with the Spanish dub selected")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     work = args.work_dir
@@ -64,14 +88,39 @@ def main():
         save_script(job, work)
         logging.info("Translation checkpoint: %d/%d", sum(bool(s.text_translated)
                      for s in job.segments), len(job.segments))
+    if args.script_edits:
+        edits = json.loads(args.script_edits.read_text(encoding="utf-8"))
+        excluded = set(edits.get("exclude", []))
+        job.segments = [s for s in job.segments if s.index not in excluded]
+        for seg in job.segments:
+            edit = edits.get("lines", {}).get(str(seg.index), {})
+            if "text" in edit:
+                seg.text_translated = edit["text"]
+            for field in ("start", "end"):
+                if field in edit:
+                    setattr(seg, field, float(edit[field]))
+        # Keep the original translation cache intact for later edit revisions.
+        save_script(job, work / "effective")
     vb = VoiceboxClient("http://127.0.0.1:17493", timeout=240)
     synthesize.run(job, vb, work, voice_mode="preset", engine=args.engine)
     fit_timing.run(job, work)
-    mix.run(job, work)
-    mux.run(job, args.output_dir, track_name_template="{language_name} AI (preset preview)")
+    mix.run(job, work, force=bool(args.script_edits))
+    mux.run(job, args.output_dir, track_name_template="{language_name} AI (preset preview)",
+            force=bool(args.script_edits))
+    import pysubs2
+    subs = pysubs2.SSAFile()
+    for seg in job.segments:
+        subs.events.append(pysubs2.SSAEvent(start=round(seg.start * 1000),
+                           end=round(seg.end * 1000), text=seg.text_translated or ""))
+    sub_output = args.output_dir / f"{job.input_file.stem}.{job.target_lang}.srt"
+    subs.save(str(sub_output))
+    mp4 = export_mp4(job, args.mp4, sub_output) if args.mp4 else None
     report = {"input": str(job.input_file), "output": str(job.output_file.resolve()),
               "segments": len(job.segments), "engine": args.engine,
-              "profile": args.profile, "script": str(save_script(job, work)),
+              "profile": args.profile,
+              "mp4": str(mp4.resolve()) if mp4 else None,
+              "subtitles": str(sub_output.resolve()),
+              "script": str(save_script(job, work / "effective")),
               "limitations": ["Single preset voice; not an actor voice clone",
                               "Translation and performance require listening review"]}
     (work / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

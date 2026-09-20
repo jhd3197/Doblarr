@@ -112,6 +112,13 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
             # loops into "X、X、X…" on quiet dialogue, and a runaway reference
             # text wedges the TTS engine server-side).
             ref_text = c.text_src.strip()
+            if ((job.script_lang and job.script_lang != job.source_lang)
+                    or not 4.0 <= c.duration <= 15.0):
+                # A translated subtitle is not a transcript of the source voice.
+                # Likewise a cropped/padded sample needs its own matching text.
+                ref_text = vb.transcribe(ref, language=job.source_lang).get("text", "").strip()
+            if not ref_text:
+                continue
             if _bad_ref_text(ref_text):
                 log.warning("  segment at %.0fs looks like a transcription loop, "
                             "trying another", c.start)
@@ -136,7 +143,10 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         signature = {"text": text, "language": job.target_lang,
                      "profile": spk.voicebox_profile_id, "engine": engine}
         receipt = dest.with_suffix(".json")
-        saved = json.loads(receipt.read_text()) if receipt.exists() else {}
+        try:
+            saved = json.loads(receipt.read_text()) if receipt.exists() else {}
+        except (OSError, ValueError):
+            saved = {}  # interrupted/corrupt receipt: regenerate this line only
         if (not force and dest.exists() and dest.stat().st_size > 0
                 and saved.get("request") == signature
                 and saved.get("sha256") == hashlib.sha256(dest.read_bytes()).hexdigest()):

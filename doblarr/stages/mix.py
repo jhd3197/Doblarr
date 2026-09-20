@@ -77,7 +77,9 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     if dry_run:
         return dry(f"would place {len(job.segments)} clips and duck the bed")
     hit = cached(out, job.input_file, force)
-    if hit:
+    dependencies = [s.audio_clip for s in job.segments]
+    dependencies += [p for p in (job.background, job.source_audio) if p]
+    if hit and all(p and cached(out, Path(p)) for p in dependencies):
         return hit
 
     segs = [s for s in job.segments if s.audio_clip and Path(s.audio_clip).exists()]

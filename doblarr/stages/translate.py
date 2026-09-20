@@ -38,7 +38,8 @@ def run(job: DubJob, translator: Translator, dry_run: bool = False,
             seg.text_translated = seg.text_src  # passthrough placeholder
             continue
         seg.text_translated = translator.translate(
-            seg.text_src, job.source_lang, job.target_lang, target_chars=budget,
+            seg.text_src, job.script_lang or job.source_lang, job.target_lang,
+            target_chars=budget,
         )
         if progress:
             progress(seg.index + 1, total, f"line {seg.index + 1}/{total}")

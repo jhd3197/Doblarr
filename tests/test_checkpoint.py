@@ -1,5 +1,6 @@
 """Stage checkpointing tests — fresh artifacts skip, force bypasses."""
 
+import json
 import os
 from pathlib import Path
 
@@ -25,7 +26,12 @@ def _fresh(path: Path, mtime: float = 2000.0) -> Path:
 def _spy_ffmpeg(monkeypatch, module):
     """Replace a stage module's run_ffmpeg with a recording no-op."""
     calls = []
-    monkeypatch.setattr(module, "run_ffmpeg", lambda *a, **k: calls.append(a))
+    def render(*args, **kwargs):
+        calls.append(args)
+        _fresh(Path(args[0][-1]))
+    monkeypatch.setattr(module, "run_ffmpeg", render)
+    if module is extract:
+        monkeypatch.setattr(extract, "_select_audio_stream", lambda *a: 1)
     return calls
 
 
@@ -46,6 +52,8 @@ def test_extract_skips_fresh_artifact(tmp_path, monkeypatch):
     job = _job(tmp_path)
     work = tmp_path / "work"
     _fresh(work / "movie.source.wav")
+    (work / "movie.source.json").write_text(json.dumps(
+        {"input": str(job.input_file.resolve()), "stream": 1, "duration": None}))
     calls = _spy_ffmpeg(monkeypatch, extract)
     assert extract.run(job, work) is None          # skip returns None (decorator)
     assert job.source_audio == work / "movie.source.wav"  # planning still ran

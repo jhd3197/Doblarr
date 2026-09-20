@@ -70,3 +70,44 @@ def test_diarize_skips_when_speakers_restored(tmp_path):
     job = _scripted_job(tmp_path)  # speakers already assigned
     diarize.run(job, enabled=True, dry_run=False)
     assert list(job.speakers) == ["NARRATOR"]  # untouched, no pyannote needed
+
+
+def test_changed_transcription_method_invalidates_script(tmp_path):
+    job = _scripted_job(tmp_path)
+    work = tmp_path / "work"
+    job.transcription_options = {"source": "whisper"}
+    save_script(job, work)
+    assert load_script(_job(tmp_path), work) is None
+
+
+def test_different_target_does_not_reuse_translation(tmp_path):
+    job = _scripted_job(tmp_path)
+    work = tmp_path / "work"
+    save_script(job, work)
+    fresh = _job(tmp_path)
+    fresh.target_lang = "fr"
+    assert load_script(fresh, work) is None
+
+
+def test_subtitle_language_is_separate_from_audio(tmp_path, monkeypatch):
+    from doblarr import subtitles
+    from doblarr.stages import translate
+
+    sub = tmp_path / "en.srt"
+    sub.write_text("1\n00:00:01,000 --> 00:00:03,000\nSomeone is coming.\n", encoding="utf-8")
+    job = _job(tmp_path)  # Japanese audio, English subtitles, Spanish target
+    monkeypatch.setattr(subtitles, "sub_streams", lambda *a: [
+        {"index": 3, "codec": "ass", "lang": "eng"}])
+    monkeypatch.setattr(subtitles, "extract_srt", lambda *a: sub)
+    transcribe.run(job, tmp_path)
+    assert job.source_lang == "ja"
+    assert job.script_lang == "en"
+
+    class Translator:
+        def translate(self, text, source_lang, target_lang, **kwargs):
+            assert source_lang == "en"
+            return "Alguien viene."
+
+    translate.run(job, Translator())
+    assert job.segments[0].text_translated == "Alguien viene."
+    assert subtitles.pick_stream([{"index": 2, "codec": "ass", "lang": "jpn"}], "ja")

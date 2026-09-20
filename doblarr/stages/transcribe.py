@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 from .. import subtitles
+from ..discovery import ISO3_TO_ISO2
 from ..models import DubJob, Segment
 from .common import DryRunPlan, dry, load_script, stage
 
@@ -29,6 +30,10 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
 
     # Resume: a persisted script (transcript + speakers + translations) skips
     # this stage entirely — and diarize/translate downstream no-op on it.
+    job.transcription_options = {k: v for k, v in {
+        "source": source if source != "subtitles" else None,
+        "segment_limit": segment_limit, "max_seconds": max_seconds,
+    }.items() if v is not None}
     if load_script(job, work_dir, force):
         log.info("transcribe: restored script from cache (%d segments)",
                  len(job.segments))
@@ -70,9 +75,10 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
     for n, s in enumerate(segs):
         s.index = n
     job.segments = segs
+    job.script_lang = ISO3_TO_ISO2.get(used_lang, used_lang) if used_lang else job.source_lang
 
     # If we used the target-language track, the text is already the translation.
-    if used_lang and used_lang.lower().startswith(job.target_lang.strip().lower()[:2]):
+    if used_lang and job.script_lang == job.target_lang:
         job.script_is_target = True
         for s in job.segments:
             s.text_translated = s.text_src

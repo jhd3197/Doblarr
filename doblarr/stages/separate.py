@@ -27,7 +27,7 @@ def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
     job.background = work_dir / f"{work_stem(job)}.background.wav"
     if dry_run:
         return dry(f"would run Demucs on {job.source_audio}")
-    hit = cached([job.vocals, job.background], job.input_file, force)
+    hit = cached([job.vocals, job.background], job.source_audio or job.input_file, force)
     if hit:
         return hit
 

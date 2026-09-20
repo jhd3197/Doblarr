@@ -64,7 +64,7 @@ def cached(artifacts: Path | Iterable[Path], input_file: Path,
         return None  # can't verify freshness without the input file
     for p in paths:
         try:
-            if p.stat().st_mtime < input_mtime:
+            if p.stat().st_size == 0 or p.stat().st_mtime < input_mtime:
                 return None  # stale artifact — redo the stage
         except OSError:
             return None      # missing artifact — do the work
@@ -84,6 +84,8 @@ def save_script(job, work_dir: Path) -> Path:
     """
     p = script_path(job, work_dir)
     payload = {
+        "transcription_options": job.transcription_options,
+        "script_lang": job.script_lang,
         "identity": {"input": str(job.input_file.resolve()),
                      "source_lang": job.source_lang, "target_lang": job.target_lang,
                      "subtitles": (str(job.subtitle_file.resolve())
@@ -112,6 +114,8 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     if cached(p, job.input_file, force) is None:
         return None
     payload = json.loads(p.read_text(encoding="utf-8"))
+    if payload.get("transcription_options", {}) != job.transcription_options:
+        return None
     identity = {"input": str(job.input_file.resolve()),
                 "source_lang": job.source_lang, "target_lang": job.target_lang,
                 "subtitles": str(job.subtitle_file.resolve()) if job.subtitle_file else None}
@@ -126,6 +130,7 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
                     for s in payload["segments"]]
     job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}
     job.script_is_target = bool(payload.get("script_is_target"))
+    job.script_lang = payload.get("script_lang")
     return p
 
 

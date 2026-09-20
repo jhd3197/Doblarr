@@ -37,11 +37,14 @@ The **app** is live — a real backend + web UI you can run and use:
 - **Job queue** — enqueue a dub from the Library; a background worker runs it and the
   Dubs page + Overview update live.
 
-What's **not** real yet is the **dub output itself** — the worker runs the pipeline in
-**dry-run** (it plans every stage but produces no audio) until the heavy stages are
-implemented and voicebox is running (see Pipeline + Roadmap). This is the
-`dub.dry_run: true` default in config — flip it to `false` once voicebox + the heavy
-deps are in place.
+The worker defaults to **dry-run** (`dub.dry_run: true`), which plans stages without
+producing audio. Real extraction, separation, subtitle transcription, translation,
+speech generation, timing, mixing and muxing are implemented. Set dry-run to false
+when the required local services and dependencies are ready.
+
+For an interrupted first episode with existing audio stems, the explicit
+`scripts/finish_episode.py` runner saves translation batches and individual voice
+clips, then assembles a full-length video. See [episode recovery](docs/episode-recovery.md).
 
 ## Running it
 

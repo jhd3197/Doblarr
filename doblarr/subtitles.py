@@ -11,6 +11,7 @@ import json
 import logging
 from pathlib import Path
 
+from .discovery import ISO3_TO_ISO2
 from .ffmpeg import run_ffmpeg, run_ffprobe
 
 log = logging.getLogger("doblarr.subtitles")
@@ -40,10 +41,11 @@ def pick_stream(streams: list[dict], prefer_lang: str) -> dict | None:
     text = [s for s in streams if s["codec"] in _TEXT_CODECS]
     if not text:
         return None
-    p = prefer_lang.strip().lower()[:2]
-    # match ISO-639-1 prefix against the (usually 639-2) tag
+    p = prefer_lang.strip().lower()
+    p = ISO3_TO_ISO2.get(p, p)
     for s in text:
-        if s["lang"].lower().startswith(p):
+        tag = s["lang"].lower()
+        if ISO3_TO_ISO2.get(tag, tag) == p:
             return s
     return None
 

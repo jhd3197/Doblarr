@@ -33,6 +33,18 @@ def test_mux_two_original_audio_tracks(tmp_path):
     assert src.exists()
     assert not list((tmp_path / "out").glob("*.partial.mkv"))
 
+    from scripts.finish_episode import export_mp4
+    sub = tmp_path / "es.srt"
+    sub.write_text("1\n00:00:00,000 --> 00:00:00,900\nHola.\n", encoding="utf-8")
+    mp4 = export_mp4(job, tmp_path / "preview.mp4", sub)
+    portable = json.loads(subprocess.check_output([
+        "ffprobe", "-v", "error", "-show_streams", "-of", "json", str(mp4)]))
+    audio = [s for s in portable["streams"] if s["codec_type"] == "audio"]
+    assert len(audio) == 1
+    assert audio[0]["tags"]["language"] == "spa"
+    assert audio[0]["disposition"]["default"] == 1
+    assert any(s["codec_name"] == "mov_text" for s in portable["streams"])
+
 
 def test_mux_refuses_original_overwrite(tmp_path):
     job = DubJob(tmp_path / "movie.mkv", "ja", "es")

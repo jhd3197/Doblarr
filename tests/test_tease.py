@@ -1,6 +1,7 @@
 """Teaser jobs — duration-limited pipeline, distinct artifacts, cast wiring."""
 
 import logging
+from pathlib import Path
 
 from doblarr.config import Config
 from doblarr.jobs import JobStore, Worker
@@ -28,7 +29,11 @@ def test_dry_run_tease_plan_has_marker(tmp_path, caplog):
 
 def test_tease_artifacts_distinct_from_full(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(extract, "run_ffmpeg", lambda *a, **k: calls.append(a[0]))
+    def render(args, **kwargs):
+        calls.append(args)
+        Path(args[-1]).write_bytes(b"audio")
+    monkeypatch.setattr(extract, "run_ffmpeg", render)
+    monkeypatch.setattr(extract, "_select_audio_stream", lambda *a: 1)
     job = _tease_job(tmp_path)
     extract.run(job, tmp_path / "work", duration=600)
     assert job.source_audio.name == "movie.tease.source.wav"

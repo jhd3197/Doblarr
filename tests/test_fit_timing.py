@@ -30,7 +30,10 @@ def _spy(monkeypatch, lengths: dict[str, float]):
     calls = []
     monkeypatch.setattr(fit_timing, "run_ffprobe",
                         lambda args, **k: str(lengths[Path(args[-1]).stem]))
-    monkeypatch.setattr(fit_timing, "run_ffmpeg", lambda args, **k: calls.append(args))
+    def render(args, **kwargs):
+        calls.append(args)
+        Path(args[-1]).write_bytes(b"audio")
+    monkeypatch.setattr(fit_timing, "run_ffmpeg", render)
     return calls
 
 

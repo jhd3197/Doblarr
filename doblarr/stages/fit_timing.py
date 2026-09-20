@@ -75,7 +75,8 @@ def run(job: DubJob, work_dir: Path, enabled: bool = True, dry_run: bool = False
         if actual <= s.duration * FIT_SLACK:
             continue
         factor = min(actual / s.duration, MAX_STRETCH)
-        plan.append((s, src.parent / "fit" / src.name, actual, factor))
+        dest = src.parent / "fit" / f"{src.stem}.{factor:.4f}.wav"
+        plan.append((s, dest, actual, factor))
 
     if not plan:
         log.info("fit_timing: every clip fits its slot")
@@ -83,13 +84,16 @@ def run(job: DubJob, work_dir: Path, enabled: bool = True, dry_run: bool = False
 
     by_start = sorted(job.segments, key=lambda t: t.start)
     for s, dest, actual, factor in plan:
+        assert s.audio_clip is not None
         if cached(dest, Path(s.audio_clip), force):
             s.audio_clip = dest
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
+        temp = dest.with_suffix(".partial.wav")
         run_ffmpeg(["-y", "-i", str(s.audio_clip), "-af", _atempo_chain(factor),
-                    "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(dest)],
+                    "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", str(temp)],
                    cancel=cancel)
+        temp.replace(dest)
         if actual > s.duration * MAX_STRETCH * FIT_SLACK:
             over = actual / MAX_STRETCH - s.duration
             nxt = next((t for t in by_start if t.start >= s.end), None)

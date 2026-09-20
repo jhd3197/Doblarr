@@ -51,6 +51,8 @@ class DubJob:
     dubbed_track: Path | None = None       # mixed dialogue + background
     output_file: Path | None = None        # final remuxed video
     script_is_target: bool = False         # segments already in the target language
+    script_lang: str | None = None         # subtitle language can differ from audio
+    transcription_options: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         return (
