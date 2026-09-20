@@ -11,18 +11,20 @@ import json
 import logging
 import math
 import sys
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from doblarr.clients.translator import PromptureTranslator  # noqa: E402
 from doblarr.clients.voicebox import VoiceboxClient  # noqa: E402
+from doblarr.config import Config  # noqa: E402
 from doblarr.discovery import lang_name  # noqa: E402
 from doblarr.ffmpeg import run_ffmpeg  # noqa: E402
 from doblarr.models import DubJob, Segment, Speaker  # noqa: E402
 from doblarr.stages import fit_timing, mix, mux, quality, synthesize, transcribe  # noqa: E402
 from doblarr.stages.common import save_script  # noqa: E402
+from doblarr.versions import preserve_version  # noqa: E402
 
 
 def load_reviewed_script(job: DubJob, path: Path) -> None:
@@ -101,6 +103,12 @@ def main():
     parser.add_argument("--normalize", action="store_true", help="Normalize dialogue loudness")
     parser.add_argument("--track-name", default="{language_name} AI (preset preview)")
     parser.add_argument("--engine", default="kokoro")
+    parser.add_argument("--model-size")
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--timeout", type=int, default=1800)
+    parser.add_argument("--verify-speech", choices=["off", "suspicious", "all"], default="off")
+    parser.add_argument("--repair-timing", action="store_true")
+    parser.add_argument("--version-name")
     parser.add_argument("--from", dest="source", default="en",
                         help="Language of the supplied subtitle script")
     parser.add_argument("--to", dest="target", default="es")
@@ -130,6 +138,7 @@ def main():
         seg.speaker = "NARRATOR"
     save_script(job, work)
     translator = PromptureTranslator(args.model)
+    translator.direction = dict(Config.load()["translate"])
     pending = [s for s in job.segments if not s.text_translated]
     for offset in range(0, len(pending), 12):
         batch = pending[offset:offset + 12]
@@ -159,12 +168,28 @@ def main():
     cast = apply_cast(job, json.loads(args.cast_file.read_text(encoding="utf-8"))) \
         if args.cast_file else None
     save_script(job, work / "effective")
-    vb = VoiceboxClient("http://127.0.0.1:17493", timeout=240)
-    synthesize.run(job, vb, work, voice_mode="preset", engine=args.engine, cast=cast,
-                   narrator_speakers=["NARRATOR"])
-    if args.normalize:
-        quality.run(job, normalize=True, asr="off", max_retries=0)
-    fit_timing.run(job, work)
+    vb = VoiceboxClient("http://127.0.0.1:17493", timeout=args.timeout)
+
+    def render(segments=None):
+        target = job if segments is None else replace(job, segments=segments)
+        synthesize.run(target, vb, work, voice_mode="preset", engine=args.engine, cast=cast,
+                       narrator_speakers=["NARRATOR"], model_size=args.model_size, seed=args.seed)
+
+    def check(segments=None, retries=1):
+        target = job if segments is None else replace(job, segments=segments)
+        quality.run(target, vb, normalize=args.normalize, asr=args.verify_speech,
+                    max_retries=retries, regenerate=lambda seg: render([seg]))
+
+    def regenerate(seg):
+        render([seg])
+        check([seg], retries=0)
+
+    render()
+    if args.normalize or args.verify_speech != "off":
+        check()
+    fit_timing.run(job, work, translator=translator if args.repair_timing else None,
+                   regenerate=regenerate if args.repair_timing else None,
+                   checkpoint=lambda: save_script(job, work / "effective"), max_attempts=2)
     mix.run(job, work, force=bool(args.script_edits))
     # Encode separately: FFmpeg 7 can submit invalid attachment packets when
     # transcoding audio while copying this older Matroska source's font stream.
@@ -187,11 +212,23 @@ def main():
     title = args.track_name.format(language_name=lang_name(job.target_lang),
                                    language=job.target_lang.upper())
     mp4 = export_mp4(job, args.mp4, sub_output, title) if args.mp4 else None
+    if args.version_name:
+        config = Config.load().with_overrides({
+            "dub.version_name": args.version_name, "dub.voice_mode": "preset",
+            "dub.track_name_template": args.track_name,
+            "voicebox.default_engine": args.engine, "voicebox.model_size": args.model_size,
+            "voicebox.seed": args.seed, "quality.asr": args.verify_speech,
+            "quality.normalize": args.normalize,
+        })
+        preserve_version(job, config, cast=[dict(entry, speaker_id=label)
+                                           for label, entry in (cast or {}).items()])
     report = {"input": str(job.input_file), "output": str(job.output_file.resolve()),
               "segments": len(job.segments), "engine": args.engine,
               "profile": args.profile,
               "cast": cast,
               "metrics": job.metrics,
+              "version_id": job.version_id, "translation_id": job.translation_id,
+              "version_file": str(job.version_file) if job.version_file else None,
               "mp4": str(mp4.resolve()) if mp4 else None,
               "subtitles": str(sub_output.resolve()),
               "script": str(save_script(job, work / "effective")),
