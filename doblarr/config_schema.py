@@ -61,6 +61,10 @@ class FilteringModel(_Section):
     auto_label: bool = False
 
 
+class PlexModel(_Section):
+    auto_refresh: bool = True
+
+
 class VoiceboxModel(_Section):
     base_url: str = "http://127.0.0.1:17493"
     timeout_seconds: int = 600
@@ -88,7 +92,7 @@ class DubModel(_Section):
     duration_match: bool = True
     max_fit_attempts: int = 5
     ducking_ratio: str = "12:1"
-    track_name_template: str = "AI - {language}"
+    track_name_template: str = "{language_name} AI"
     preset_voices: list[str] = []
     teaser_minutes: int = 10
     segment_limit: int | None = None
@@ -101,6 +105,7 @@ class ConfigModel(_Section):
     connect: ConnectModel = ConnectModel()
     discovery: DiscoveryModel = DiscoveryModel()
     filtering: FilteringModel = FilteringModel()
+    plex: PlexModel = PlexModel()
     voicebox: VoiceboxModel = VoiceboxModel()
     translate: TranslateModel = TranslateModel()
     transcribe: TranscribeModel = TranscribeModel()

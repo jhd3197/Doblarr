@@ -1,0 +1,16 @@
+{
+  "name": "doblarr-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint web/js tests/frontend playwright.config.js",
+    "test": "node --test tests/frontend/*.test.js",
+    "test:browser": "playwright test",
+    "check": "npm run lint && npm test && npm run test:browser"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.0.0"
+  }
+}

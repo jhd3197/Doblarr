@@ -11,51 +11,11 @@ from typing import Any
 
 import yaml
 
-from .config_schema import validate_config
+from .config_schema import ConfigModel, validate_config
 
 log = logging.getLogger("doblarr.config")
 
-DEFAULTS: dict[str, Any] = {
-    "paths": {"work_dir": "./work", "output_dir": "./output", "db": None},
-    "general": {"target_languages": ["en", "es"], "log_file": None},
-    "web": {"host": "127.0.0.1", "port": 6363, "api_key": ""},
-    "connect": {"radarr_url": None, "radarr_api_key": None,
-                "sonarr_url": None, "sonarr_api_key": None,
-                "plex_url": None, "plex_token": None},
-    "discovery": {"only_original_foreign": True, "treat_undefined_as": "original",
-                  "rescan_interval": "6h", "auto_scan": False, "cache_ttl": 300,
-                  "webhook_debounce": 30},
-    "filtering": {
-        "tag_missing_dub": "needs-dub",
-        "hidden_collection_name": "Not in your language",
-        "kometa_handoff": True,
-        "kometa_file": None,
-        "auto_label": False,
-    },
-    "voicebox": {
-        "base_url": "http://127.0.0.1:17493",
-        "timeout_seconds": 600,
-        "default_engine": "chatterbox-multilingual",
-    },
-    "translate": {"provider": "claude", "model": "claude-sonnet-5"},
-    "transcribe": {
-        "source": "subtitles",
-        "whisper_model": "large-v3",
-        "diarize": True,
-    },
-    "separate": {"model": "htdemucs_ft"},
-    "dub": {
-        "voice_mode": "clone",
-        "dry_run": True,           # plan-only until you flip this off
-        "duration_match": True,
-        "max_fit_attempts": 5,
-        "ducking_ratio": "12:1",
-        "track_name_template": "AI - {language}",
-        "preset_voices": [],       # fallback voice list when voicebox is down
-        "teaser_minutes": 10,      # a "tease" job dubs just this opening window
-        "segment_limit": None,   # cap lines per job (handy for CPU test runs)
-    },
-}
+DEFAULTS: dict[str, Any] = ConfigModel().model_dump()
 
 
 # Dotted keys whose values must never be sent to the browser or written back
@@ -167,6 +127,17 @@ class Config:
             for dotted in SECRET_KEYS:
                 _redact(data, dotted)
         return data
+
+    def with_overrides(self, overrides: dict) -> Config:
+        """Return an independent config, accepting nested or dotted title settings."""
+        nested: dict[str, Any] = {}
+        for dotted, value in copy.deepcopy(overrides).items():
+            parts = dotted.split(".")
+            node = nested
+            for part in parts[:-1]:
+                node = node.setdefault(part, {})
+            node[parts[-1]] = value
+        return Config(_deep_merge(self.as_dict(), nested), self.path)
 
     def apply_and_save(self, changes: dict) -> dict:
         """Merge changes into the user config file, persist, and reload in place."""
