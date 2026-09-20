@@ -11,7 +11,7 @@ const ROLE_LABELS = {speaker:'Unknown speaker', narrator:'Narrator', child_f:'Gi
   young_f:'Young woman', young_m:'Young man', adult_f:'Adult woman', adult_m:'Adult man',
   elderly_f:'Older woman', elderly_m:'Older man'};
 
-export function createTitle({ goTitle, goEpisode, findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch }) {
+export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch }) {
   const TITLE_TABS = [["plan", "Dub plan"], ["voices", "Speakers & voices"], ["jobs", "Jobs"], ["meta", "Metadata"]];
 
   // Per-title dub plan — real config keys, so the overrides genuinely reach the
@@ -132,8 +132,6 @@ export function createTitle({ goTitle, goEpisode, findItemByKey, setPage, queueD
     const show = isShow(item);
     if (shownItem !== item) {
       shownItem = item; titleState.castItem = null;
-      if (show && titleState.dtab === 'plan') titleState.dtab = 'episodes';
-      if (!show && titleState.dtab === 'episodes') titleState.dtab = 'plan';
     }
     const target = (titleState.plan && titleState.plan.target_lang)
       || (library.targets && library.targets[0]) || "en";
@@ -180,14 +178,14 @@ export function createTitle({ goTitle, goEpisode, findItemByKey, setPage, queueD
       </div>
       <div id="titleTabBody"></div>`;
     document.getElementById("titleBack").addEventListener("click", () => item.parent ? goTitle(item.parent, "episodes") : setPage("Library"));
-    document.getElementById("tpQueue").addEventListener("click", e => { if (show) { titleState.dtab = "episodes"; renderTitle(); } else queueDub(item, e.currentTarget, "full"); });
+    document.getElementById("tpQueue").addEventListener("click", e => { if (show) { goTitleTab("episodes"); } else queueDub(item, e.currentTarget, "full"); });
     document.getElementById("tpTease")?.addEventListener("click", e => queueDub(item, e.currentTarget, "tease"));
     document.getElementById("tpAudition")?.addEventListener("click", e => queueDub(item, e.currentTarget, "audition"));
     if (item.parent && !item.path) {
       ['tpQueue', 'tpTease', 'tpAudition'].forEach(id => { const button = document.getElementById(id); if (button) { button.disabled = true; button.title = 'Download this episode in Sonarr first'; } });
     }
     root.querySelectorAll("[data-dtab]").forEach(b =>
-      b.addEventListener("click", () => { titleState.dtab = b.dataset.dtab; renderTitle(); }));
+      b.addEventListener("click", () => goTitleTab(b.dataset.dtab)));
     // Hero stats + the plan load lazily; the plan re-renders once it arrives.
     if (!titleState.plan) {
       fetchPlan(item).then(p => {
@@ -276,7 +274,7 @@ export function createTitle({ goTitle, goEpisode, findItemByKey, setPage, queueD
           <div id="titleJobs"><p style="color:var(--muted);font-size:13px;padding:12px 4px;">Loading…</p></div>
         </div>`;
       getJobs().then(data => {
-        if (state.page === "Title" && titleState.dtab === "jobs")
+        if (state.page === "Title" && titleState.item === item && titleState.dtab === "jobs")
           renderTitleJobs(jobsFor(item, data.jobs || []));
       }).catch(() => {
         const n = document.getElementById("titleJobs");

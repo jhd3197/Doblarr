@@ -65,3 +65,17 @@ test('title plans save and accompany queued jobs from a deep link', async ({ pag
   await expect(field.getByRole('button', { name: 'preset', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(errors).toEqual([]);
 });
+
+
+test('movie tabs have persistent deep links and normalize unsupported tabs', async ({ page }) => {
+  await page.goto('/title/tmdb-42');
+  await expect(page).toHaveURL(/\/title\/tmdb-42\/plan$/);
+  for (const tab of ['voices', 'jobs', 'meta', 'plan']) {
+    await page.locator(`[data-dtab="${tab}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`/title/tmdb-42/${tab}$`));
+    await page.reload();
+    await expect(page.locator(`[data-dtab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
+  }
+  await page.goto('/title/tmdb-42/episodes');
+  await expect(page).toHaveURL(/\/title\/tmdb-42\/plan$/);
+});

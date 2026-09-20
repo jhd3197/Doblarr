@@ -146,7 +146,11 @@ for configuration, benchmark acceptance, and current limitations.
 ### Shows and narrator voices
 
 Click an episode title to open its own page at
-`/title/tvdb-<show-id>/episode/<sonarr-episode-id>`. Voice assignments, narrator
+`/title/tvdb-<show-id>/episode/<sonarr-episode-id>/voices`. Each title tab has
+its own URL (`plan`, `voices`, `jobs`, or `meta`; shows also have `episodes`),
+so refresh, shared links, and browser back/forward preserve the current workspace.
+Movies use `/title/tmdb-<movie-id>/<tab>` and shows use `/title/tvdb-<show-id>/<tab>`.
+Older links without a tab automatically open the appropriate default tab. Voice assignments, narrator
 settings, audition actions, plans, and jobs are scoped to that episode; the back
 button returns to its show. Episode plans initially inherit the show's saved plan.
 

@@ -6,6 +6,8 @@ import { createLibrary } from './library.js';
 import { createJobs } from './jobs.js';
 import { createTitle } from './title.js';
 import { createReview } from './review.js';
+import { parseTitlePath, resolveTitleTab, titlePath } from './title-routing.js';
+import { TABS } from './settings-model.js';
 import { jobsFor } from './identity.js';
 
 const { statusTag, langChipsHtml, renderLibrary, fetchPlan, queueDub, loadLibrary } = createLibrary({ goTitle });
@@ -16,7 +18,7 @@ const { jobStatusTag, updateDryRunTag, renderJobs, loadJobs, loadOverview, start
       renderTitleJobs(jobsFor(titleState.item, data.jobs || []));
   },
 });
-const { renderTitle: renderTitleView, renderTitleJobs } = createTitle({ goTitle, goEpisode, findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch });
+const { renderTitle: renderTitleView, renderTitleJobs } = createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch });
 const { loadConfig, saveSettings, renderSettings } = createSettings({
   setPage, onConfigLoaded: () => { updateDryRunTag(); if (state.page === "Title") renderTitle(); },
 });
@@ -45,9 +47,7 @@ function routeFromPath() {
   return {
     page,
     tab: page === "Settings" ? (parts[1] || null) : null,
-    // Only the first segment is lowercased — the title key keeps its case.
-    titleKey: page === "Title" ? decodeURIComponent(parts[1] || "") : null,
-    episodeId: page === "Title" && parts[2] === "episode" ? Number(parts[3]) : null,
+    ...(page === 'Title' ? parseTitlePath(location.pathname) : {}),
   };
 }
 
@@ -71,33 +71,47 @@ function findItemByKey(key) {
 }
 
 function goTitle(item, dtab) {
-  state.titleKey = itemKey(item);
-  if (dtab) titleState.dtab = dtab;
-  titleState.item = item;
-  titleState.plan = null;  // re-fetched for the new title
-  const target = "/title/" + encodeURIComponent(state.titleKey);
-  if (location.pathname !== target) history.pushState({}, "", target);
+  const key=itemKey(item);
+  const target=titlePath(key, null, resolveTitleTab(item, dtab));
+  if (location.pathname !== target) history.pushState({}, '', target);
   applyRoute();
 }
 
 function goEpisode(item, episode) {
-  history.pushState({}, '', `/title/${encodeURIComponent(itemKey(item))}/episode/${episode.id}`);
-  titleState.dtab = 'voices';
+  const target=titlePath(itemKey(item), episode.id, 'voices');
+  if(location.pathname !== target) history.pushState({}, '', target);
   applyRoute();
+}
+
+function goTitleTab(tab) {
+  const target=titlePath(state.titleKey, state.episodeId, tab);
+  if(location.pathname !== target) history.pushState({}, '', target);
+  applyRoute();
+}
+
+function syncTitleRoute(item) {
+  if(!item) return;
+  titleState.dtab=resolveTitleTab(item, state.titleTab);
+  const path=titlePath(state.titleKey, state.episodeId, titleState.dtab);
+  if(location.pathname !== path) history.replaceState({}, '', path + location.search + location.hash);
+  document.title=`${item.title} — ${titleState.dtab} — Doblarr`;
 }
 
 let episodeRequest = 0, episodeLoaded = '', episodePending = '';
 function renderTitle() {
-  if (state.page !== 'Title') return;
+  if (state.page !== 'Title' || state.invalidTitleRoute) return;
   const parent = findItemByKey(state.titleKey);
   if (!state.episodeId) {
     episodeRequest++; episodePending = ''; episodeLoaded = '';
     if (titleState.item !== parent) { titleState.item = parent; titleState.plan = null; }
-    renderTitleView(); return;
+    syncTitleRoute(parent); renderTitleView(); return;
   }
-  if (!parent) { renderTitleView(); return; }
+  if (!parent) {
+    episodeRequest++; episodePending = ''; episodeLoaded = '';
+    titleState.item = null; titleState.plan = null; renderTitleView(); return;
+  }
   const key = `${state.titleKey}:${state.episodeId}`;
-  if (episodeLoaded === key) { renderTitleView(); return; }
+  if (episodeLoaded === key) { syncTitleRoute(titleState.item); renderTitleView(); return; }
   if (episodePending === key) return;
   episodePending = key;
   const request = ++episodeRequest;
@@ -111,7 +125,7 @@ function renderTitle() {
       season: ep.season, episode_number: ep.episode, path: ep.path,
       title: `${parent.title} · S${String(ep.season).padStart(2,'0')}E${String(ep.episode).padStart(2,'0')} — ${ep.title}`,
       audio_langs: ep.audio_langs, label: ep.status, status: ep.status };
-    titleState.plan = null; titleState.dtab = 'voices';
+    titleState.plan = null; syncTitleRoute(titleState.item);
     episodeLoaded = key; episodePending = ''; renderTitleView();
   }).catch(error => { if (request === episodeRequest) {
     episodePending = ''; document.getElementById('titleRoot').textContent = error.message;
@@ -119,7 +133,8 @@ function renderTitle() {
 }
 
 function applyRoute() {
-  const { page, tab, titleKey, episodeId } = routeFromPath();
+  const { page, tab, titleKey, episodeId, titleTab, invalid } = routeFromPath();
+  if(page !== "Title") { episodeRequest++; episodePending = ""; }
   state.page = page;
   document.title = "Doblarr — " + page;
   document.querySelectorAll("[data-view]").forEach(s =>
@@ -128,10 +143,15 @@ function applyRoute() {
     n.setAttribute("aria-current",
       (n.dataset.page === page || (page === "Title" && n.dataset.page === "Library")) ? "page" : "false"));
   if (page === "Settings") {
-    if (tab) state.tab = tab;
+    state.tab = TABS.some(t=>t.id===tab) ? tab : TABS[0].id;
+    const path='/settings/'+state.tab;
+    if(location.pathname !== path) history.replaceState({}, '', path);
     if (state.config) renderSettings(); else loadConfig();
   }
   if (page === "Title") {
+    state.invalidTitleRoute = invalid;
+    if(invalid) { episodeRequest++; episodePending = ''; document.getElementById('titleRoot').textContent='This episode or title URL is invalid. Open the title from Library.'; return; }
+    state.titleTab = titleTab;
     state.titleKey = titleKey;
     state.episodeId = episodeId;
     if (!state.config) loadConfig();  // inherited plan values come from here

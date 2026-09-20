@@ -55,7 +55,7 @@ test('narrator choice and direction persist and episode cast uses the file ident
   await page.getByLabel('Delivery direction').fill('Warm and calm, with gentle pauses.');
   await page.getByRole('button', { name: 'Save narrator', exact: true }).click();
   await expect(page.locator('#narratorStatus')).toHaveText('Saved ✓');
-  await expect(page).toHaveURL(/\/episode\/1$/);
+  await expect(page).toHaveURL(/\/episode\/1\/voices$/);
   await page.reload();
   await page.getByRole('button', { name: 'Speakers & voices', exact: true }).click();
   await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('warm');
@@ -76,7 +76,7 @@ test('episode voice catalog ranks character traits, previews and saves the selec
   await page.route('**/api/voice-catalog/select', route => route.fulfill({json:{profile_id:'elder-profile',engine:'qwen_custom_voice',name:'Weathered storyteller'}}));
   await showPage(page);
   await page.getByRole('link',{name:'The Green Seat',exact:true}).click();
-  await expect(page).toHaveURL(/\/episode\/1$/);
+  await expect(page).toHaveURL(/\/episode\/1\/voices$/);
   await page.getByRole('button',{name:'Find matching voice'}).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByLabel('Character age',{exact:true})).toHaveValue('older');
@@ -96,6 +96,35 @@ test('episode voice catalog ranks character traits, previews and saves the selec
   expect(response.request().postDataJSON().cast[0]).toMatchObject({voice:'elder-profile',engine:'qwen_custom_voice'});
   expect(response.request().postDataJSON().path).toBe('/shows/Mushi-Shi/first.mkv');
   await page.getByRole('button',{name:'← Mushi-Shi',exact:true}).click();
-  await expect(page).toHaveURL(/\/title\/tvdb-79214$/);
+  await expect(page).toHaveURL(/\/title\/tvdb-79214\/episodes$/);
   await expect(page.getByRole('heading',{name:'Episodes',exact:true})).toBeVisible();
+});
+
+
+test('show and episode tabs survive refresh and browser history', async ({ page }) => {
+  await showPage(page);
+  for (const tab of ['plan', 'voices', 'jobs', 'meta', 'episodes']) {
+    await page.locator(`[data-dtab="${tab}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`/title/tvdb-79214/${tab}$`));
+    await page.reload();
+    await expect(page.locator(`[data-dtab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
+  }
+  await page.getByRole('link', { name: 'The Green Seat', exact: true }).click();
+  for (const tab of ['plan', 'voices', 'jobs', 'meta']) {
+    await page.locator(`[data-dtab="${tab}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`/episode/1/${tab}$`));
+    await page.reload();
+    await expect(page.locator(`[data-dtab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('#titleRoot')).toContainText('S01E01');
+  }
+  await page.goBack();
+  await expect(page).toHaveURL(/episode\/1\/jobs$/);
+  await expect(page.locator('[data-dtab="jobs"]')).toHaveAttribute('aria-current', 'page');
+  await page.goForward();
+  await expect(page).toHaveURL(/episode\/1\/meta$/);
+  await expect(page.locator('[data-dtab="meta"]')).toHaveAttribute('aria-current', 'page');
+  await page.goto('/title/tvdb-79214/episode/1');
+  await expect(page).toHaveURL(/episode\/1\/voices$/);
+  await page.goto('/title/tvdb-79214/episode/invalid/jobs');
+  await expect(page.locator('#titleRoot')).toContainText('URL is invalid');
 });
