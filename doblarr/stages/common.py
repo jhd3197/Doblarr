@@ -146,6 +146,9 @@ def stage(name: str):
                 log.info("  [dry-run] %s", result.detail)
                 return None
             if isinstance(result, CachedPlan):
+                job = args[0] if args else kwargs.get("job")
+                if job is not None:
+                    job.metrics["stage_cache_hits"] = job.metrics.get("stage_cache_hits", 0) + 1
                 names = ", ".join(p.name for p in result.artifacts[:3])
                 log.info("  skipping (cached): %s", names)
                 return None

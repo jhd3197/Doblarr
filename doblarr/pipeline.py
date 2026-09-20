@@ -22,6 +22,7 @@ from .stages import (
     translate,
 )
 from .stages.common import save_script
+from .telemetry import RunReport
 from .voices import ensure_cast
 
 log = logging.getLogger("doblarr.pipeline")
@@ -116,12 +117,22 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
                                 duration=teaser_s)),
     ]
     total = len(steps)
-    for i, (name, fn) in enumerate(steps):
-        if cancel_event is not None and cancel_event.is_set():
-            raise JobCancelled(f"cancelled before stage {name}")
-        if on_stage:
-            on_stage(name, i, total)
-        fn()
+    report = RunReport(job, work, dry_run)
+    try:
+        for i, (name, fn) in enumerate(steps):
+            if cancel_event is not None and cancel_event.is_set():
+                raise JobCancelled(f"cancelled before stage {name}")
+            if on_stage:
+                on_stage(name, i, total)
+            with report.stage(name):
+                fn()
+    except JobCancelled:
+        report.finish("cancelled")
+        raise
+    except BaseException:
+        report.finish("failed")
+        raise
+    report.finish()
 
     log.info("=== done -> %s ===", job.output_file)
     return job

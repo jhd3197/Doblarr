@@ -53,6 +53,8 @@ class DubJob:
     script_is_target: bool = False         # segments already in the target language
     script_lang: str | None = None         # subtitle language can differ from audio
     transcription_options: dict = field(default_factory=dict)
+    metrics: dict = field(default_factory=dict)
+    report_file: Path | None = None
 
     def summary(self) -> str:
         return (

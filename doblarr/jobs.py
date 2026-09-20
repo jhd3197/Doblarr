@@ -51,6 +51,7 @@ class Job:
     force: bool = False        # re-run every stage, ignoring cached artifacts
     overrides: dict | None = None   # per-title config overrides (dub.*, transcribe.*, …)
     output_file: str | None = None   # muxed result (planned path in dry-run)
+    report_file: str | None = None
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -310,5 +311,7 @@ class Worker(threading.Thread):
             self.store.update(job.id, status="failed", message=str(exc))
             self._publish(job, "failed", message=str(exc))
         finally:
+            if 'dj' in locals() and dj.report_file:
+                self.store.update(job.id, report_file=str(dj.report_file))
             self._current_id = None
             self._cancel_evt = None
