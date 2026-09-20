@@ -178,7 +178,8 @@ def main():
     def check(segments=None, retries=1):
         target = job if segments is None else replace(job, segments=segments)
         quality.run(target, vb, normalize=args.normalize, asr=args.verify_speech,
-                    max_retries=retries, regenerate=lambda seg: render([seg]))
+                    max_retries=retries, regenerate=lambda seg: render([seg]),
+                    checkpoint=lambda: save_script(job, work / "effective"))
 
     def regenerate(seg):
         render([seg])
@@ -217,7 +218,10 @@ def main():
             "dub.version_name": args.version_name, "dub.voice_mode": "preset",
             "dub.track_name_template": args.track_name,
             "dub.dry_run": False, "dub.background_volume": 1.0,
-            "dub.ducking_ratio": "4:1", "dub.output_codec": "aac",
+            "dub.ducking_ratio": "12:1", "dub.output_codec": "aac",
+            "dub.duck_threshold": 0.02, "dub.duck_attack_ms": 20,
+            "dub.duck_release_ms": 250,
+            "dub.max_fit_attempts": 2 if args.repair_timing else 0,
             "translate.provider": "prompture", "translate.model": args.model,
             "voicebox.default_engine": args.engine, "voicebox.model_size": args.model_size,
             "voicebox.seed": args.seed, "quality.asr": args.verify_speech,
