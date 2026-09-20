@@ -149,7 +149,9 @@ under `doblarr/stages/`.
 ```
 doblarr/
   cli.py            # CLI: serve / dub / check
-  server.py         # FastAPI app: UI + REST API + SSE + webhooks
+  server.py         # app assembly, lifespan, authentication, SSE and static UI
+  routes/           # configuration, library, jobs and title API routers
+  library_service.py # discovery cache, persisted scan state and webhook orchestration
   config.py         # YAML config + defaults, env overrides, secret redaction
   config_schema.py  # pydantic validation of config.yaml (warnings, never fatal)
   auth.py           # X-Api-Key dependency for /api/* (optional; web.api_key)
@@ -173,7 +175,13 @@ doblarr/
     voicebox.py     # voicebox HTTP client (transcribe, profiles, generate, audio)
     translator.py   # Claude / passthrough translation
   stages/           # one module per pipeline step (see table above)
-web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
+web/index.html      # application shell
+web/styles.css      # shared styles
+web/js/app.js       # routing, navigation and feature wiring
+web/js/settings-model.js # field metadata shared by settings and title plans
+web/js/api.js       # JSON requests, authentication and consistent errors
+web/js/jobs-data.js # coalesced job requests shared across screens
+web/js/             # settings, library, jobs and title feature controllers
 ```
 
 ## API
@@ -192,6 +200,7 @@ web/index.html      # the web UI (Overview / Library / Dubs / Voices / Settings)
 | POST | `/api/webhooks/radarr` | Radarr webhook (Download → debounced rescan; Test → 200) |
 | POST | `/api/webhooks/sonarr` | Sonarr webhook (same) |
 | GET/PUT | `/api/cast` | read / save a title's voice cast (`?key=` or `?path=`/`?tmdb_id=`/`?title=`) |
+| GET/PUT | `/api/plan` | read / save per-title configuration overrides |
 | GET | `/api/voices` | voice list (voicebox profiles, else `dub.preset_voices`) |
 
 The UI consumes `/api/events` via `EventSource` for live job progress and a log
@@ -210,6 +219,43 @@ ruff check .              # lint
 mypy doblarr/             # type check
 # pre-commit install      # optional: run ruff+mypy as git hooks (.pre-commit-config.yaml)
 ```
+
+### Frontend checks
+
+The UI uses native JavaScript modules. There is no frontend build step and Node
+is needed only for development checks. Use Node 22 or newer:
+
+```bash
+npm ci
+npx playwright install chromium
+npm run check            # lint + API tests + browser regressions
+npm test                 # fast API/helper tests only
+npm run test:browser     # settings, queue errors and title-plan browser flows
+```
+
+Browser tests start an isolated FastAPI server with temporary configuration and
+storage on port 8766; they do not use your media services or local config. They
+use `.venv` when available, otherwise `python`; set `PYTHON` to choose another
+interpreter. Python tests share a `client_factory` fixture in `tests/conftest.py`
+for isolated API clients with automatic cleanup. Tests that exercise worker
+startup use an explicit application lifespan.
+
+For backend auto-reload during development:
+
+```bash
+python -m uvicorn doblarr.server:create_app --factory --reload --port 6363
+```
+
+Settings defaults belong in `ConfigModel` in `doblarr/config_schema.py`.
+Presentation metadata belongs in `web/js/settings-model.js`; title plans reuse
+those field definitions. Controls inherited from the design mockup that had no
+backend setting have been removed. Add API calls through `api()` and shared job
+reads through `getJobs()` so authentication, error handling and concurrent reads
+stay consistent. Each feature controller receives navigation callbacks from
+`app.js`, keeping feature imports free of circular dependencies.
+
+CI checks Python lint/types/tests and the frontend checks on pull requests and
+pushes to `dev`, `main` and `master`.
 
 ## Roadmap
 

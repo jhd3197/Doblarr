@@ -5,7 +5,8 @@
   "scripts": {
     "lint": "eslint web/js tests/frontend playwright.config.js",
     "test": "node --test tests/frontend/*.test.js",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "check": "npm run lint && npm test && npm run test:browser"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
