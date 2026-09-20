@@ -287,7 +287,7 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
     const langs = (item.audio_langs && item.audio_langs.length)
       ? item.audio_langs.join(" · ") : (item.existing_audio || item.original);
     const facts = [
-      ["Type", show ? "Series (per-episode files)" : "Film (single file)"],
+      ["Type", item.episode_id ? "Episode (single file)" : show ? "Series (per-episode files)" : "Film (single file)"],
       ["Source", item.source],
       ["Year", item.year || "—"],
       ["Original language", item.original],

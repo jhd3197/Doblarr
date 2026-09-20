@@ -116,6 +116,7 @@ test('show and episode tabs survive refresh and browser history', async ({ page 
     await page.reload();
     await expect(page.locator(`[data-dtab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('#titleRoot')).toContainText('S01E01');
+    if (tab === 'meta') await expect(page.getByText('Episode (single file)', { exact: true })).toBeVisible();
   }
   await page.goBack();
   await expect(page).toHaveURL(/episode\/1\/jobs$/);
