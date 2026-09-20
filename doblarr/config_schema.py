@@ -115,6 +115,10 @@ class DubModel(_Section):
     output_codec: str = "aac"
     output_bitrate: str = "192k"
     pronunciations: dict[str, str] = {}
+    line_edits: dict[str, dict] = {}
+    cast_group: str = ""
+    character_map: dict[str, str] = {}
+    audition_lines: int = 8
     track_name_template: str = "{language_name} AI"
     preset_voices: list[str] = []
     teaser_minutes: int = 10

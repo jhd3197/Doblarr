@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import replace
 
-from .artifacts import media_work
+from .artifacts import digest, media_work
 from .clients.translator import build_translator
 from .config import Config
 from .errors import JobCancelled
 from .models import DubJob
 from .presets import effective_config
+from .review import apply_edits, write_review
 from .services import Services
 from .stages import (
+    audition,
     diarize,
     extract,
     fit_timing,
@@ -27,9 +30,9 @@ from .stages import (
     transcribe,
     translate,
 )
-from .stages.common import save_script
+from .stages.common import load_script, save_script
 from .telemetry import RunReport
-from .voices import ensure_cast
+from .voices import character_cast, ensure_cast, save_characters
 
 log = logging.getLogger("doblarr.pipeline")
 
@@ -66,11 +69,20 @@ def run_job(
     publishes a `cast` event); full dubs read the saved cast into synthesize.
     """
     config = effective_config(config)
+    if not re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?", job.target_lang):
+        raise ValueError("target language must be a language code")
     shared_work = media_work(config.work_dir, job)
     work = shared_work / job.target_lang
     job.artifacts_dir = work
     out = config.output_dir / shared_work.name / job.target_lang
     job.translation_options = dict(config["translate"])
+    edits = config["dub"].get("line_edits", {})
+    if edits or job.kind == "audition":
+        effective_work = work / "effective" / digest([edits, config["translate"], job.kind])[:16]
+    else:
+        effective_work = work
+    character_group = config["dub"].get("cast_group", "")
+    character_map = config["dub"].get("character_map", {})
     vb = (services or Services(config)).voicebox
     translator = build_translator(
         config["translate"]["provider"],
@@ -89,6 +101,10 @@ def run_job(
         if db is None or dry_run:
             return None
         cast_holder["cast"] = ensure_cast(job, db, events=events)
+        inherited = character_cast(job, db, character_group, character_map)
+        assigned = {e["speaker_id"]: e for e in inherited}
+        assigned.update({e["speaker_id"]: e for e in (cast_holder["cast"] or []) if e.get("voice")})
+        cast_holder["cast"] = list(assigned.values())
 
     def _report(stage_name: str):
         if on_progress is None:
@@ -104,6 +120,13 @@ def run_job(
             save_script(job, work)  # transcript + speakers survive a crash now
 
     def _translate():
+        translation_work = (
+            (work / "audition-base" if edits else effective_work)
+            if job.kind == "audition"
+            else work
+        )
+        if job.kind == "audition" and not edits and not dry_run:
+            load_script(job, translation_work, force)
         translate.run(
             job,
             translator,
@@ -112,11 +135,18 @@ def run_job(
             batch_size=config["translate"].get("batch_size", 12),
             glossary=config["translate"].get("glossary", {}),
             chars_per_second=config["translate"].get("chars_per_second", 14),
-            checkpoint=lambda: save_script(job, work),
+            checkpoint=lambda: save_script(job, translation_work),
             cancel=cancel_event,
         )
         if not dry_run and job.segments:
-            save_script(job, work)  # + translations
+            save_script(job, translation_work)  # + translations
+
+    def _edits():
+        if dry_run or not edits:
+            return
+        if not load_script(job, effective_work, force):
+            apply_edits(job, edits)
+            save_script(job, effective_work)
 
     def _synthesize(segments=None):
         target = (
@@ -145,6 +175,8 @@ def run_job(
             preset_voices=config["dub"].get("preset_voices", []),
             pronunciations=config["dub"].get("pronunciations", {}),
         )
+        if db is not None and not dry_run and segments is None:
+            save_characters(job, db, character_group, character_map)
 
     def _quality(segments=None, retry=True):
         target = job if segments is None else replace(job, segments=segments)
@@ -156,7 +188,7 @@ def run_job(
             dry_run=dry_run,
             cancel=cancel_event,
             regenerate=lambda seg: _synthesize([seg]),
-            checkpoint=lambda: save_script(job, work),
+            checkpoint=lambda: save_script(job, effective_work),
             pronunciations=config["dub"].get("pronunciations", {}),
             **options,
         )
@@ -175,11 +207,11 @@ def run_job(
             force=force,
             translator=translator,
             regenerate=_regenerate,
-            checkpoint=lambda: save_script(job, work),
+            checkpoint=lambda: save_script(job, effective_work),
             max_attempts=config["dub"].get("max_fit_attempts", 2),
         )
         if not dry_run:
-            save_script(job, work)
+            save_script(job, effective_work)
 
     steps: list[tuple[str, Callable[[], object]]] = [
         (
@@ -217,6 +249,7 @@ def run_job(
         ("diarize", _diarize),
         ("cast", _ensure_cast),
         ("translate", _translate),
+        ("edits", _edits),
         ("synthesize", _synthesize),
         ("quality", _quality),
         ("fit", _fit),
@@ -251,6 +284,24 @@ def run_job(
             ),
         ),
     ]
+    if job.kind == "audition":
+        separation = next(step for step in steps if step[0] == "separate")
+        steps = [step for step in steps if step[0] != "separate"]
+        position = next(i for i, step in enumerate(steps) if step[0] == "diarize") + 1
+        steps[position:position] = [
+            (
+                "select_audition",
+                lambda: audition.run(
+                    job,
+                    shared_work,
+                    count=config["dub"].get("audition_lines", 8),
+                    cancel=cancel_event,
+                    force=force,
+                    dry_run=dry_run,
+                ),
+            ),
+            separation,
+        ]
     total = len(steps)
     report = RunReport(job, config.work_dir, dry_run)
     try:
@@ -267,6 +318,9 @@ def run_job(
     except BaseException:
         report.finish("failed")
         raise
+    finally:
+        if not dry_run and job.segments:
+            write_review(job, config.work_dir)
     report.finish()
 
     log.info("=== done -> %s ===", job.output_file)

@@ -146,3 +146,32 @@
     .cards4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
     header .input { max-width: 160px !important; }
   }
+
+/* Dialogue review: source list beside a focused, keyboard-accessible editor. */
+.review-dialog { width:min(1060px,94vw); max-height:92vh; padding:0; border:1px solid var(--line-strong); border-radius:14px; background:var(--panel); color:var(--color-text); }
+.review-dialog::backdrop { background:rgba(0,0,0,.6); }
+.review-header,.review-footer { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 24px; }
+.review-header h2 { margin:0; font-size:20px; }
+.review-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:12px 24px; border-block:1px solid var(--line); font-size:13px; }
+.review-toolbar .hint { margin:0; }
+.review-layout { display:grid; grid-template-columns:minmax(220px, .85fr) minmax(0, 1.4fr); min-height:320px; }
+.review-lines { max-height:58vh; overflow:auto; border-right:1px solid var(--line); }
+.review-line { width:100%; display:grid; grid-template-columns:44px 1fr auto; gap:12px; padding:16px; border:0; border-bottom:1px solid var(--line); background:transparent; color:inherit; cursor:pointer; text-align:left; font:inherit; font-size:12px; }
+.review-line[aria-pressed=true] { background:color-mix(in srgb,var(--color-accent) 12%,transparent); box-shadow:inset 3px 0 var(--color-accent); }
+.review-line:focus-visible { outline:2px solid var(--color-accent); outline-offset:-3px; }
+.review-excerpt { display:block; margin-top:5px; line-height:1.5; color:var(--muted); }
+.review-marker { color:var(--color-accent-700); font-size:11px; }
+.review-editor { padding:20px 24px; max-height:58vh; overflow:auto; }
+.review-line-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.review-line-heading h3 { margin:0; font-size:17px; }
+.review-source { color:var(--muted); font-size:14px; line-height:1.6; }
+.review-editor audio { width:100%; height:38px; }
+.review-field { display:block; margin-top:16px; font-size:13px; font-weight:600; }
+.review-field .input { display:block; margin-top:7px; box-sizing:border-box; }
+.review-field textarea { resize:vertical; line-height:1.6; }
+.review-timing { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.review-options { display:flex; flex-wrap:wrap; gap:16px; margin-top:20px; font-size:13px; }
+.review-flags { font-size:13px; color:var(--color-accent-700); }
+.review-footer { border-top:1px solid var(--line); }
+.review-footer p { margin:0; font-size:13px; line-height:1.5; color:var(--muted); }
+@media (max-width:650px) { .review-layout { grid-template-columns:1fr; } .review-lines { max-height:22vh; border-right:0; border-bottom:1px solid var(--line); } .review-editor { max-height:42vh; } .review-footer { flex-wrap:wrap; } }

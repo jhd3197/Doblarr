@@ -18,10 +18,14 @@ log = logging.getLogger("doblarr.voices")
 # per category ("Adult M 1", "Adult M 2"); the narrator stays singular.
 CATEGORIES = [
     ("narrator", "Narrator"),
-    ("child_f", "Child F"), ("child_m", "Child M"),
-    ("young_f", "Young F"), ("young_m", "Young M"),
-    ("adult_f", "Adult F"), ("adult_m", "Adult M"),
-    ("elderly_f", "Elderly F"), ("elderly_m", "Elderly M"),
+    ("child_f", "Child F"),
+    ("child_m", "Child M"),
+    ("young_f", "Young F"),
+    ("young_m", "Young M"),
+    ("adult_f", "Adult F"),
+    ("adult_m", "Adult M"),
+    ("elderly_f", "Elderly F"),
+    ("elderly_m", "Elderly M"),
 ]
 CATEGORY_LABELS = dict(CATEGORIES)
 
@@ -36,20 +40,22 @@ def ensure_cast(job, db, events=None) -> list[dict] | None:
     key = cast_key(path=str(job.input_file))
     existing = db.load_cast(key)
     if job.kind == "tease":
-        cast = assign_default_cast(list(job.speakers),
-                                   existing=(existing or {}).get("cast"))
+        cast = assign_default_cast(list(job.speakers), existing=(existing or {}).get("cast"))
         if not existing or len(cast) != len(existing["cast"]):
             db.save_cast(key, job.input_file.stem, cast)
             log.info("voice cast saved for %s (%d speakers)", key, len(cast))
             if events:
-                events.publish("cast", {"type": "updated", "key": key,
-                                        "speakers": len(cast)})
+                events.publish("cast", {"type": "updated", "key": key, "speakers": len(cast)})
         return cast
     return (existing or {}).get("cast") or None
 
 
-def cast_key(title: str | None = None, path: str | None = None,
-             tmdb_id: int | None = None, tvdb_id: int | None = None) -> str:
+def cast_key(
+    title: str | None = None,
+    path: str | None = None,
+    tmdb_id: int | None = None,
+    tvdb_id: int | None = None,
+) -> str:
     """Stable per-title cast key: media path if known, else tmdb/tvdb id, else title."""
     if path:
         return os.path.normcase(str(path))
@@ -82,12 +88,50 @@ def assign_default_cast(speakers, existing: list[dict] | None = None) -> list[di
             category = "narrator"
         else:
             # balance the genders: the underrepresented side gets the next voice
-            category = ("adult_m"
-                        if counts.get("adult_m", 0) <= counts.get("adult_f", 0)
-                        else "adult_f")
+            category = (
+                "adult_m" if counts.get("adult_m", 0) <= counts.get("adult_f", 0) else "adult_f"
+            )
         counts[category] = counts.get(category, 0) + 1
         base = CATEGORY_LABELS[category]
         label = base if category == "narrator" else f"{base} {counts[category]}"
-        existing.append({"speaker_id": spk, "label": label, "category": category,
-                         "voice": "", "previewed": False})
+        existing.append(
+            {
+                "speaker_id": spk,
+                "label": label,
+                "category": category,
+                "voice": "",
+                "previewed": False,
+            }
+        )
     return existing
+
+
+def character_cast(job, db, group, mapping):
+    """Reuse only explicitly mapped characters; diarization numbers are not identities."""
+    if not group or not mapping:
+        return []
+    saved = (db.load_cast(f"series:{group}") or {}).get("cast", [])
+    voices = {e["speaker_id"]: e for e in saved}
+    return [
+        {**voices[mapping[label]], "speaker_id": label}
+        for label in job.speakers
+        if mapping.get(label) in voices
+    ]
+
+
+def save_characters(job, db, group, mapping):
+    if not group or not mapping:
+        return
+    saved = (db.load_cast(f"series:{group}") or {}).get("cast", [])
+    entries = {e["speaker_id"]: e for e in saved}
+    for label, speaker in job.speakers.items():
+        name = mapping.get(label)
+        if name and speaker.voicebox_profile_id:
+            entries[name] = {
+                "speaker_id": name,
+                "label": name,
+                "category": "narrator",
+                "voice": speaker.voicebox_profile_id,
+                "previewed": True,
+            }
+    db.save_cast(f"series:{group}", group, list(entries.values()))

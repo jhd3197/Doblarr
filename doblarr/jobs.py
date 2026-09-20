@@ -52,6 +52,8 @@ class Job:
     overrides: dict | None = None   # per-title config overrides (dub.*, transcribe.*, …)
     output_file: str | None = None   # muxed result (planned path in dry-run)
     report_file: str | None = None
+    review_file: str | None = None
+    review_count: int = 0
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -298,6 +300,9 @@ class Worker(threading.Thread):
             message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
                               message=message,
+                              report_file=str(dj.report_file) if dj.report_file else None,
+                              review_file=str(dj.review_file) if dj.review_file else None,
+                              review_count=sum(bool(s.issues) for s in dj.segments),
                               output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
             if not dry_run:
@@ -312,6 +317,9 @@ class Worker(threading.Thread):
             self._publish(job, "failed", message=str(exc))
         finally:
             if 'dj' in locals() and dj.report_file:
-                self.store.update(job.id, report_file=str(dj.report_file))
+                self.store.update(job.id, report_file=str(dj.report_file),
+                                  review_file=str(dj.review_file) if dj.review_file else None,
+                                  review_count=sum(bool(s.issues) for s in dj.segments))
+                self._publish(job, "review_ready")
             self._current_id = None
             self._cancel_evt = None

@@ -49,7 +49,7 @@ def work_stem(job) -> str:
     """Work-dir artifact stem; teases get a '.tease' namespace so a teaser never
     poisons the full dub's checkpoint cache (and vice versa)."""
     stem = job.input_file.stem
-    return f"{stem}.tease" if job.kind == "tease" else stem
+    return f"{stem}.{job.kind}" if job.kind in {"tease", "audition"} else stem
 
 
 def cached(artifacts: Path | Iterable[Path], input_file: Path,
@@ -101,6 +101,7 @@ def save_script(job, work_dir: Path) -> Path:
              "text_src": s.text_src, "speaker": s.speaker,
              "words": s.words, "issues": s.issues, "delivery": s.delivery,
              "voice": s.voice, "revision": s.revision,
+             "source_start": s.source_start,
              "text_translated": s.text_translated}
             for s in job.segments
         ],
@@ -137,6 +138,7 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
                             words=s.get("words", []), issues=s.get("issues", []),
                             delivery=s.get("delivery", ""), voice=s.get("voice"),
                             revision=s.get("revision", 0),
+                            source_start=s.get("source_start"),
                             text_translated=s.get("text_translated"))
                     for s in payload["segments"]]
     job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}

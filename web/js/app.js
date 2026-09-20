@@ -5,6 +5,7 @@ import { createSettings } from './settings.js';
 import { createLibrary } from './library.js';
 import { createJobs } from './jobs.js';
 import { createTitle } from './title.js';
+import { createReview } from './review.js';
 import { jobsFor } from './identity.js';
 
 const { statusTag, langChipsHtml, renderLibrary, fetchPlan, queueDub, loadLibrary } = createLibrary({ goTitle });
@@ -20,6 +21,8 @@ const { loadConfig, saveSettings, renderSettings } = createSettings({
   setPage, onConfigLoaded: () => { updateDryRunTag(); if (state.page === "Title") renderTitle(); },
 });
 
+
+const review = createReview({ onQueued: loadJobs });
 
 // ---- App state + rendering (vanilla, no framework) ----
 const app = document.getElementById("app");
@@ -176,6 +179,8 @@ document.getElementById("pauseQueue").addEventListener("click", async () => {
   loadJobs();
 });
 document.getElementById("dubsBody").addEventListener("click", async e => {
+  const reviewBtn = e.target.closest('.job-review');
+  if (reviewBtn) { review.open(reviewBtn.dataset.id); return; }
   const watchBtn = e.target.closest(".job-watch");
   if (watchBtn) {
     openWatch(watchBtn.dataset.id, jobs.lastData);
@@ -247,6 +252,7 @@ document.getElementById("ndQueue").addEventListener("click", async e => {
         source_lang: document.getElementById("ndFrom").value.trim() || "auto",
         target_lang: document.getElementById("ndTo").value.trim() || "en",
         path: document.getElementById("ndPath").value.trim() || null,
+        kind: document.getElementById('ndKind').value,
       },
     });
     closeNewDub();

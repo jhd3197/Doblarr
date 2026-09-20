@@ -47,7 +47,9 @@ export function createJobs({ loadLibrary, goTitle, onTitleJobs, loadConfig }) {
       const act = (j.status === "queued" || j.status === "running") ? "Cancel" : "Remove";
       const watch = j.has_file
         ? `<button type="button" class="btn btn-ghost job-watch" data-id="${j.id}">Watch</button>` : "";
-      const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch;
+      const review = j.has_review
+        ? `<button type="button" class="btn btn-secondary job-review" data-id="${j.id}">Review${j.review_count ? ` (${j.review_count})` : ''}</button>` : '';
+      const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch + review;
       const st = (j.status === "done" && (j.message || "").startsWith("planned")) ? "planned" : j.status;
       return `
         <tr>

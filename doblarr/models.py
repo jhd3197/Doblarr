@@ -22,6 +22,7 @@ class Segment:
     delivery: str = ""
     voice: str | None = None
     revision: int = 0
+    source_start: float | None = None
 
     @property
     def duration(self) -> float:
@@ -60,6 +61,7 @@ class DubJob:
     transcription_options: dict = field(default_factory=dict)
     metrics: dict = field(default_factory=dict)
     report_file: Path | None = None
+    review_file: Path | None = None
     artifacts_dir: Path | None = None
     translation_options: dict = field(default_factory=dict)
 

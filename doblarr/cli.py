@@ -52,6 +52,7 @@ def _cmd_dub(args: argparse.Namespace, config: Config) -> int:
         source_lang=args.source,
         target_lang=args.to,
         subtitle_file=Path(args.subs) if args.subs else None,
+        kind=args.kind,
     )
     # --dry-run forces a plan; otherwise dub.dry_run from config decides.
     dry_run = args.dry_run if args.dry_run is not None else config["dub"].get("dry_run", True)
@@ -78,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--from", dest="source", default="auto",
                    help="source language code, e.g. ko (default: auto)")
     d.add_argument("--subs", default=None, help="subtitle file for text + timing")
+    d.add_argument("--kind", choices=["full", "tease", "audition"], default="full",
+                   help="full video, opening teaser, or representative audio audition")
     d.add_argument("--dry-run", action="store_true", default=None,
                    help="print the plan without running heavy stages "
                         "(overrides dub.dry_run in config)")

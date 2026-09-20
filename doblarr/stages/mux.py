@@ -46,6 +46,20 @@ def run(
     audio_codec: str = "copy",
     bitrate: str = "192k",
 ) -> Plan | None:
+    if job.kind == "audition":
+        out = output_dir / f"{job.input_file.stem}.audition.wav"
+        job.output_file = out
+        if dry_run:
+            return dry("would export a short audio audition montage")
+        request: dict = {"dub": stamp(job.dubbed_track), "kind": "audition"}
+        if matches([out], request, force):
+            return None
+        out.parent.mkdir(parents=True, exist_ok=True)
+        temp = out.with_suffix(".partial.wav")
+        run_ffmpeg(["-y", "-i", str(job.dubbed_track), "-c:a", "pcm_s16le", str(temp)], cancel)
+        temp.replace(out)
+        record([out], request)
+        return None
     if audio_codec not in {"copy", "aac", "flac"}:
         raise ValueError("dub audio codec must be copy, aac or flac")
     if job.kind == "tease":

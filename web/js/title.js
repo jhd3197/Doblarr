@@ -43,7 +43,16 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     row.append(left);
 
     const right = el("div", {});
-    if (f.t === "text") {
+    if (f.t === "json") {
+      right.append(el("textarea", { class: "input m", rows: 4, "aria-label": f.l,
+        value: JSON.stringify(v || {}, null, 2), onchange: e => {
+          try {
+            const value = JSON.parse(e.target.value);
+            if (!value || Array.isArray(value) || typeof value !== 'object' || Object.values(value).some(x => typeof x !== 'string')) throw new Error();
+            setPlanValue(f.k, value);
+          } catch { titleState.planStatus = 'Enter a JSON object with text values.'; updatePlanStatus(); }
+        } }));
+    } else if (f.t === "text") {
       right.append(el("input", {
         class: "input m", type: "text", value: v, style: "max-width: 420px;",
         onchange: e => setPlanValue(f.k, e.target.value),
@@ -137,6 +146,7 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
             </div>
             <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
               <button type="button" class="btn btn-secondary" id="tpTease">Preview a tease</button>
+              <button type="button" class="btn btn-secondary" id="tpAudition">Audition voices</button>
               <button type="button" class="btn btn-primary" id="tpQueue" style="color:#fff;">Queue dub</button>
             </div>
           </div>
@@ -158,6 +168,7 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     document.getElementById("titleBack").addEventListener("click", () => setPage("Library"));
     document.getElementById("tpQueue").addEventListener("click", e => queueDub(item, e.currentTarget, "full"));
     document.getElementById("tpTease").addEventListener("click", e => queueDub(item, e.currentTarget, "tease"));
+    document.getElementById("tpAudition").addEventListener("click", e => queueDub(item, e.currentTarget, "audition"));
     root.querySelectorAll("[data-dtab]").forEach(b =>
       b.addEventListener("click", () => { titleState.dtab = b.dataset.dtab; renderTitle(); }));
     // Hero stats + the plan load lazily; the plan re-renders once it arrives.
