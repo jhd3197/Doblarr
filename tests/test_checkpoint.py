@@ -75,7 +75,7 @@ def test_extract_force_and_stale_rerun(tmp_path, monkeypatch):
 
 def test_synthesize_checkpoint_restores_clip_paths(tmp_path):
     job = _job(tmp_path)
-    job.segments = [Segment(0, 0.0, 1.0, "a"), Segment(1, 1.0, 2.0, "b")]
+    job.segments = [Segment(0, 0.0, 1.0, "a"), Segment(9, 1.0, 2.0, "b")]
     work = tmp_path / "work"
     job.source_audio = tmp_path / "source.wav"
     job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00", voicebox_profile_id="voice")}
@@ -86,7 +86,9 @@ def test_synthesize_checkpoint_restores_clip_paths(tmp_path):
             calls.append(text)
             _fresh(dest)
 
-    synthesize.run(job, Voicebox(), work)
+    progress = []
+    synthesize.run(job, Voicebox(), work, progress=lambda *args: progress.append(args))
+    assert progress[-1][:2] == (2, 2)  # removed subtitle cues leave noncontiguous IDs
     synthesize.run(job, Voicebox(), work)
     assert calls == ["a", "b"]  # resumed without generating either line
     job.segments[0].text_translated = "changed"
@@ -95,7 +97,7 @@ def test_synthesize_checkpoint_restores_clip_paths(tmp_path):
     job.segments[1].audio_clip.write_bytes(b"truncated")
     synthesize.run(job, Voicebox(), work)
     assert calls[-1] == "b"  # a damaged download is not a checkpoint
-    assert job.segments[1].audio_clip.name == "line_0001.wav"
+    assert job.segments[1].audio_clip.name == "line_0009.wav"
 
 
 def test_synthesize_partial_clips_do_not_skip(tmp_path):

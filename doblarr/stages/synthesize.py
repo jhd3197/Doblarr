@@ -137,7 +137,7 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
     # Generate every line. Per-line resume: clips already on disk from a
     # previous (failed/interrupted) run are kept, not regenerated.
     total = len(job.segments)
-    for seg in job.segments:
+    for position, seg in enumerate(job.segments, 1):
         dest = clips_dir / f"line_{seg.index:04d}.wav"
         text = seg.text_translated or seg.text_src
         signature = {"text": text, "language": job.target_lang,
@@ -151,9 +151,9 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
                 and saved.get("request") == signature
                 and saved.get("sha256") == hashlib.sha256(dest.read_bytes()).hexdigest()):
             seg.audio_clip = dest
-            log.info("  line %d/%d kept (already synthesized)", seg.index + 1, total)
+            log.info("  line %d/%d kept (already synthesized)", position, total)
             if progress:
-                progress(seg.index + 1, total, f"line {seg.index + 1}/{total} (cached)")
+                progress(position, total, f"line {position}/{total} (cached)")
             continue
         kwargs = {"engine": engine} if engine else {}
         try:
@@ -164,7 +164,7 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
             # the whole job. The stuck remote generation is cancelled first so
             # it can't block the queue behind the retry.
             log.warning("  line %d/%d generation failed — retrying once",
-                        seg.index + 1, total)
+                        position, total)
             vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang,
                                   dest, cancel_event=cancel, **kwargs)
         receipt.parent.mkdir(parents=True, exist_ok=True)
@@ -173,7 +173,7 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
                                    "sha256": hashlib.sha256(dest.read_bytes()).hexdigest()}))
         temp.replace(receipt)
         seg.audio_clip = dest
-        log.info("  line %d/%d done", seg.index + 1, total)
+        log.info("  line %d/%d done", position, total)
         if progress:
-            progress(seg.index + 1, total, f"line {seg.index + 1}/{total}")
+            progress(position, total, f"line {position}/{total}")
     return None
