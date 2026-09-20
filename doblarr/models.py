@@ -64,6 +64,10 @@ class DubJob:
     review_file: Path | None = None
     artifacts_dir: Path | None = None
     translation_options: dict = field(default_factory=dict)
+    version_id: str | None = None
+    translation_id: str | None = None
+    version_name: str = ""
+    version_file: Path | None = None
 
     def summary(self) -> str:
         return (

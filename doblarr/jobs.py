@@ -54,6 +54,10 @@ class Job:
     report_file: str | None = None
     review_file: str | None = None
     review_count: int = 0
+    version_id: str | None = None
+    translation_id: str | None = None
+    version_name: str = ""
+    version_file: str | None = None
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -303,6 +307,9 @@ class Worker(threading.Thread):
                               report_file=str(dj.report_file) if dj.report_file else None,
                               review_file=str(dj.review_file) if dj.review_file else None,
                               review_count=sum(bool(s.issues) for s in dj.segments),
+                              version_id=dj.version_id, translation_id=dj.translation_id,
+                              version_name=dj.version_name,
+                              version_file=str(dj.version_file) if dj.version_file else None,
                               output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
             if not dry_run:

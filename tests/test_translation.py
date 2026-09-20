@@ -77,6 +77,28 @@ def test_reordered_ids_map_to_source_and_blank_lines_survive(setup_driver):
     assert PromptureTranslator("local/test").translate("one\n\ntwo", "en", "es") == "uno\n\ndos"
 
 
+def test_translation_direction_survives_batch_and_timing_rewrite(setup_driver):
+    driver, _ = setup_driver([reply("Hola"), reply("Hola")])
+    translator = build_translator("prompture", "local/test", direction={
+        "locale": "es-419", "adaptation": "faithful", "direction": "Quiet anime dialogue",
+        "character_notes": {"GINKO": "Calm and concise"}})
+    translator.translate_batch([{"text": "Hello", "speaker": "GINKO"}], "en", "es")
+    translator.shorten("Hola", "es", 10)
+    for prompt, _ in driver.calls:
+        assert "Neutral Latin American Spanish" in prompt
+        assert "Stay close to the source" in prompt
+        assert "Quiet anime dialogue" in prompt
+        assert "Calm and concise" in prompt
+    assert "SAME language" in driver.calls[-1][0]
+
+
+def test_spanish_region_does_not_leak_into_other_languages(setup_driver):
+    driver, _ = setup_driver([reply("Bonjour")])
+    translator = build_translator("prompture", "local/test", direction={"locale": "es-MX"})
+    translator.translate("Hello", "en", "fr")
+    assert "Mexican Spanish" not in driver.calls[0][0]
+
+
 @pytest.mark.parametrize("invalid", [
     "", "not JSON", reply(""), reply("   "), reply("a\nb"),
     '{"translations": [{"segment_id": "1", "text": "hola"}]}',

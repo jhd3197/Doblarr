@@ -49,6 +49,10 @@ const TABS = [
     C("translate.provider", "Translation provider", ["claude", "prompture", "voicebox", "passthrough"]),
     T("translate.model", "Translation model"),
     T("translate.endpoint", "Translation endpoint"),
+    C("translate.locale", "Spanish region", ["auto", "es-419", "es-MX", "es-ES"], "es-419: neutral Latin America. es-MX: Mexico. es-ES: Spain. Wording only; voice accent is set separately."),
+    C("translate.adaptation", "Dialogue style", ["natural", "faithful", "localized"]),
+    T("translate.direction", "Dialogue direction", "For example: restrained anime dialogue; keep cultural terms; avoid added catchphrases."),
+    J("translate.character_notes", "Character dialogue notes", 'By speaker ID, for example {"GINKO": "Calm, concise; never overly formal"}.'),
     N("translate.batch_size", "Lines per translation batch"),
     N("translate.chars_per_second", "Starting character budget per second"),
     J("translate.glossary", "Names and terminology", 'JSON object, for example {"Ginko": "Ginko"}.'),
@@ -81,6 +85,8 @@ const TABS = [
   ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),
+    B("dub.preserve_versions", "Keep completed dub versions", "Save independent copies so later generations cannot replace an earlier output."),
+    T("dub.version_name", "Version name", "For example: LATAM · quiet storytelling. Completed outputs also receive a content ID."),
     T("paths.output_dir", "Output directory"),
     C("dub.output_codec", "Dubbed audio format", ["aac", "flac", "copy"]),
     T("dub.output_bitrate", "AAC bitrate"),
@@ -102,6 +108,8 @@ const PLAN_FIELDS = [
   { k: "target_lang", l: "Dub into", t: "choice", dyn: true,
     h: "Applied when a dub is queued for this title." },
   ...["dub.preset", "dub.voice_mode", "voicebox.default_engine", "dub.cast_group", "dub.character_map", "transcribe.whisper_model", "transcribe.diarize",
+    "translate.locale", "translate.adaptation", "translate.direction", "translate.character_notes",
+    "dub.version_name", "dub.preserve_versions",
     "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run"]
     .map(k => ({ ...FIELD_BY_KEY[k], t: isBoolField(FIELD_BY_KEY[k]) ? "bool" : FIELD_BY_KEY[k].t })),
 ];

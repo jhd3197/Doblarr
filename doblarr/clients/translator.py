@@ -82,6 +82,7 @@ class PromptureTranslator:
         # Parsed-response metadata from the most recent translation, including
         # responses rejected by domain validation. Not a billing ledger.
         self.last_usage: list[dict[str, Any]] = []
+        self.direction: dict = {}
 
     def _get_driver(self):
         if self._driver is None:
@@ -128,7 +129,9 @@ class PromptureTranslator:
             "translation for every segment_id, preserving its ID. Each text must contain "
             "only the translated dialogue on a single line, without commentary. "
             "Use context only to understand the scene; never translate context as extra lines. "
-            "Respect each segment's target_chars budget and the supplied glossary. " + instruction
+            "Respect each segment's target_chars budget and the supplied glossary. "
+            "Do not add filler, catchphrases or repeated exclamations absent from the source. "
+            + translation_direction(self.direction, target_lang) + " " + instruction
         )
         content = json.dumps(
             {
@@ -287,7 +290,7 @@ class VoiceboxTranslator(PromptureTranslator):
         return self._driver
 
 
-def build_translator(
+def _build_translator(
     provider: str, model: str, voicebox_client=None, endpoint: str | None = None
 ) -> Translator:
     provider = (provider or "passthrough").lower()
@@ -302,3 +305,36 @@ def build_translator(
     if provider == "passthrough":
         return PassthroughTranslator()
     raise ValueError(f"unknown translate provider: {provider}")
+
+
+def translation_direction(options: dict, target_lang: str) -> str:
+    regions = {
+        "es-419": "Neutral Latin American Spanish for studio dubbing. Use ustedes, not vosotros; "
+        "avoid Spain-specific vocabulary and heavy regional slang.",
+        "es-MX": "Mexican Spanish for studio dubbing. Use natural Mexican vocabulary "
+        "without adding exaggerated slang or stereotypes.",
+        "es-ES": "Spanish from Spain with consistent regional vocabulary and forms of address.",
+    }
+    styles = {
+        "natural": "Use idiomatic spoken dialogue while preserving meaning and character intent.",
+        "faithful": "Stay close to the source wording and cultural references "
+        "while remaining speakable.",
+        "localized": "Adapt idioms and humor naturally for the audience, preserving facts, "
+        "relationships and plot; invent no new jokes or information.",
+    }
+    parts = [styles.get(options.get("adaptation", "natural"), styles["natural"])]
+    if target_lang.split("-")[0].lower() == "es":
+        parts.append(regions.get(options.get("locale"), ""))
+    if options.get("direction"):
+        parts.append("Dialogue direction: " + options["direction"])
+    if options.get("character_notes"):
+        parts.append("Character register notes by speaker ID: " + json.dumps(
+            options["character_notes"], ensure_ascii=False, sort_keys=True))
+    return " ".join(parts)
+
+
+def build_translator(provider: str, model: str, voicebox_client=None,
+                     endpoint: str | None = None, direction: dict | None = None) -> Translator:
+    translator = _build_translator(provider, model, voicebox_client, endpoint)
+    translator.direction = dict(direction or {})
+    return translator

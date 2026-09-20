@@ -32,6 +32,7 @@ from .stages import (
 )
 from .stages.common import load_script, save_script
 from .telemetry import RunReport
+from .versions import preserve_version
 from .voices import character_cast, ensure_cast, save_characters
 
 log = logging.getLogger("doblarr.pipeline")
@@ -89,6 +90,7 @@ def run_job(
         config["translate"]["model"],
         voicebox_client=vb,
         endpoint=config["translate"].get("endpoint"),
+        direction=config["translate"],
     )
     seg_limit = config["dub"].get("segment_limit")
     teaser_s = int(config["dub"].get("teaser_minutes", 10)) * 60 if job.kind == "tease" else None
@@ -324,6 +326,9 @@ def run_job(
                 on_stage(name, i, total)
             with report.stage(name):
                 fn()
+        if not dry_run and config["dub"].get("preserve_versions", True):
+            with report.stage("save_version"):
+                preserve_version(job, config, cast=cast_holder["cast"])
     except JobCancelled:
         report.finish("cancelled")
         raise

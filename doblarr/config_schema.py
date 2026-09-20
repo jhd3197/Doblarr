@@ -8,6 +8,7 @@ runtime still accesses config as plain dicts via `doblarr.config.Config`.
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -82,6 +83,10 @@ class TranslateModel(_Section):
     batch_size: int = 12
     chars_per_second: float = 14
     glossary: dict[str, str] = {}
+    locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
+    adaptation: Literal["natural", "faithful", "localized"] = "natural"
+    direction: str = ""
+    character_notes: dict[str, str] = {}
 
 
 class TranscribeModel(_Section):
@@ -101,6 +106,8 @@ class SeparateModel(_Section):
 
 
 class DubModel(_Section):
+    version_name: str = ""
+    preserve_versions: bool = True
     narrator_voice: str = ""
     narrator_delivery: str = ""
     preset: str = "custom"
