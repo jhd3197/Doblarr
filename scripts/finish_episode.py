@@ -166,8 +166,17 @@ def main():
         quality.run(job, normalize=True, asr="off", max_retries=0)
     fit_timing.run(job, work)
     mix.run(job, work, force=bool(args.script_edits))
+    # Encode separately: FFmpeg 7 can submit invalid attachment packets when
+    # transcoding audio while copying this older Matroska source's font stream.
+    # A stream-copy mux preserves the original subtitle font and video intact.
+    encoded_dub = job.dubbed_track.with_suffix(".m4a")
+    encoded_temp = encoded_dub.with_suffix(".partial.m4a")
+    run_ffmpeg(["-y", "-i", str(job.dubbed_track), "-c:a", "aac", "-b:a", "192k",
+                str(encoded_temp)])
+    encoded_temp.replace(encoded_dub)
+    job.dubbed_track = encoded_dub
     mux.run(job, args.output_dir, track_name_template=args.track_name,
-            force=bool(args.script_edits), audio_codec="aac")
+            force=bool(args.script_edits), audio_codec="copy")
     import pysubs2
     subs = pysubs2.SSAFile()
     for seg in job.segments:
