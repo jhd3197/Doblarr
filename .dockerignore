@@ -12,3 +12,7 @@ data/
 config/
 config.yaml
 README.md
+
+node_modules/
+playwright-report/
+test-results/
