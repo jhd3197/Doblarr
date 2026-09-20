@@ -119,9 +119,9 @@ class VoiceboxClient(ArrClient):
 
         Status lives on the generation record at /history/{id} (the
         /generate/{id}/status route returns nothing useful in practice).
-        `cancel_event` aborts the wait each poll iteration — note this only
-        stops the local wait; the remote generation keeps running server-side
-        (voicebox has no cancel endpoint).
+        `cancel_event` aborts the wait each poll iteration and requests remote
+        cancellation. The remote request is best-effort; a disconnected server
+        may continue generating.
         """
         deadline = time.monotonic() + self.timeout
         delay = max(0.01, poll)

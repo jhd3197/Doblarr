@@ -58,7 +58,7 @@ def run_job(
     raise JobCancelled when set — and handed to the ffmpeg-bound stages, so a
     cancel kills an in-flight ffmpeg run. Note: a cancel while waiting on a
     voicebox *remote* generation aborts the wait but leaves the server-side
-    generation running (voicebox has no cancel endpoint). `services` supplies
+    generation running if the best-effort remote cancellation fails. `services` supplies
     the voicebox client; one is built from config when not given (CLI path).
     `force` re-runs every stage, ignoring cached work-dir artifacts.
 

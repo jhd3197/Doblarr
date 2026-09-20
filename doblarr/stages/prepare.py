@@ -2,6 +2,21 @@
 
 import re
 
+_CUE = re.compile(
+    r"(?:music|instrumental|silence|applause|laughter|laughs?|laughing|sighs?|"
+    r"sighing|gasps?|gasping|sobs?|sobbing|crying|screams?|screaming|"
+    r"coughs?|coughing|footsteps|door (?:opens|closes)|inaudible|unintelligible)",
+    re.IGNORECASE,
+)
+
+
+def _nonspoken(text):
+    if re.fullmatch(r"[♪♫\s]+", text):
+        return True
+    if len(text) >= 2 and (text[0], text[-1]) in {("[", "]"), ("(", ")")}:
+        return bool(_CUE.fullmatch(text[1:-1].strip()))
+    return False
+
 
 def run(job, enabled=True, merge_gap=0.2, max_duration=12):
     if not enabled:
@@ -10,7 +25,7 @@ def run(job, enabled=True, merge_gap=0.2, max_duration=12):
     removed = 0
     for seg in job.segments:
         text = seg.text_src.strip()
-        if seg.duration <= 0 or re.fullmatch(r"\[[^\]]+\]|\([^()]+\)|[♪♫\s]+", text):
+        if seg.duration <= 0 or _nonspoken(text):
             removed += 1
             continue
         previous = result[-1] if result else None

@@ -1,5 +1,6 @@
 """Immutable per-run review snapshots and explicit line overrides."""
 
+import math
 import os
 import shutil
 from dataclasses import asdict
@@ -23,7 +24,12 @@ def apply_edits(job, edits):
             seg.text_translated = edit["text"].strip()
         seg.start = float(edit.get("start", seg.start))
         seg.end = float(edit.get("end", seg.end))
-        if seg.start < 0 or seg.end <= seg.start:
+        if (
+            not math.isfinite(seg.start)
+            or not math.isfinite(seg.end)
+            or seg.start < 0
+            or seg.end <= seg.start
+        ):
             raise ValueError(f"line {seg.index} needs a positive time window")
         for key in ("voice", "delivery", "revision"):
             if key in edit:

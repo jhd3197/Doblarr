@@ -107,12 +107,41 @@ Jobs and the last library scan live in a SQLite database (`paths.db`, default
 `<work_dir>/doblarr.db`; in Docker that's inside the mounted `/data`), so the Dubs
 page and Overview survive restarts. A legacy `work/jobs.json` is imported once and
 renamed to `jobs.json.migrated`. Jobs interrupted mid-run are re-queued at startup,
-and the pipeline **skips stages whose output artifact already exists** and is newer
-than the input file (extract/separate/synthesize/mix/mux) — resubmitting continues
-where the artifacts stop. Enqueue with `"force": true` to redo every stage. After a
+and the pipeline reuses artifacts whose input and configuration manifests still
+match. Source artifacts are shared across target languages; translated scripts and
+outputs use separate language namespaces. Completed TTS clips are verified by
+content fingerprints, and interrupted waits resume the saved remote generation ID. Enqueue with `"force": true` to redo every stage. After a
 real (non-dry-run) mux, Doblarr asks Plex to refresh that item so the new
 "`<Language>` AI" track shows up at once (`plex.auto_refresh`, default on; failures
 never fail the job).
+
+### Faster generation and dialogue review
+
+Choose **Custom**, **Preview**, or **Final** in generation settings. Preview uses
+preset voices, the preview engine, faster separation, and no translation repair
+retries; assign existing compatible Voicebox profile IDs first. Final enables
+duration fitting. Custom respects your individual settings. Engine availability
+and throughput depend on your Voicebox installation.
+
+Use **Audition voices** on a title, or `--kind audition` on the CLI, for a short
+WAV montage covering speakers, fast dialogue, quiet/loud passages, and different
+points in the source. Transcription and speaker detection still inspect the source;
+separation and speech generation run on the selected excerpts.
+
+Completed or failed jobs with dialogue snapshots expose **Review** on the Dubs page.
+Listen to a line, edit its wording, timing, voice, or delivery, then render changes.
+A new job reuses matching clips and rebuilds the mix/export; the previous review
+snapshot stays available. **Generate a new take** invalidates that line explicitly.
+Delivery instructions require a compatible Qwen engine.
+
+Translation supports scene context, terminology dictionaries, and bounded shortening
+of overlong lines. Speech checks flag silence, clipping, duration problems, and
+optional ASR mismatches. Loudness normalization and configurable ducking preserve
+background dynamics. Unresolved flags remain visible for human review.
+
+Each run writes stage timings and cache/retry counters to `work/reports`, available
+through `GET /api/jobs/{id}/report`. See [the generation guide](docs/generation-roadmap.md)
+for configuration, benchmark acceptance, and current limitations.
 
 ### Teasers & voice casting
 
@@ -220,6 +249,9 @@ web/js/             # settings, library, jobs and title feature controllers
 | GET/POST | `/api/jobs` | list / enqueue dub jobs (`force: true` ignores cached artifacts) |
 | POST | `/api/jobs/clear-finished` | remove done+failed+cancelled jobs |
 | DELETE | `/api/jobs/{id}` | remove one job (a *running* job is cancelled instead) |
+| GET | `/api/jobs/{id}/report` | stage timings and generation counters |
+| GET / POST | `/api/jobs/{id}/review` | read dialogue snapshot / queue line edits |
+| GET | `/api/jobs/{id}/clips/{index}` | listen to a generated line (HTTP Range) |
 | GET | `/api/jobs/{id}/file` | stream the produced dub/tease (HTTP Range; only under output/work dirs) |
 | GET | `/api/events` | SSE stream of job/scan/log events (replay + live; `?api_key=` from browsers) |
 | POST | `/api/webhooks/radarr` | Radarr webhook (Download → debounced rescan; Test → 200) |
@@ -231,8 +263,8 @@ web/js/             # settings, library, jobs and title feature controllers
 The UI consumes `/api/events` via `EventSource` for live job progress and a log
 tail (slow polling as a fallback). Cancelling a running job stops it between
 pipeline stages and kills
-any in-flight ffmpeg process; a cancel while waiting on a voicebox generation aborts
-the wait but leaves the remote generation running (voicebox has no cancel endpoint).
+any in-flight ffmpeg process. Cancelling a Voicebox wait also requests remote
+cancellation; if the server cannot be reached, remote generation may continue.
 
 ## Development
 

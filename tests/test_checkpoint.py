@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+from doblarr.artifacts import stamp
 from doblarr.models import DubJob, Segment, Speaker
 from doblarr.stages import extract, mix, mux, synthesize
 from doblarr.stages.common import cached
@@ -53,7 +54,7 @@ def test_extract_skips_fresh_artifact(tmp_path, monkeypatch):
     work = tmp_path / "work"
     _fresh(work / "movie.source.wav")
     (work / "movie.source.json").write_text(json.dumps(
-        {"input": str(job.input_file.resolve()), "stream": 1, "duration": None}))
+        {"input": stamp(job.input_file), "stream": 1, "duration": None}))
     calls = _spy_ffmpeg(monkeypatch, extract)
     assert extract.run(job, work) is None          # skip returns None (decorator)
     assert job.source_audio == work / "movie.source.wav"  # planning still ran
