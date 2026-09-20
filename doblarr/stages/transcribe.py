@@ -101,6 +101,13 @@ def run(
         s.index = n
     job.segments = segs
     job.script_lang = ISO3_TO_ISO2.get(used_lang, used_lang) if used_lang else job.source_lang
+    if source != "whisper" and (options or {}).get("align_subtitles"):
+        if job.script_lang == job.source_lang:
+            _align_script(job)
+        else:
+            log.warning("Cannot align translated subtitles directly to source-language speech")
+            for seg in job.segments:
+                seg.issues.append("alignment_unavailable")
 
     # If we used the target-language track, the text is already the translation.
     if used_lang and job.script_lang == job.target_lang:
@@ -114,6 +121,39 @@ def run(
         " (already target language)" if job.script_is_target else "",
     )
     return None
+
+
+def _align_script(job):
+    try:
+        import torch
+        import whisperx
+
+        device = job.transcription_options.get("device", "auto")
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        with pooled_model(
+            ("align", job.source_lang, device),
+            lambda: whisperx.load_align_model(language_code=job.source_lang, device=device),
+            job.transcription_options.get("keep_models_loaded", False),
+        ) as loaded:
+            result = whisperx.align(
+                [{"start": s.start, "end": s.end, "text": s.text_src} for s in job.segments],
+                loaded[0],
+                loaded[1],
+                str(job.vocals or job.source_audio),
+                device,
+            )
+            del loaded
+        aligned = result["segments"]
+        if len(aligned) != len(job.segments):
+            raise ValueError("alignment changed the number of subtitle cues")
+        for seg, line in zip(job.segments, aligned, strict=True):
+            seg.start, seg.end = float(line["start"]), float(line["end"])
+            seg.words = line.get("words", [])
+    except Exception as exc:  # noqa: BLE001 -- alignment is optional; preserve the script
+        log.warning("Subtitle alignment unavailable: %s", exc)
+        for seg in job.segments:
+            seg.issues.append("alignment_unavailable")
 
 
 def _whisper_segments(job: DubJob, whisper_model: str) -> list[Segment]:

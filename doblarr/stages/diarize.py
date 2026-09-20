@@ -14,7 +14,7 @@ import os
 from typing import Any
 
 from ..model_pool import model as pooled_model
-from ..models import DubJob, Speaker
+from ..models import DubJob, Segment, Speaker
 from .common import DryRunPlan, dry, stage
 
 log = logging.getLogger("doblarr.diarize")
@@ -50,8 +50,19 @@ def _load_pipeline(token: str):
 def _assign_speakers(job: DubJob, diarization) -> None:
     """Give each segment the speaker whose turn overlaps it most, then rebuild
     job.speakers from the labels actually used."""
-    turns = [(turn.start, turn.end, label)
-             for turn, _, label in diarization.itertracks(yield_label=True)]
+    turns = [
+        (turn.start, turn.end, label) for turn, _, label in diarization.itertracks(yield_label=True)
+    ]
+
+    def speaker_at(start, end, fallback):
+        label, overlap = fallback, 0.0
+        for left, right, candidate in turns:
+            duration = min(end, right) - max(start, left)
+            if duration > overlap:
+                label, overlap = candidate, duration
+        return label
+
+    split = []
     for seg in job.segments:
         best_label, best_overlap = seg.speaker, 0.0
         for start, end, label in turns:
@@ -59,6 +70,37 @@ def _assign_speakers(job: DubJob, diarization) -> None:
             if overlap > best_overlap:
                 best_label, best_overlap = label, overlap
         seg.speaker = best_label  # no overlap: keep the default SPEAKER_00
+        if best_overlap <= 0:
+            seg.issues.append("speaker_uncertain")
+        if (
+            seg.words
+            and not seg.text_translated
+            and all(w.get("start") is not None and w.get("end") is not None for w in seg.words)
+        ):
+            groups: list[tuple[str, list[dict]]] = []
+            for word in seg.words:
+                label = speaker_at(word["start"], word["end"], best_label)
+                if not groups or groups[-1][0] != label:
+                    groups.append((label, []))
+                groups[-1][1].append(word)
+            if len(groups) > 1:
+                for label, words in groups:
+                    split.append(
+                        Segment(
+                            0,
+                            words[0]["start"],
+                            words[-1]["end"],
+                            " ".join(w["word"].strip() for w in words),
+                            speaker=label,
+                            words=words,
+                        )
+                    )
+                continue
+        split.append(seg)
+    if len(split) != len(job.segments):
+        for i, segment in enumerate(split):
+            segment.index = i
+        job.segments = split
     used = sorted({seg.speaker for seg in job.segments}) or ["SPEAKER_00"]
     job.speakers = {label: Speaker(label=label) for label in used}
 
@@ -93,12 +135,14 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan 
 
     audio = job.vocals or job.source_audio
     if audio is None:
-        raise RuntimeError(
-            "diarize needs vocals or source audio (extract/separate must run first)")
+        raise RuntimeError("diarize needs vocals or source audio (extract/separate must run first)")
 
     try:
-        context = pooled_model(("diarization", MODEL_ID), lambda: _load_pipeline(token),
-                               job.transcription_options.get("keep_models_loaded", False))
+        context = pooled_model(
+            ("diarization", MODEL_ID),
+            lambda: _load_pipeline(token),
+            job.transcription_options.get("keep_models_loaded", False),
+        )
         with context as pipe:
             log.info("diarizing %s with %s", audio.name, MODEL_ID)
             diarization = pipe(str(audio))
@@ -106,8 +150,11 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan 
                 diarization = diarization.speaker_diarization
             del pipe
     except Exception as exc:  # noqa: BLE001 — gated model, bad token, download failure
-        _single_narrator(job, f"could not load {MODEL_ID} ({exc}); accept the model terms at "
-                              f"huggingface.co/{MODEL_ID} and check HF_TOKEN")
+        _single_narrator(
+            job,
+            f"could not load {MODEL_ID} ({exc}); accept the model terms at "
+            f"huggingface.co/{MODEL_ID} and check HF_TOKEN",
+        )
         return None
 
     _assign_speakers(job, diarization)

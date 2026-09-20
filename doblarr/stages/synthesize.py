@@ -20,6 +20,7 @@ from ..ffmpeg import run_ffmpeg
 from ..models import DubJob, Speaker
 from ..telemetry import write_json
 from .common import Plan, dry, stage, work_stem
+from .quality import spoken_form
 
 log = logging.getLogger("doblarr.synthesize")
 
@@ -148,6 +149,7 @@ def run(
     model_size=None,
     seed=None,
     preset_voices=None,
+    pronunciations=None,
 ) -> Plan | None:
     clips_dir = work_dir / ("clips-tease" if job.kind == "tease" else "clips")
     identity = hashlib.sha256(str(job.input_file.resolve()).encode()).hexdigest()[:12]
@@ -207,7 +209,7 @@ def run(
             raise JobCancelled("cancelled before speech generation")
         spk = job.speakers[seg.speaker]
         dest = clips_dir / f"line_{seg.index:04d}.wav"
-        text = seg.text_translated or seg.text_src
+        text = spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
         signature = {
             "text": text,
             "language": job.target_lang,

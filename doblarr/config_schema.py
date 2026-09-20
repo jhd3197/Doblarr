@@ -89,6 +89,7 @@ class TranscribeModel(_Section):
     whisper_model: str = "large-v3"
     diarize: bool = True
     clean_cues: bool = True
+    align_subtitles: bool = False
     batch_size: int = 8
     device: str = "auto"
     compute_type: str = "auto"
@@ -105,11 +106,27 @@ class DubModel(_Section):
     dry_run: bool = True
     duration_match: bool = True
     max_fit_attempts: int = 2
-    ducking_ratio: str = "12:1"
+    ducking_ratio: str = "4:1"
+    background_volume: float = 1.0
+    fallback_volume: float = 0.2
+    duck_threshold: float = 0.05
+    duck_attack_ms: float = 30
+    duck_release_ms: float = 350
+    output_codec: str = "aac"
+    output_bitrate: str = "192k"
+    pronunciations: dict[str, str] = {}
     track_name_template: str = "{language_name} AI"
     preset_voices: list[str] = []
     teaser_minutes: int = 10
     segment_limit: int | None = None
+
+
+class QualityModel(_Section):
+    enabled: bool = True
+    normalize: bool = True
+    dialogue_lufs: float = -18
+    asr: str = "off"
+    max_retries: int = 1
 
 
 class ConfigModel(_Section):
@@ -125,6 +142,7 @@ class ConfigModel(_Section):
     transcribe: TranscribeModel = TranscribeModel()
     separate: SeparateModel = SeparateModel()
     dub: DubModel = DubModel()
+    quality: QualityModel = QualityModel()
 
 
 def validate_config(data: dict) -> None:

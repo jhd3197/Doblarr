@@ -13,7 +13,7 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
-from ..artifacts import matches, record, stamp
+from ..artifacts import digest, matches, record, stamp
 from ..ffmpeg import FFmpegError, run_ffmpeg
 from ..models import DubJob
 from .common import Plan, cached, dry, stage, work_stem
@@ -21,11 +21,11 @@ from .fit_timing import _duration
 
 log = logging.getLogger("doblarr.mix")
 
-BED_VOLUME = 0.35      # base bed level under the dubbed dialogue
+BED_VOLUME = 0.35  # base bed level under the dubbed dialogue
 DUCK_THRESHOLD = 0.02  # linear key amplitude at which the bed starts ducking
 DUCK_ATTACK_MS = 20
 DUCK_RELEASE_MS = 250
-DUCK_MAKEUP = 1        # unity — ducking should only ever reduce the bed
+DUCK_MAKEUP = 1  # unity — ducking should only ever reduce the bed
 DEFAULT_RATIO = 12.0
 
 
@@ -41,37 +41,64 @@ def _parse_ratio(text: str) -> float:
     return DEFAULT_RATIO
 
 
-def _filter_graph(segs: list, win_start: float, dur: float,
-                  ratio: float | None) -> str:
+def _filter_graph(
+    segs: list,
+    win_start: float,
+    dur: float,
+    ratio: float | None,
+    bed_volume=BED_VOLUME,
+    threshold=DUCK_THRESHOLD,
+    attack=DUCK_ATTACK_MS,
+    release=DUCK_RELEASE_MS,
+    limit=False,
+) -> str:
     """Build the mix graph. With a ratio, the bed is sidechain-ducked by the
     dialogue bus; ratio=None is the flat fallback (no sidechaincompress).
     The bus is padded to the window length — sidechaincompress ends with its
     key input, so an unpadded key would truncate the output."""
-    parts = [f"[0:a]volume={BED_VOLUME},aformat=channel_layouts=stereo[bed]"]
+    parts = [f"[0:a]volume={bed_volume:g},aformat=channel_layouts=stereo[bed]"]
     for i, s in enumerate(segs):
         d = max(0, int((s.start - win_start) * 1000))
-        parts.append(f"[{i+1}:a]adelay={d}|{d},aformat=channel_layouts=stereo[c{i}]")
+        parts.append(f"[{i + 1}:a]adelay={d}|{d},aformat=channel_layouts=stereo[c{i}]")
     clip_inputs = "".join(f"[c{i}]" for i in range(len(segs)))
     if ratio is None:
-        parts.append(f"[bed]{clip_inputs}amix=inputs={len(segs)+1}:normalize=0[out]")
-        return ";".join(parts)
+        parts.append(f"[bed]{clip_inputs}amix=inputs={len(segs) + 1}:normalize=0[out]")
+        return _master(parts, limit)
     pad = f"apad=whole_dur={dur:g}"
     if len(segs) == 1:
         parts.append(f"[c0]{pad},asplit=2[dlg][key]")
     else:
-        parts.append(f"{clip_inputs}amix=inputs={len(segs)}:normalize=0,"
-                     f"{pad},asplit=2[dlg][key]")
-    parts.append(f"[bed][key]sidechaincompress=threshold={DUCK_THRESHOLD}"
-                 f":ratio={ratio:g}:attack={DUCK_ATTACK_MS}"
-                 f":release={DUCK_RELEASE_MS}:makeup={DUCK_MAKEUP}[ducked]")
+        parts.append(f"{clip_inputs}amix=inputs={len(segs)}:normalize=0,{pad},asplit=2[dlg][key]")
+    parts.append(
+        f"[bed][key]sidechaincompress=threshold={threshold:g}"
+        f":ratio={ratio:g}:attack={attack:g}"
+        f":release={release:g}:makeup={DUCK_MAKEUP}[ducked]"
+    )
     parts.append("[ducked][dlg]amix=inputs=2:normalize=0[out]")
+    return _master(parts, limit)
+
+
+def _master(parts, limit):
+    if limit:
+        parts[-1] = parts[-1].replace("[out]", "[master]")
+        parts.append("[master]alimiter=limit=0.95:level=false:latency=true[out]")
     return ";".join(parts)
 
 
 @stage("mix")
-def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
-        dry_run: bool = False, cancel: threading.Event | None = None,
-        force: bool = False) -> Plan | None:
+def run(
+    job: DubJob,
+    work_dir: Path,
+    ducking_ratio: str = "12:1",
+    dry_run: bool = False,
+    cancel: threading.Event | None = None,
+    force: bool = False,
+    background_volume=1.0,
+    fallback_volume=0.2,
+    threshold=DUCK_THRESHOLD,
+    attack=DUCK_ATTACK_MS,
+    release=DUCK_RELEASE_MS,
+) -> Plan | None:
     out = work_dir / f"{work_stem(job)}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
     log.info("mix dialogue over bed -> %s", out.name)
@@ -80,8 +107,13 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     hit = cached(out, job.input_file, force)
     dependencies = [s.audio_clip for s in job.segments]
     dependencies += [p for p in (job.background, job.source_audio) if p]
-    request = {"inputs": [stamp(p) for p in dependencies], "ducking": ducking_ratio,
-               "segments": [[s.index, s.start, s.end] for s in job.segments], "version": 1}
+    request = {
+        "inputs": [stamp(p) for p in dependencies],
+        "ducking": ducking_ratio,
+        "segments": [[s.index, s.start, s.end] for s in job.segments],
+        "version": 2,
+        "mix": [background_volume, fallback_volume, threshold, attack, release],
+    }
     if hit and matches([out], request, force):
         return hit
 
@@ -93,6 +125,14 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
         raise RuntimeError("mix: missing generated dialogue clips")
     if bed is None:
         raise RuntimeError("mix: no background audio")
+    volume = float(background_volume if job.background != job.source_audio else fallback_volume)
+    graph_options = {
+        "bed_volume": volume,
+        "threshold": float(threshold),
+        "attack": float(attack),
+        "release": float(release),
+        "limit": True,
+    }
     # Keep the video timeline, including the intro and closing credits.
     win_start = 0.0
     dur = _duration(job.source_audio or bed, cancel=cancel)
@@ -100,26 +140,45 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     # Bound the number of inputs and command length (especially on Windows).
     # Each partial bus starts at its first line; the final mix places it back
     # on the absolute timeline. Original line clips remain resumable.
-    if len(segs) > 24:
+    while len(segs) > 24:
         bus_dir = work_dir / f"{work_stem(job)}.{job.target_lang}.buses"
         bus_dir.mkdir(parents=True, exist_ok=True)
         buses = []
         for offset in range(0, len(segs), 24):
-            group = segs[offset:offset + 24]
+            group = segs[offset : offset + 24]
             start = min(s.start for s in group)
-            bus = bus_dir / f"bus_{offset:04d}.wav"
+            bus_request = {"clips": [[stamp(s.audio_clip), s.start] for s in group], "version": 1}
+            bus = bus_dir / f"bus_{digest(bus_request)[:20]}.wav"
+            if matches([bus], bus_request, force):
+                buses.append(replace(group[0], start=start, audio_clip=bus))
+                job.metrics["mix_bus_cache_hits"] = job.metrics.get("mix_bus_cache_hits", 0) + 1
+                continue
             bus_args = ["-y"]
             filters = []
             for i, s in enumerate(group):
                 bus_args += ["-i", str(s.audio_clip)]
                 delay = max(0, round((s.start - start) * 1000))
-                filters.append(f"[{i}:a]adelay={delay}:all=1,"
-                               f"aformat=channel_layouts=stereo[c{i}]")
+                filters.append(f"[{i}:a]adelay={delay}:all=1,aformat=channel_layouts=stereo[c{i}]")
             inputs = "".join(f"[c{i}]" for i in range(len(group)))
             filters.append(f"{inputs}amix=inputs={len(group)}:normalize=0[out]")
-            run_ffmpeg(bus_args + ["-filter_complex", ";".join(filters),
-                       "-map", "[out]", "-ar", "48000", "-c:a", "pcm_s16le", str(bus)],
-                       cancel=cancel)
+            bus_temp = bus.with_suffix(".partial.wav")
+            run_ffmpeg(
+                bus_args
+                + [
+                    "-filter_complex",
+                    ";".join(filters),
+                    "-map",
+                    "[out]",
+                    "-ar",
+                    "48000",
+                    "-c:a",
+                    "pcm_s16le",
+                    str(bus_temp),
+                ],
+                cancel=cancel,
+            )
+            bus_temp.replace(bus)
+            record([bus], bus_request)
             buses.append(replace(group[0], start=start, audio_clip=bus))
         segs = buses
 
@@ -132,14 +191,36 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     ratio = _parse_ratio(ducking_ratio)
     temp = out.with_suffix(".partial.wav")
     try:
-        run_ffmpeg(args + ["-filter_complex", _filter_graph(segs, win_start, dur, ratio),
-                           "-map", "[out]", "-t", str(dur), str(temp)], cancel=cancel)
+        run_ffmpeg(
+            args
+            + [
+                "-filter_complex",
+                _filter_graph(segs, win_start, dur, ratio, **graph_options),
+                "-map",
+                "[out]",
+                "-t",
+                str(dur),
+                str(temp),
+            ],
+            cancel=cancel,
+        )
     except FFmpegError as e:
         if "No such filter" not in str(e):
             raise
         log.warning("mix: ffmpeg lacks sidechaincompress; falling back to flat mix")
-        run_ffmpeg(args + ["-filter_complex", _filter_graph(segs, win_start, dur, None),
-                           "-map", "[out]", "-t", str(dur), str(temp)], cancel=cancel)
+        run_ffmpeg(
+            args
+            + [
+                "-filter_complex",
+                _filter_graph(segs, win_start, dur, None, **graph_options),
+                "-map",
+                "[out]",
+                "-t",
+                str(dur),
+                str(temp),
+            ],
+            cancel=cancel,
+        )
     temp.replace(out)
     record([out], request)
     log.info("mix -> %s (%.0fs window, %d lines)", out.name, dur, len(segs))

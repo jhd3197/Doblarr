@@ -20,14 +20,34 @@ from .common import Plan, cached, dry, stage
 log = logging.getLogger("doblarr.mux")
 
 # ISO-639-2/B codes ffmpeg wants for the language metadata tag.
-_LANG3 = {"en": "eng", "es": "spa", "ko": "kor", "ja": "jpn", "fr": "fre",
-          "de": "ger", "zh": "chi", "pt": "por", "it": "ita", "ru": "rus"}
+_LANG3 = {
+    "en": "eng",
+    "es": "spa",
+    "ko": "kor",
+    "ja": "jpn",
+    "fr": "fre",
+    "de": "ger",
+    "zh": "chi",
+    "pt": "por",
+    "it": "ita",
+    "ru": "rus",
+}
 
 
 @stage("mux")
-def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_name} AI",
-        dry_run: bool = False, cancel: threading.Event | None = None,
-        force: bool = False, duration: int | None = None) -> Plan | None:
+def run(
+    job: DubJob,
+    output_dir: Path,
+    track_name_template: str = "{language_name} AI",
+    dry_run: bool = False,
+    cancel: threading.Event | None = None,
+    force: bool = False,
+    duration: int | None = None,
+    audio_codec: str = "copy",
+    bitrate: str = "192k",
+) -> Plan | None:
+    if audio_codec not in {"copy", "aac", "flac"}:
+        raise ValueError("dub audio codec must be copy, aac or flac")
     if job.kind == "tease":
         # A tease is a standalone clip, not a track added to the full video.
         out = output_dir / f"{job.input_file.stem}.tease{job.input_file.suffix}"
@@ -37,21 +57,42 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_nam
     if out.resolve() == job.input_file.resolve():
         raise ValueError("output must not overwrite the original video")
     # e.g. "English AI", teases "Spanish AI (tease)"; {language} stays the code.
-    title = track_name_template.format(language=job.target_lang.upper(),
-                                       language_name=lang_name(job.target_lang))
+    title = track_name_template.format(
+        language=job.target_lang.upper(), language_name=lang_name(job.target_lang)
+    )
     if job.kind == "tease":
         title += " (tease)"
     lang3 = _LANG3.get(job.target_lang, job.target_lang)
-    request = {"input": stamp(job.input_file), "dub": stamp(job.dubbed_track),
-               "title": title, "language": lang3, "duration": duration}
+    request = {
+        "input": stamp(job.input_file),
+        "dub": stamp(job.dubbed_track),
+        "title": title,
+        "language": lang3,
+        "duration": duration,
+        "codec": audio_codec,
+        "bitrate": bitrate,
+    }
 
     if not dry_run:
         hit = cached(out, job.input_file, force)
         if hit and matches([out], request, force):
             return hit
-        probe = json.loads(run_ffprobe([
-            "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
-            "-of", "json", str(job.input_file)], cancel=cancel))
+        probe = json.loads(
+            run_ffprobe(
+                [
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a",
+                    "-show_entries",
+                    "stream=index",
+                    "-of",
+                    "json",
+                    str(job.input_file),
+                ],
+                cancel=cancel,
+            )
+        )
         audio_index = len(probe.get("streams", []))
     else:
         audio_index = 1
@@ -59,21 +100,32 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_nam
 
     args = [
         "-y",
-        "-i", str(job.input_file),
-        "-i", str(job.dubbed_track) if job.dubbed_track else "MISSING_DUB",
+        "-i",
+        str(job.input_file),
+        "-i",
+        str(job.dubbed_track) if job.dubbed_track else "MISSING_DUB",
     ]
     if duration:
         args += ["-t", str(duration)]  # tease: cut the output at the teaser length
     args += [
-        "-map", "0",            # everything from the original
-        "-map", "1:a",          # plus the new dub audio
-        "-c", "copy",
-        "-c:a:0", "copy",
-        f"-metadata:s:a:{audio_index}", f"language={lang3}",
-        f"-metadata:s:a:{audio_index}", f"title={title}",
-        f"-disposition:a:{audio_index}", "0",
+        "-map",
+        "0",  # everything from the original
+        "-map",
+        "1:a",  # plus the new dub audio
+        "-c",
+        "copy",
+        f"-c:a:{audio_index}",
+        audio_codec,
+        f"-metadata:s:a:{audio_index}",
+        f"language={lang3}",
+        f"-metadata:s:a:{audio_index}",
+        f"title={title}",
+        f"-disposition:a:{audio_index}",
+        "0",
         str(temp),
     ]
+    if audio_codec == "aac":
+        args[-1:-1] = [f"-b:a:{audio_index}", bitrate]
     log.info("mux new track '%s' (%s) -> %s", title, lang3, out.name)
     if dry_run:
         return dry("ffmpeg " + " ".join(args))
