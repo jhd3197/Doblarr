@@ -31,12 +31,11 @@ def build_router(config: Config, store: JobStore, worker: Worker,
                  bus: EventBus) -> APIRouter:
     api = APIRouter()
 
-    # Paths a job's output_file is allowed to resolve under (traversal guard).
-    allowed_roots = [Path(os.path.normcase(str(config.output_dir.resolve()))),
-                     Path(os.path.normcase(str(config.work_dir.resolve())))]
-
     def _allowed_path(path_str: str) -> Path | None:
+        # Read live: saving an output directory must also update the download guard.
         try:
+            allowed_roots = [Path(os.path.normcase(str(root.resolve())))
+                             for root in (config.output_dir, config.work_dir)]
             p = Path(os.path.normcase(str(Path(path_str).resolve())))
         except OSError:
             return None

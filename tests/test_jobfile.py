@@ -34,6 +34,21 @@ def test_full_download(client):
     assert r.headers["content-type"] == "video/x-matroska"
 
 
+def test_download_guard_follows_saved_output_directory(client, tmp_path):
+    c, app, old_dir = client
+    new_dir = tmp_path / "new-output"
+    new_dir.mkdir()
+    output = new_dir / "film.mkv"
+    output.write_bytes(CONTENT)
+    response = c.post("/api/config", headers=HEADERS,
+                      json={"paths": {"output_dir": str(new_dir)}})
+    assert response.status_code == 200
+    job = _job_with_output(app, str(output))
+    assert c.get(f"/api/jobs/{job.id}/file", headers=HEADERS).content == CONTENT
+    old_job = _job_with_output(app, str(old_dir / "film.tease.mkv"))
+    assert c.get(f"/api/jobs/{old_job.id}/file", headers=HEADERS).status_code == 403
+
+
 def test_range_request(client):
     c, app, out_dir = client
     job = _job_with_output(app, str(out_dir / "film.tease.mkv"))

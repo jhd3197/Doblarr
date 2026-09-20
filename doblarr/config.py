@@ -131,7 +131,7 @@ class Config:
     def with_overrides(self, overrides: dict) -> Config:
         """Return an independent config, accepting nested or dotted title settings."""
         nested: dict[str, Any] = {}
-        for dotted, value in overrides.items():
+        for dotted, value in copy.deepcopy(overrides).items():
             parts = dotted.split(".")
             node = nested
             for part in parts[:-1]:

@@ -6,6 +6,15 @@ from doblarr.config import Config
 from doblarr.jobs import JobStore, Worker
 
 
+def test_mixed_overrides_leave_the_payload_unchanged(tmp_path):
+    config = Config.load(tmp_path / "config.yaml")
+    overrides = {"dub": {"dry_run": False}, "dub.voice_mode": "preset"}
+    effective = config.with_overrides(overrides)
+    assert effective["dub"]["dry_run"] is False
+    assert effective["dub"]["voice_mode"] == "preset"
+    assert overrides == {"dub": {"dry_run": False}, "dub.voice_mode": "preset"}
+
+
 @pytest.mark.parametrize("overrides", [
     {"dub.voice_mode": "preset", "dub.dry_run": False},
     {"dub": {"voice_mode": "preset", "dry_run": False}},
