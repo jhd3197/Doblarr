@@ -1,4 +1,4 @@
-"""Stage checkpointing tests — fresh artifacts skip, force bypasses."""
+"""Stage checkpointing tests â€” fresh artifacts skip, force bypasses."""
 
 import json
 import os
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from doblarr.models import DubJob, Segment, Speaker
 from doblarr.stages import extract, mix, mux, synthesize
-from doblarr.stages.common import CachedPlan, cached
+from doblarr.stages.common import cached
 
 
 def _job(tmp_path: Path, mtime: float = 1000.0) -> DubJob:
@@ -112,16 +112,24 @@ def test_synthesize_partial_clips_do_not_skip(tmp_path):
 def test_mix_and_mux_skip(tmp_path, monkeypatch):
     job = _job(tmp_path)
     work = tmp_path / "work"
-    _fresh(work / "movie.es.dub.wav")
-    assert isinstance(mix.run.__wrapped__(job, work), CachedPlan)  # pre-decorator
+    job.source_audio = _fresh(tmp_path / "source.wav")
+    job.segments = [Segment(0, 0, 1, "hello", audio_clip=_fresh(tmp_path / "line.wav"))]
+    monkeypatch.setattr(mix, "_duration", lambda *a, **kw: 4)
     mix_calls = _spy_ffmpeg(monkeypatch, mix)
     mix.run(job, work)
-    assert job.dubbed_track == work / "movie.es.dub.wav"
-    assert mix_calls == []
+    mix.run(job, work)
+    assert len(mix_calls) == 1
+    job.segments[0].start = 0.5
+    mix.run(job, work)
+    assert len(mix_calls) == 2  # moving a clip invalidates the timeline
+    mix.run(job, work, ducking_ratio="4:1")
+    assert len(mix_calls) == 3
 
     out = tmp_path / "output"
-    _fresh(out / "movie.mkv")
+    monkeypatch.setattr(mux, "run_ffprobe", lambda *a, **kw: '{"streams": [{"index": 1}]}')
     mux_calls = _spy_ffmpeg(monkeypatch, mux)
     mux.run(job, out)
-    assert job.output_file == out / "movie.mkv"
-    assert mux_calls == []
+    mux.run(job, out)
+    assert len(mux_calls) == 1
+    mux.run(job, out, track_name_template="Reviewed Spanish")
+    assert len(mux_calls) == 2

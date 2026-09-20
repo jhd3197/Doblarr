@@ -21,6 +21,8 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
+from ..artifacts import read_json, stamp
+
 
 class DryRunPlan:
     """Returned by a stage in dry-run mode; carries what would have run."""
@@ -85,6 +87,8 @@ def save_script(job, work_dir: Path) -> Path:
     p = script_path(job, work_dir)
     payload = {
         "transcription_options": job.transcription_options,
+        "translation_options": job.translation_options,
+        "audio": stamp(job.source_audio),
         "script_lang": job.script_lang,
         "identity": {"input": str(job.input_file.resolve()),
                      "source_lang": job.source_lang, "target_lang": job.target_lang,
@@ -113,8 +117,10 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     p = script_path(job, work_dir)
     if cached(p, job.input_file, force) is None:
         return None
-    payload = json.loads(p.read_text(encoding="utf-8"))
+    payload = read_json(p)
     if payload.get("transcription_options", {}) != job.transcription_options:
+        return None
+    if payload.get("audio") != stamp(job.source_audio):
         return None
     identity = {"input": str(job.input_file.resolve()),
                 "source_lang": job.source_lang, "target_lang": job.target_lang,
@@ -131,6 +137,10 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}
     job.script_is_target = bool(payload.get("script_is_target"))
     job.script_lang = payload.get("script_lang")
+    if payload.get("translation_options", {}) != job.translation_options:
+        for seg in job.segments:
+            if not job.script_is_target:
+                seg.text_translated = None
     return p
 
 

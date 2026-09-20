@@ -55,6 +55,8 @@ class DubJob:
     transcription_options: dict = field(default_factory=dict)
     metrics: dict = field(default_factory=dict)
     report_file: Path | None = None
+    artifacts_dir: Path | None = None
+    translation_options: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         return (

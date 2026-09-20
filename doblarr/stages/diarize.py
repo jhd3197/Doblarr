@@ -23,6 +23,8 @@ MODEL_ID = "pyannote/speaker-diarization-3.1"
 
 def _single_narrator(job: DubJob, reason: str) -> None:
     job.speakers = {"NARRATOR": Speaker(label="NARRATOR")}
+    for seg in job.segments:
+        seg.speaker = "NARRATOR"
     log.warning("diarize: %s — falling back to a single narrator voice", reason)
 
 
@@ -65,6 +67,8 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan 
     if not enabled:
         # Single-speaker fallback: everyone is SPEAKER_00.
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
+        for seg in job.segments:
+            seg.speaker = "SPEAKER_00"
         log.info("diarize disabled -> 1 speaker")
         return None
 

@@ -11,6 +11,7 @@ import logging
 import threading
 from pathlib import Path
 
+from ..artifacts import matches, record, stamp
 from ..discovery import lang_name
 from ..ffmpeg import run_ffmpeg, run_ffprobe
 from ..models import DubJob
@@ -41,10 +42,12 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_nam
     if job.kind == "tease":
         title += " (tease)"
     lang3 = _LANG3.get(job.target_lang, job.target_lang)
+    request = {"input": stamp(job.input_file), "dub": stamp(job.dubbed_track),
+               "title": title, "language": lang3, "duration": duration}
 
     if not dry_run:
         hit = cached(out, job.input_file, force)
-        if hit and (not job.dubbed_track or cached(out, job.dubbed_track)):
+        if hit and matches([out], request, force):
             return hit
         probe = json.loads(run_ffprobe([
             "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
@@ -77,4 +80,5 @@ def run(job: DubJob, output_dir: Path, track_name_template: str = "{language_nam
     out.parent.mkdir(parents=True, exist_ok=True)
     run_ffmpeg(args, cancel=cancel)
     temp.replace(out)
+    record([out], request)
     return None

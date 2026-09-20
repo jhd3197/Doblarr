@@ -19,12 +19,18 @@ import contextlib
 import time
 from pathlib import Path
 
+from ..artifacts import read_json
 from ..errors import ArrClientError, JobCancelled
+from ..telemetry import write_json
 from .base import ArrClient
 
 
 class VoiceboxError(ArrClientError, RuntimeError):
     pass
+
+
+class GenerationFailed(VoiceboxError):
+    """A confirmed terminal failure; safe to submit a new generation."""
 
 
 class VoiceboxClient(ArrClient):
@@ -90,13 +96,14 @@ class VoiceboxClient(ArrClient):
             payload["model_size"] = model_size
         if engine is not None:
             payload["engine"] = engine
-        data = self._post("/generate", json=payload)
+        # Creation is not idempotent. A lost response must not silently submit twice.
+        data = self._attempt("POST", "/generate", json=payload).json()
         gen_id = data.get("id") or data.get("generation_id")
         if not gen_id:
             raise VoiceboxError(f"no generation id in response: {data}")
         return gen_id
 
-    def wait_for(self, generation_id: str, poll: float = 1.0,
+    def wait_for(self, generation_id: str, poll: float = 0.15,
                  cancel_event=None) -> None:
         """Block until a generation reports a terminal status.
 
@@ -106,8 +113,9 @@ class VoiceboxClient(ArrClient):
         stops the local wait; the remote generation keeps running server-side
         (voicebox has no cancel endpoint).
         """
-        deadline = time.time() + self.timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + self.timeout
+        delay = max(0.01, poll)
+        while time.monotonic() < deadline:
             if cancel_event is not None and cancel_event.is_set():
                 self._cancel_quietly(generation_id)
                 raise JobCancelled(f"cancelled while waiting for {generation_id}")
@@ -115,11 +123,14 @@ class VoiceboxClient(ArrClient):
             status = (data.get("status") or "").lower()
             if status in {"done", "completed", "success", "ready"}:
                 return
-            if status in {"failed", "error"}:
-                raise VoiceboxError(
+            if status in {"failed", "error", "cancelled", "canceled"}:
+                raise GenerationFailed(
                     f"generation {generation_id} failed: {data.get('error') or data}")
-            time.sleep(poll)
-        self._cancel_quietly(generation_id)
+            if cancel_event is not None:
+                cancel_event.wait(delay)
+            else:
+                time.sleep(delay)
+            delay = min(1.0, delay * 1.5)
         raise VoiceboxError(f"generation {generation_id} timed out")
 
     def _cancel_quietly(self, generation_id: str) -> None:
@@ -139,6 +150,19 @@ class VoiceboxClient(ArrClient):
     def synthesize_to_file(self, profile_id: str, text: str, language: str,
                            dest: Path, cancel_event=None, **kwargs) -> Path:
         """Full round-trip: generate -> wait -> download."""
-        gen_id = self.generate(profile_id, text, language, **kwargs)
-        self.wait_for(gen_id, cancel_event=cancel_event)
-        return self.download_audio(gen_id, dest)
+        receipt = dest.with_suffix(".request.json")
+        request = {"server": self.base_url, "profile": profile_id, "text": text,
+                   "language": language, "options": kwargs}
+        saved = read_json(receipt)
+        gen_id = saved.get("generation_id") if saved.get("request") == request else None
+        if not gen_id:
+            gen_id = self.generate(profile_id, text, language, **kwargs)
+            write_json(receipt, {"request": request, "generation_id": gen_id})
+        try:
+            self.wait_for(gen_id, cancel_event=cancel_event)
+            result = self.download_audio(gen_id, dest)
+        except GenerationFailed:
+            receipt.unlink(missing_ok=True)
+            raise
+        receipt.unlink(missing_ok=True)
+        return result

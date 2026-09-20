@@ -14,6 +14,7 @@ import logging
 import shutil
 from pathlib import Path
 
+from ..artifacts import matches, record, stamp
 from ..models import DubJob
 from .common import Plan, cached, dry, stage, work_stem
 
@@ -28,7 +29,8 @@ def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
     if dry_run:
         return dry(f"would run Demucs on {job.source_audio}")
     hit = cached([job.vocals, job.background], job.source_audio or job.input_file, force)
-    if hit:
+    request = {"source": stamp(job.source_audio), "model": model}
+    if hit and matches([job.vocals, job.background], request, force):
         return hit
 
     # If Demucs is available, isolate dialogue; otherwise fall back to mixing over
@@ -62,4 +64,5 @@ def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
             parent.rmdir()  # only succeeds once empty
 
     log.info("separate -> %s + %s", job.vocals.name, job.background.name)
+    record([job.vocals, job.background], request)
     return None

@@ -24,7 +24,8 @@ log = logging.getLogger("doblarr.transcribe")
 def run(job: DubJob, work_dir: Path, source: str = "subtitles",
         whisper_model: str = "large-v3", vb=None,
         segment_limit: int | None = None, max_seconds: int | None = None,
-        dry_run: bool = False, force: bool = False) -> DryRunPlan | None:
+        dry_run: bool = False, force: bool = False, options: dict | None = None
+        ) -> DryRunPlan | None:
     if dry_run:
         return dry(f"would build timed segments ({source})")
 
@@ -34,6 +35,9 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
         "source": source if source != "subtitles" else None,
         "segment_limit": segment_limit, "max_seconds": max_seconds,
     }.items() if v is not None}
+    job.transcription_options.update(options or {})
+    if source == "whisper":
+        job.transcription_options["whisper_model"] = whisper_model
     if load_script(job, work_dir, force):
         log.info("transcribe: restored script from cache (%d segments)",
                  len(job.segments))

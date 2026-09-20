@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 
+from .artifacts import media_work
 from .clients.translator import build_translator
 from .config import Config
 from .errors import JobCancelled
@@ -51,8 +52,11 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     given, a tease creates/merges the title's voice cast after diarization (and
     publishes a `cast` event); full dubs read the saved cast into synthesize.
     """
-    work = config.work_dir
-    out = config.output_dir
+    shared_work = media_work(config.work_dir, job)
+    work = shared_work / job.target_lang
+    job.artifacts_dir = work
+    out = config.output_dir / shared_work.name / job.target_lang
+    job.translation_options = dict(config["translate"])
     vb = (services or Services(config)).voicebox
     translator = build_translator(config["translate"]["provider"],
                                   config["translate"]["model"], voicebox_client=vb,
@@ -87,15 +91,16 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
             save_script(job, work)  # + translations
 
     steps = [
-        ("probe", lambda: extract.run(job, work, dry_run=dry_run,
+        ("probe", lambda: extract.run(job, shared_work, dry_run=dry_run,
                                       cancel=cancel_event, force=force,
                                       duration=teaser_s)),
-        ("separate", lambda: separate.run(job, work, model=config["separate"]["model"],
+        ("separate", lambda: separate.run(job, shared_work, model=config["separate"]["model"],
                                           dry_run=dry_run, force=force)),
         ("transcribe", lambda: transcribe.run(job, work, source=config["transcribe"]["source"],
                                               whisper_model=config["transcribe"]["whisper_model"],
                                               vb=vb, segment_limit=seg_limit,
                                               max_seconds=teaser_s, dry_run=dry_run,
+                                              options={"diarize": config["transcribe"]["diarize"]},
                                               force=force)),
         ("diarize", _diarize),
         ("cast", _ensure_cast),
@@ -117,7 +122,7 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
                                 duration=teaser_s)),
     ]
     total = len(steps)
-    report = RunReport(job, work, dry_run)
+    report = RunReport(job, config.work_dir, dry_run)
     try:
         for i, (name, fn) in enumerate(steps):
             if cancel_event is not None and cancel_event.is_set():

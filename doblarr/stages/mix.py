@@ -13,6 +13,7 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
+from ..artifacts import matches, record, stamp
 from ..ffmpeg import FFmpegError, run_ffmpeg
 from ..models import DubJob
 from .common import Plan, cached, dry, stage, work_stem
@@ -79,7 +80,9 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
     hit = cached(out, job.input_file, force)
     dependencies = [s.audio_clip for s in job.segments]
     dependencies += [p for p in (job.background, job.source_audio) if p]
-    if hit and all(p and cached(out, Path(p)) for p in dependencies):
+    request = {"inputs": [stamp(p) for p in dependencies], "ducking": ducking_ratio,
+               "segments": [[s.index, s.start, s.end] for s in job.segments], "version": 1}
+    if hit and matches([out], request, force):
         return hit
 
     segs = [s for s in job.segments if s.audio_clip and Path(s.audio_clip).exists()]
@@ -138,5 +141,6 @@ def run(job: DubJob, work_dir: Path, ducking_ratio: str = "12:1",
         run_ffmpeg(args + ["-filter_complex", _filter_graph(segs, win_start, dur, None),
                            "-map", "[out]", "-t", str(dur), str(temp)], cancel=cancel)
     temp.replace(out)
+    record([out], request)
     log.info("mix -> %s (%.0fs window, %d lines)", out.name, dur, len(segs))
     return None

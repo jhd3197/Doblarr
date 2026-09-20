@@ -1,9 +1,7 @@
 """Stage 6 — synthesize dubbed audio per segment via voicebox.
 
-v1: single cloned voice. A clean-ish reference clip is pulled from the original
-audio (the longest dialogue segment), a voicebox profile is cloned from it, and
-every line is generated with that profile. Multi-speaker cloning arrives with
-diarization.
+Each speaker has a separately verified profile and reference. Individual clips
+are resumable and keyed by their effective generation request.
 """
 
 from __future__ import annotations
@@ -14,9 +12,12 @@ import logging
 import threading
 from pathlib import Path
 
-from ..clients.voicebox import VoiceboxError
+from ..artifacts import digest, read_json, stamp
+from ..clients.voicebox import GenerationFailed
+from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
 from ..models import DubJob, Speaker
+from ..telemetry import write_json
 from .common import Plan, dry, stage, work_stem
 
 log = logging.getLogger("doblarr.synthesize")
@@ -25,7 +26,9 @@ log = logging.getLogger("doblarr.synthesize")
 def _extract_ref(source_audio: Path, start: float, end: float, dest: Path,
                  cancel: threading.Event | None = None) -> Path:
     """Pull a normalized mono reference clip from the original audio."""
-    dur = max(4.0, min(15.0, end - start))
+    dur = min(15.0, end - start)
+    if dur <= 0:
+        raise ValueError("voice reference must have positive duration")
     dest.parent.mkdir(parents=True, exist_ok=True)
     run_ffmpeg(["-y", "-ss", str(start), "-i", str(source_audio), "-t", str(dur),
                 "-vn", "-ac", "1", "-ar", "16000", "-af", "loudnorm=I=-14",
@@ -55,6 +58,47 @@ def _bad_ref_text(text: str) -> bool:
     return False
 
 
+def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel):
+    assigned = cast.get(spk.label, {}).get("voice")
+    if assigned:
+        spk.voicebox_profile_id = assigned
+    if spk.voicebox_profile_id:
+        return
+    if voice_mode != "clone":
+        raise ValueError(f"assign a preset voice to {spk.label} before synthesis")
+    candidates = [s for s in job.segments if s.speaker == spk.label and s.duration >= 1.5
+                  and not any(t.speaker != spk.label and t.start < s.end and t.end > s.start
+                              for t in job.segments)]
+    candidates.sort(key=lambda s: (4 <= s.duration <= 15, -abs(s.duration - 8)), reverse=True)
+    source = job.vocals if job.vocals and job.vocals.exists() else job.source_audio
+    key = digest({"source": stamp(source), "speaker": spk.label,
+                  "language": job.target_lang, "source_language": job.source_lang,
+                  "script_language": job.script_lang,
+                  "references": [(s.start, s.end, s.text_src) for s in candidates[:5]]})
+    profile_receipt = clips_dir / f"profile-{key[:16]}.json"
+    saved = read_json(profile_receipt)
+    if saved.get("id") and any(v["id"] == saved["id"] for v in vb.list_voices()):
+        spk.voicebox_profile_id = saved["id"]
+        return
+    # Do not reuse name-only profiles: creation may have crashed before a sample was added.
+    for candidate in candidates[:5]:
+        ref = _extract_ref(source, candidate.start, candidate.end,
+                           clips_dir / f"reference-{key[:16]}.wav", cancel)
+        text = candidate.text_src.strip()
+        if job.script_lang != job.source_lang or candidate.duration > 15:
+            text = vb.transcribe(ref, language=job.source_lang).get("text", "").strip()
+        if not text or _bad_ref_text(text):
+            continue
+        pid = vb.create_profile(name=f"{job.input_file.stem}-{key[:16]}",
+                                language=job.target_lang)
+        vb.add_sample(pid, ref, text)
+        write_json(profile_receipt, {"id": pid, "reference": key})
+        spk.reference_clip = ref
+        spk.voicebox_profile_id = pid
+        return
+    raise RuntimeError(f"no clean single-speaker reference for {spk.label}; assign a preset voice")
+
+
 @stage("synthesize")
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         dry_run: bool = False, cancel: threading.Event | None = None,
@@ -77,71 +121,29 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         raise RuntimeError("synthesize needs source audio (extract stage must run first)")
     if not job.speakers:
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
-    spk = next(iter(job.speakers.values()))
-
-    # A saved voice cast wins over cloning: the assigned voicebox profile is used
-    # directly, keeping the voice consistent with the teaser / previous runs.
-    assigned = ((cast or {}).get(spk.label) or {}).get("voice")
-    if assigned and not spk.voicebox_profile_id:
-        spk.voicebox_profile_id = assigned
-        log.info("  using cast voice %s for %s", assigned, spk.label)
-
-    # Clone one voice from the longest segment's original audio. On a resume
-    # (previous run died mid-generation), reuse the profile we already created
-    # instead of cloning a duplicate onto the voicebox server.
-    if voice_mode == "clone" and not spk.voicebox_profile_id:
-        profile_name = f"{job.input_file.stem}-{spk.label}"
-        existing = next((v for v in vb.list_voices() if v.get("name") == profile_name),
-                        None)
-        if existing:
-            spk.voicebox_profile_id = existing["id"]
-            log.info("  reusing existing voice profile %s", profile_name)
-    if voice_mode == "clone" and not spk.voicebox_profile_id:
-        candidates = sorted(job.segments, key=lambda s: s.duration, reverse=True)[:5]
-        # The vocals stem (no music/FX) makes a cleaner cloning reference than
-        # the full mix — and a cleaner reference transcribes without loops.
-        ref_source = (job.vocals if job.vocals and job.vocals.exists()
-                      else job.source_audio)
-        pid = vb.create_profile(name=profile_name, language=job.target_lang)
-        added = False
-        for c in candidates:
-            ref = _extract_ref(ref_source, c.start, c.end,
-                               clips_dir / "reference.wav", cancel=cancel)
-            # The segment's own transcript is the reference text — far more
-            # reliable than re-transcribing the clip (voicebox's transcribe
-            # loops into "X、X、X…" on quiet dialogue, and a runaway reference
-            # text wedges the TTS engine server-side).
-            ref_text = c.text_src.strip()
-            if ((job.script_lang and job.script_lang != job.source_lang)
-                    or not 4.0 <= c.duration <= 15.0):
-                # A translated subtitle is not a transcript of the source voice.
-                # Likewise a cropped/padded sample needs its own matching text.
-                ref_text = vb.transcribe(ref, language=job.source_lang).get("text", "").strip()
-            if not ref_text:
-                continue
-            if _bad_ref_text(ref_text):
-                log.warning("  segment at %.0fs looks like a transcription loop, "
-                            "trying another", c.start)
-                continue
-            try:
-                vb.add_sample(pid, ref, ref_text or "reference")
-                added = True
-                log.info("  cloned voice from %.1fs segment", c.duration)
-                break
-            except VoiceboxError as exc:
-                log.warning("  reference at %.0fs rejected (%s), trying another", c.start, exc)
-        if not added:
-            raise RuntimeError("could not build a usable voice reference from the audio")
-        spk.voicebox_profile_id = pid
+    # A single narrator fallback may come from older script caches.
+    if len(job.speakers) == 1:
+        only = next(iter(job.speakers))
+        for seg in job.segments:
+            seg.speaker = only
+    for seg in job.segments:
+        if seg.speaker not in job.speakers:
+            raise ValueError(f"unknown speaker {seg.speaker} on line {seg.index}")
+    for speaker in job.speakers.values():
+        _resolve_profile(job, speaker, vb, clips_dir, voice_mode, cast or {}, cancel)
 
     # Generate every line. Per-line resume: clips already on disk from a
     # previous (failed/interrupted) run are kept, not regenerated.
     total = len(job.segments)
     for position, seg in enumerate(job.segments, 1):
+        if cancel is not None and cancel.is_set():
+            raise JobCancelled("cancelled before speech generation")
+        spk = job.speakers[seg.speaker]
         dest = clips_dir / f"line_{seg.index:04d}.wav"
         text = seg.text_translated or seg.text_src
         signature = {"text": text, "language": job.target_lang,
-                     "profile": spk.voicebox_profile_id, "engine": engine}
+                     "profile": spk.voicebox_profile_id, "engine": engine,
+                     "revision": (cast or {}).get(seg.speaker, {}).get("revision", "")}
         receipt = dest.with_suffix(".json")
         try:
             saved = json.loads(receipt.read_text()) if receipt.exists() else {}
@@ -151,6 +153,7 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
                 and saved.get("request") == signature
                 and saved.get("sha256") == hashlib.sha256(dest.read_bytes()).hexdigest()):
             seg.audio_clip = dest
+            job.metrics["tts_cache_hits"] = job.metrics.get("tts_cache_hits", 0) + 1
             log.info("  line %d/%d kept (already synthesized)", position, total)
             if progress:
                 progress(position, total, f"line {position}/{total} (cached)")
@@ -159,14 +162,16 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         try:
             vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang,
                                   dest, cancel_event=cancel, **kwargs)
-        except VoiceboxError:
+        except GenerationFailed:
             # One fresh retry: a wedged server-side generation shouldn't kill
             # the whole job. The stuck remote generation is cancelled first so
             # it can't block the queue behind the retry.
+            job.metrics["tts_retries"] = job.metrics.get("tts_retries", 0) + 1
             log.warning("  line %d/%d generation failed — retrying once",
                         position, total)
             vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang,
                                   dest, cancel_event=cancel, **kwargs)
+        job.metrics["tts_generated"] = job.metrics.get("tts_generated", 0) + 1
         receipt.parent.mkdir(parents=True, exist_ok=True)
         temp = receipt.with_suffix(".partial.json")
         temp.write_text(json.dumps({"request": signature,
