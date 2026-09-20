@@ -97,12 +97,12 @@
   .card-meta { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
 
   /* ---- Library poster grid ---- */
-  .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+  .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 20px; }
   .poster-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
     overflow: hidden; display: flex; flex-direction: column; }
   .poster-card:hover { border-color: var(--line-strong); }
-  .poster-img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; display: block;
-    background: var(--color-neutral-200); }
+  .poster-img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; object-position: center;
+    display: block; background: var(--color-neutral-200); }
   .poster-fallback { width: 100%; aspect-ratio: 2 / 3; display: flex; align-items: center;
     justify-content: center; text-align: center; padding: 12px; font-weight: 700;
     font-size: 14px; line-height: 1.35; background: var(--color-neutral-200); color: var(--muted); }
@@ -224,6 +224,9 @@
           </div>
         </div>
 
+        <h3 style="font-size: 18px; margin: 32px 0 14px;">Recent titles</h3>
+        <div id="recentTitles" class="poster-grid" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));"></div>
+
         <h3 style="font-size: 18px; margin: 32px 0 14px;">In progress</h3>
         <div id="inProgress" style="display: flex; flex-direction: column; gap: 12px;">
           <div class="panel" style="padding: 18px 20px;">
@@ -302,12 +305,21 @@
             <button type="button" class="opt" aria-pressed="false" data-filter="partial">partial</button>
             <button type="button" class="opt" aria-pressed="false" data-filter="available">available</button>
           </div>
+          <div class="opts" data-single id="librarySort">
+            <button type="button" class="opt" aria-pressed="true" data-sort="default">Default order</button>
+            <button type="button" class="opt" aria-pressed="false" data-sort="recent">Recently active</button>
+          </div>
           <button type="button" class="btn btn-secondary" style="margin-left: auto;" id="syncLabelsBtn">Sync Plex labels</button>
           <button type="button" class="btn btn-secondary" id="rescanBtn">Rescan sources</button>
         </div>
         <div id="labelStatus" style="font-size:13px;color:var(--muted);margin:-8px 0 16px;min-height:18px;"></div>
         <div id="libraryGrid" class="poster-grid"></div>
       </div>
+    </section>
+
+    <!-- ===== Title (library item detail — a full page, not a popup) ===== -->
+    <section data-view="Title" hidden>
+      <div id="titleRoot" style="padding: 22px 26px 46px; display: flex; flex-direction: column; gap: 18px;"></div>
     </section>
 
     <!-- ===== Dubs ===== -->
@@ -317,6 +329,7 @@
           <button type="button" class="btn btn-secondary" id="pauseQueue">Pause queue</button>
           <button type="button" class="btn btn-secondary" id="clearFinished">Clear finished</button>
           <span class="tag tag-outline" id="pausedTag" hidden>Queue paused</span>
+          <span class="tag tag-outline" id="dryRunTag" hidden>Dry run — jobs are planned only, nothing is written to Plex</span>
           <span class="tag tag-accent" style="margin-left: auto;" id="workerTag">worker idle</span>
         </div>
         <div class="panel" style="padding: 6px 18px 10px;">
@@ -485,20 +498,6 @@
     </div>
   </div>
 
-  <!-- Voice cast editor -->
-  <div id="castModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;">
-    <div class="panel" style="width:min(560px,92vw);padding:22px 24px;max-height:84vh;overflow-y:auto;">
-      <h3 id="castTitle" style="margin:0 0 4px;font-size:18px;">Voice cast</h3>
-      <p style="margin:0 0 14px;font-size:13px;color:var(--muted);">One voice per speaker — reused by teases and the full dub.</p>
-      <div id="castRows"></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;align-items:center;">
-        <span id="castStatus" style="margin-right:auto;font-size:12.5px;color:var(--muted);"></span>
-        <button type="button" class="btn btn-secondary" id="castCancel">Close</button>
-        <button type="button" class="btn btn-primary" id="castSave">Save cast</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Watch a produced dub/tease -->
   <div id="watchModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:100;">
     <div class="panel" style="width:min(860px,94vw);padding:20px 22px;">
@@ -507,31 +506,6 @@
       <p style="margin:12px 0 0;font-size:12.5px;color:var(--muted);">MKV playback depends on browser codecs — if this doesn't play, open the file from the output folder: <code id="watchPath" class="m" style="font-size:12px;user-select:all;"></code></p>
       <div style="display:flex;justify-content:flex-end;margin-top:14px;">
         <button type="button" class="btn btn-secondary" id="watchClose">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Library item detail -->
-  <div id="detailModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;">
-    <div class="panel" style="width:min(720px,94vw);padding:22px 24px;max-height:88vh;overflow-y:auto;">
-      <div style="display:flex;gap:20px;">
-        <div id="detailPoster" style="flex:none;width:180px;"></div>
-        <div style="min-width:0;flex:1;">
-          <h3 id="detailTitle" style="margin:0 0 8px;font-size:20px;line-height:1.25;"></h3>
-          <div id="detailMeta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;"></div>
-          <div id="detailLangs" class="lang-chips" style="margin-bottom:12px;"></div>
-          <div id="detailPath" class="m" style="font-size:12px;color:var(--muted);user-select:all;word-break:break-all;margin-bottom:16px;"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="dtQueue" class="btn btn-secondary" type="button">Queue dub</button>
-            <button id="dtTease" class="btn btn-secondary" type="button">Tease</button>
-            <button id="dtCast" class="btn btn-secondary" type="button">Cast</button>
-          </div>
-        </div>
-      </div>
-      <h4 style="margin:22px 0 4px;font-size:14px;">Jobs for this title</h4>
-      <div id="detailJobs"></div>
-      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
-        <button type="button" class="btn btn-secondary" id="detailClose">Close</button>
       </div>
     </div>
   </div>
@@ -592,7 +566,7 @@ const TABS = [
     { title: "What gets dubbed", desc: "", fields: [
       L("general.target_languages", "Target languages", ["es", "en"], "The languages you want dubs in."),
       B("general.original_languages_only", "Original language must differ", true, "Only process titles whose original language isn't already a target."),
-      B("general.dry_run_default", "Dry run by default", false, "Plan every job and write nothing until you say otherwise.") ] } ] },
+      B("dub.dry_run", "Dry run", true, "On: jobs only plan, nothing is muxed or written to Plex. Turn Off for real output.") ] } ] },
 
   { id: "discovery", title: "Discovery", desc: "How Doblarr finds the titles you can't watch.", groups: [
     { title: "Scanning", desc: "", fields: [
@@ -798,13 +772,18 @@ function setTheme(theme) {
 
 // ---- History API routing (/library, /settings/<tab>) — the server serves
 // index.html for any extensionless non-api path, so refresh/deep-link works.
-const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/settings": "Settings" };
+const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/settings": "Settings", "/title": "Title" };
 const PAGE_TO_PATH = { Overview: "/", Library: "/library", Dubs: "/dubs", Voices: "/voices", Settings: "/settings" };
 
 function routeFromPath() {
-  const parts = location.pathname.toLowerCase().split("/").filter(Boolean);
-  const page = PAGE_PATHS["/" + (parts[0] || "")] || "Overview";  // unknown -> Overview
-  return { page, tab: page === "Settings" ? (parts[1] || null) : null };
+  const parts = location.pathname.split("/").filter(Boolean);
+  const page = PAGE_PATHS["/" + (parts[0] || "").toLowerCase()] || "Overview";  // unknown -> Overview
+  return {
+    page,
+    tab: page === "Settings" ? (parts[1] || null) : null,
+    // Only the first segment is lowercased — the title key keeps its case.
+    titleKey: page === "Title" ? decodeURIComponent(parts.slice(1).join("/")) : null,
+  };
 }
 
 function setPage(page, tab) {
@@ -814,17 +793,45 @@ function setPage(page, tab) {
   applyRoute();
 }
 
+// Stable identity for a library item in the URL: an external id when the
+// source provides one, else the title (+ year) as text.
+function itemKey(item) {
+  if (item.tmdb_id) return "tmdb-" + item.tmdb_id;
+  if (item.tvdb_id) return "tvdb-" + item.tvdb_id;
+  return "t-" + item.title + (item.year ? "-" + item.year : "");
+}
+
+function findItemByKey(key) {
+  return library.items.find(i => itemKey(i) === key) || null;
+}
+
+function goTitle(item, dtab) {
+  state.titleKey = itemKey(item);
+  if (dtab) titleState.dtab = dtab;
+  titleState.item = item;
+  titleState.plan = null;  // re-fetched for the new title
+  const target = "/title/" + encodeURIComponent(state.titleKey);
+  if (location.pathname !== target) history.pushState({}, "", target);
+  applyRoute();
+}
+
 function applyRoute() {
-  const { page, tab } = routeFromPath();
+  const { page, tab, titleKey } = routeFromPath();
   state.page = page;
   document.title = "Doblarr — " + page;
   document.querySelectorAll("[data-view]").forEach(s =>
     s.hidden = s.getAttribute("data-view") !== page);
   document.querySelectorAll("#nav .navitem").forEach(n =>
-    n.setAttribute("aria-current", n.dataset.page === page ? "page" : "false"));
+    n.setAttribute("aria-current",
+      (n.dataset.page === page || (page === "Title" && n.dataset.page === "Library")) ? "page" : "false"));
   if (page === "Settings") {
     if (tab) state.tab = tab;
     if (state.config) renderSettings(); else loadConfig();
+  }
+  if (page === "Title") {
+    state.titleKey = titleKey;
+    if (!state.config) loadConfig();  // inherited plan values come from here
+    if (!library.loaded) loadLibrary().then(renderTitle); else renderTitle();
   }
   if (page === "Library" && !library.loaded) loadLibrary();
   if (page === "Overview") loadOverview();
@@ -833,7 +840,7 @@ function applyRoute() {
 window.addEventListener("popstate", applyRoute);  // back/forward
 
 // ---- Library (real data from /api/library) ----
-const library = { items: [], filter: "all", loaded: false };
+const library = { items: [], filter: "all", sort: "default", activity: {}, loaded: false };
 
 function statusTag(label) {
   const cls = label === "needs-dub" ? "tag-accent"
@@ -867,6 +874,8 @@ function renderLibrary() {
   const grid = document.getElementById("libraryGrid");
   const rows = library.items.filter(i =>
     (library.filter === "all" || i.status === library.filter) && matchesSearch(i.title));
+  if (library.sort === "recent")  // titles with job activity first, newest on top
+    rows.sort((a, b) => (library.activity[b.title] || "").localeCompare(library.activity[a.title] || ""));
   if (!rows.length) {
     grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">No titles match.</div>`;
     return;
@@ -901,15 +910,30 @@ function renderLibrary() {
   }).join("");
 }
 
+async function fetchPlan(item) {
+  try {
+    const res = await fetch("api/plan?" + castParams(item));
+    const data = await res.json();
+    return (res.ok && data.plan) || {};
+  } catch (e) { return {}; }
+}
+
 async function queueDub(item, btn, kind = "full") {
   btn.disabled = true; btn.textContent = kind === "tease" ? "Teasing…" : "Queuing…";
   try {
+    // The title's dub plan rides along: target_lang picks the job's language,
+    // the rest are per-title config overrides the worker merges in.
+    const plan = await fetchPlan(item);
+    const overrides = { ...plan };
+    const target = overrides.target_lang;
+    delete overrides.target_lang;
     const res = await fetch("api/jobs", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: item.title, source: item.source, source_lang: item.original,
-        target_lang: (library.targets && library.targets[0]) || "en", path: item.path,
+        target_lang: target || (library.targets && library.targets[0]) || "en", path: item.path,
         kind,
+        overrides: Object.keys(overrides).length ? overrides : undefined,
       }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -934,6 +958,16 @@ async function loadLibrary() {
     library.targets = data.target_languages || ["en"];
     library.loaded = true;
     renderLibrary();
+    // Job activity per title, for the "Recently active" sort.
+    try {
+      const jr = await fetch("api/jobs");
+      (await jr.json()).jobs?.forEach(j => {
+        const t = j.updated_at || "";
+        if (!library.activity[j.title] || library.activity[j.title] < t)
+          library.activity[j.title] = t;
+      });
+      if (library.sort === "recent") renderLibrary();
+    } catch (e) {}
   } catch (err) {
     library.loaded = false;
     grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? ${escapeHtml(err.message)}</div>`;
@@ -995,8 +1029,14 @@ const jobs = { pollTimer: null };
 
 function jobStatusTag(s) {
   const cls = s === "running" ? "tag-accent"
-            : s === "failed" || s === "cancelled" ? "tag-outline" : "tag-neutral";
+            : s === "failed" || s === "cancelled" || s === "planned" ? "tag-outline" : "tag-neutral";
   return `<span class="tag ${cls}">${s}</span>`;
+}
+
+function updateDryRunTag() {
+  const t = document.getElementById("dryRunTag");
+  if (!t) return;
+  t.hidden = !(state.config && state.config.dub && state.config.dub.dry_run);
 }
 
 function renderJobs(data) {
@@ -1029,19 +1069,21 @@ function renderJobs(data) {
     const watch = j.has_file
       ? `<button type="button" class="btn btn-ghost job-watch" data-id="${j.id}">Watch</button>` : "";
     const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch;
+    const st = (j.status === "done" && (j.message || "").startsWith("planned")) ? "planned" : j.status;
     return `
       <tr>
         <td style="font-weight:600;">${escapeHtml(j.title)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}</td>
         <td class="m" style="font-size:13px;">${track}</td>
         <td>${stage}</td>
         <td><div class="bar"><span style="width:${j.progress || 0}%;${barColor}"></span></div></td>
-        <td>${jobStatusTag(j.status)}</td>
+        <td>${jobStatusTag(st)}</td>
         <td>${action}</td>
       </tr>`;
   }).join("");
 }
 
 async function loadJobs() {
+  if (!state.config) loadConfig().then(updateDryRunTag); else updateDryRunTag();
   try {
     const res = await fetch("api/jobs");
     const data = await res.json();
@@ -1141,12 +1183,49 @@ function renderActivity(list) {
     </tr>`).join("");
 }
 
+// Titles touched recently (queued, teased, finished) as poster cards that
+// jump straight to their title page — no searching for the same show again.
+async function renderRecentTitles(jobList) {
+  const box = document.getElementById("recentTitles");
+  if (!box) return;
+  const seen = new Set();
+  const titles = [];
+  for (const j of [...jobList].sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))) {
+    if (!seen.has(j.title)) { seen.add(j.title); titles.push(j.title); }
+    if (titles.length >= 8) break;
+  }
+  if (!titles.length) {
+    box.innerHTML = `<div style="color:var(--muted);font-size:13px;">Nothing yet — queue a dub from the Library.</div>`;
+    return;
+  }
+  if (!library.loaded) await loadLibrary();
+  box.innerHTML = "";
+  titles.forEach(t => {
+    const item = library.items.find(i => i.title === t);
+    if (!item) return;
+    const card = document.createElement("div");
+    card.className = "poster-card";
+    card.style.cursor = "pointer";
+    card.innerHTML = (item.poster
+      ? `<img class="poster-img" loading="lazy" src="${escapeHtml(item.poster)}" alt=""
+              onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
+         <div class="poster-fallback" hidden>${escapeHtml(item.title)}</div>`
+      : `<div class="poster-fallback">${escapeHtml(item.title)}</div>`)
+      + `<div class="poster-body"><div style="font-weight:600;font-size:12.5px;line-height:1.3;">${escapeHtml(item.title)}</div></div>`;
+    card.addEventListener("click", () => goTitle(item));
+    box.append(card);
+  });
+  if (!box.children.length)
+    box.innerHTML = `<div style="color:var(--muted);font-size:13px;">Recent jobs are for titles no longer in the scan.</div>`;
+}
+
 async function loadOverview() {
   try {
     const jr = await fetch("api/jobs"); const d = await jr.json();
     setOverviewJobStats(d.counts || {});
     renderInProgress(d.jobs || []);
     renderActivity(d.jobs || []);
+    renderRecentTitles(d.jobs || []);
   } catch (e) {}
   try {
     const sr = await fetch("api/status"); const st = await sr.json();
@@ -1237,6 +1316,7 @@ document.querySelectorAll(".opts[data-single]").forEach(group => {
     group.querySelectorAll(".opt").forEach(o => o.setAttribute("aria-pressed", "false"));
     btn.setAttribute("aria-pressed", "true");
     if (btn.dataset.filter) { library.filter = btn.dataset.filter; renderLibrary(); }
+    if (btn.dataset.sort) { library.sort = btn.dataset.sort; renderLibrary(); }
   });
 });
 document.getElementById("rescanBtn").addEventListener("click", loadLibrary);
@@ -1273,14 +1353,14 @@ document.getElementById("libraryGrid").addEventListener("click", e => {
   if (btn) {
     const item = library.rendered[Number(btn.dataset.idx)];
     if (!item) return;
-    if (btn.classList.contains("cast-edit")) openCast(item);
+    if (btn.classList.contains("cast-edit")) goTitle(item, "voices");
     else queueDub(item, btn, btn.classList.contains("tease-dub") ? "tease" : "full");
     return;
   }
   const card = e.target.closest(".poster-card");
   if (card) {
     const item = library.rendered[Number(card.dataset.idx)];
-    if (item) openDetail(item);
+    if (item) goTitle(item);
   }
 });
 document.getElementById("clearFinished").addEventListener("click", async () => {
@@ -1367,8 +1447,313 @@ document.getElementById("ndQueue").addEventListener("click", async () => {
   setPage("Dubs");
 });
 
+// ---- Title page (full-page item detail, modelled on the design demo) ----
+const titleState = { item: null, dtab: "plan", plan: null, planStatus: "" };
+const TITLE_TABS = [["plan", "Dub plan"], ["voices", "Speakers & voices"], ["jobs", "Jobs"], ["meta", "Metadata"]];
+
+// Per-title dub plan — real config keys, so the overrides genuinely reach the
+// pipeline (the worker deep-merges them over the global config for that job).
+const PLAN_FIELDS = [
+  { k: "target_lang", l: "Dub into", t: "choice", dyn: true,
+    h: "Applied when a dub is queued for this title." },
+  { k: "dub.voice_mode", l: "Voice approach", t: "choice", o: ["clone", "preset"],
+    h: "Cloning keeps each character on their own voice across episodes." },
+  { k: "voicebox.default_engine", l: "Speech engine", t: "choice",
+    o: ["chatterbox-multilingual", "qwen3-tts"] },
+  { k: "transcribe.whisper_model", l: "Whisper model", t: "text" },
+  { k: "transcribe.diarize", l: "Speaker diarization", t: "bool" },
+  { k: "dub.duration_match", l: "Fit lines to the original timing", t: "bool",
+    h: "Stretch or pad lines so they sit inside the original gaps." },
+  { k: "dub.ducking_ratio", l: "Ducking ratio", t: "text",
+    h: "How far the original bed ducks under the dubbed dialogue." },
+  { k: "dub.track_name_template", l: "New track name", t: "text" },
+  { k: "dub.dry_run", l: "Dry run", t: "bool", h: "Plan the job and write nothing." },
+];
+
+// Shows come from Sonarr with a series folder; films from Radarr with a file.
+function isShow(item) { return !/^radarr/i.test(item.source || ""); }
+
+function titlePosterHtml(item) {
+  return item.poster
+    ? `<img class="poster-img" style="border-radius:10px;" src="${escapeHtml(item.poster)}" alt=""
+            onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
+       <div class="poster-fallback" hidden style="border-radius:10px;">${escapeHtml(item.title)}</div>`
+    : `<div class="poster-fallback" style="border-radius:10px;">${escapeHtml(item.title)}</div>`;
+}
+
+function planValue(f) {
+  if (titleState.plan && titleState.plan[f.k] !== undefined) return titleState.plan[f.k];
+  if (f.dyn) return (library.targets && library.targets[0]) || "en";
+  const c = cfgGet(f.k);
+  return c === undefined || c === null ? "" : c;
+}
+
+function renderPlanField(f) {
+  const over = !!(titleState.plan && titleState.plan[f.k] !== undefined);
+  const v = planValue(f);
+  const row = el("div", { class: "frow" });
+  const left = el("div", {}, el("div", { class: "flabel" }, f.l));
+  if (over) {
+    left.append(el("div", { style: "margin-top: 5px;" },
+      el("span", { class: "tag tag-accent" }, "Overridden")));
+  } else {
+    left.append(el("div", { style: "margin-top: 5px; font-size: 12px; color: var(--muted);" },
+      "Inherited from Settings"));
+  }
+  row.append(left);
+
+  const right = el("div", {});
+  if (f.t === "text") {
+    right.append(el("input", {
+      class: "input m", type: "text", value: v, style: "max-width: 420px;",
+      onchange: e => setPlanValue(f.k, e.target.value),
+    }));
+  } else {
+    const opts = el("div", { class: "opts" });
+    const options = f.t === "bool" ? ["On", "Off"] : (f.dyn ? (library.targets || ["en"]) : f.o);
+    options.forEach(o => {
+      const on = f.t === "bool" ? ((v ? "On" : "Off") === o) : (String(v) === o);
+      opts.append(el("button", {
+        type: "button", class: "opt", "aria-pressed": on ? "true" : "false",
+        onclick: () => setPlanValue(f.k, f.t === "bool" ? o === "On" : o),
+      }, o));
+    });
+    right.append(opts);
+  }
+  if (f.h) right.append(el("p", { class: "hint" }, f.h));
+  row.append(right);
+  return row;
+}
+
+function setPlanValue(key, value) {
+  titleState.plan = { ...(titleState.plan || {}), [key]: value };
+  renderTitle();   // reflect the override immediately
+  savePlan();
+}
+
+async function savePlan() {
+  const item = titleState.item;
+  if (!item) return;
+  titleState.planStatus = "Saving…";
+  updatePlanStatus();
+  try {
+    const body = { title: item.title, plan: titleState.plan || {} };
+    if (item.path) body.path = item.path;
+    else if (item.tmdb_id) body.tmdb_id = item.tmdb_id;
+    else if (item.tvdb_id) body.tvdb_id = item.tvdb_id;
+    const res = await fetch("api/plan", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    titleState.planStatus = "Saved ✓";
+  } catch (err) {
+    titleState.planStatus = "Save failed: " + err.message;
+  }
+  updatePlanStatus();
+}
+
+function updatePlanStatus() {
+  const n = document.getElementById("planStatus");
+  if (n) n.textContent = titleState.planStatus;
+}
+
+function renderTitle() {
+  const root = document.getElementById("titleRoot");
+  if (!root) return;
+  const item = titleState.item || findItemByKey(state.titleKey || "");
+  if (!item) {
+    root.innerHTML = library.loaded
+      ? `<div class="panel" style="padding:22px 24px;color:var(--muted);">This title isn't in the current scan.
+           <button type="button" class="btn btn-ghost" id="titleBack">← Library</button></div>`
+      : `<div style="padding:22px 10px;color:var(--muted);">Loading…</div>`;
+    const back = document.getElementById("titleBack");
+    if (back) back.addEventListener("click", () => setPage("Library"));
+    return;
+  }
+  titleState.item = item;
+  const show = isShow(item);
+  const target = (titleState.plan && titleState.plan.target_lang)
+    || (library.targets && library.targets[0]) || "en";
+  const langs = (item.audio_langs && item.audio_langs.length)
+    ? item.audio_langs.join(" · ") : (item.existing_audio || item.original);
+  const statHead = 'margin:0;font-size:11.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);';
+  const statVal = 'margin:3px 0 0;font-size:14px;font-weight:600;';
+  root.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <button type="button" class="btn btn-ghost" id="titleBack">← Library</button>
+      <span class="m" style="font-size:12.5px;color:var(--muted);user-select:all;word-break:break-all;">${escapeHtml(item.path || "")}</span>
+      <span style="margin-left:auto;display:flex;gap:6px;">
+        ${statusTag(item.label)}
+        <span class="tag tag-neutral">${escapeHtml(item.source)}</span>
+      </span>
+    </div>
+    <div class="panel" style="padding:20px;display:grid;grid-template-columns:180px minmax(0,1fr);gap:24px;">
+      <div style="width:180px;">${titlePosterHtml(item)}</div>
+      <div style="min-width:0;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+          <div style="min-width:0;">
+            <h2 style="font-size:27px;margin:0;letter-spacing:-0.015em;">${escapeHtml(item.title)}${item.year ? ` <span style="font-weight:500;color:var(--muted);">(${item.year})</span>` : ""}</h2>
+            <p class="m" style="margin:5px 0 0;font-size:12.5px;color:var(--muted);">${show ? "Series" : "Film"} · ${escapeHtml(item.original)} · ${escapeHtml(langs)}</p>
+          </div>
+          <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary" id="tpTease">Preview a tease</button>
+            <button type="button" class="btn btn-primary" id="tpQueue" style="color:#fff;">Queue dub</button>
+          </div>
+        </div>
+        <p style="margin:0;font-size:12.5px;color:var(--muted);">${show
+          ? "Queueing sends the series folder — every episode file under it gets the AI track."
+          : "Queueing sends this film's file — the dub is muxed in as an extra audio track."}</p>
+        <div style="display:flex;gap:26px;flex-wrap:wrap;padding-top:4px;">
+          <div><p style="${statHead}">Dub direction</p><p class="m" style="${statVal}">${escapeHtml(item.original)} → ${escapeHtml(target)}</p></div>
+          <div><p style="${statHead}">Audio tracks</p><p class="m" style="${statVal}">${escapeHtml(langs)}</p></div>
+          <div><p style="${statHead}">Jobs</p><p class="m" id="tpStatJobs" style="${statVal}">—</p></div>
+          <div><p style="${statHead}">Voices assigned</p><p class="m" id="tpStatVoices" style="${statVal}">—</p></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${TITLE_TABS.map(([k, t]) => `<button type="button" class="tab" data-dtab="${k}" aria-current="${titleState.dtab === k ? "page" : "false"}">${t}</button>`).join("")}
+    </div>
+    <div id="titleTabBody"></div>`;
+  document.getElementById("titleBack").addEventListener("click", () => setPage("Library"));
+  document.getElementById("tpQueue").addEventListener("click", e => queueDub(item, e.currentTarget, "full"));
+  document.getElementById("tpTease").addEventListener("click", e => queueDub(item, e.currentTarget, "tease"));
+  root.querySelectorAll("[data-dtab]").forEach(b =>
+    b.addEventListener("click", () => { titleState.dtab = b.dataset.dtab; renderTitle(); }));
+  // Hero stats + the plan load lazily; the plan re-renders once it arrives.
+  if (!titleState.plan) {
+    fetchPlan(item).then(p => {
+      if (titleState.item !== item || state.page !== "Title") return;
+      titleState.plan = p;
+      renderTitle();
+    });
+  }
+  fetch("api/jobs").then(r => r.json()).then(data => {
+    const n = document.getElementById("tpStatJobs");
+    if (n && titleState.item === item) n.textContent = String(jobsFor(item, data.jobs || []).length);
+  }).catch(() => {});
+  fetch("api/cast?" + castParams(item)).then(r => r.json()).then(data => {
+    const cast = data.cast || [];
+    const n = document.getElementById("tpStatVoices");
+    if (n && titleState.item === item)
+      n.textContent = cast.length ? `${cast.filter(e => e.voice).length} / ${cast.length}` : "0";
+  }).catch(() => {});
+  renderTitleTab();
+}
+
+function renderTitleTab() {
+  const body = document.getElementById("titleTabBody");
+  if (!body || !titleState.item) return;
+  const item = titleState.item;
+  if (titleState.dtab === "plan") {
+    body.innerHTML = `
+      <div class="panel" style="padding:20px 24px 22px;">
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
+          <h3 style="font-size:17px;margin:0;">Dub plan for this title</h3>
+          <p style="margin:0;font-size:13px;color:var(--muted);">Anything you change here overrides your global settings for ${escapeHtml(item.title)} only.</p>
+          <span id="planStatus" style="font-size:12.5px;color:var(--muted);">${escapeHtml(titleState.planStatus)}</span>
+          <button type="button" class="btn btn-ghost" id="planReset" style="margin-left:auto;">Reset to global</button>
+        </div>
+        <div id="planFields" style="margin-top:10px;"></div>
+      </div>`;
+    document.getElementById("planReset").addEventListener("click", () => {
+      titleState.plan = {};
+      renderTitle();
+      savePlan();
+    });
+    const box = document.getElementById("planFields");
+    if (!titleState.plan) box.innerHTML = `<p style="color:var(--muted);font-size:13px;">Loading plan…</p>`;
+    else box.replaceChildren(...PLAN_FIELDS.map(renderPlanField));
+    return;
+  }
+  if (titleState.dtab === "voices") {
+    body.innerHTML = `
+      <div class="panel" style="padding:20px 24px 22px;">
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
+          <h3 style="font-size:17px;margin:0;">Speakers and voices</h3>
+          <p style="margin:0;font-size:13px;color:var(--muted);">One voice per speaker — reused by teases and the full dub. Run a tease to auto-assign by archetype, then adjust here.</p>
+        </div>
+        <div id="titleCastRows" style="margin-top:12px;"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;align-items:center;">
+          <span id="titleCastStatus" style="margin-right:auto;font-size:12.5px;color:var(--muted);"></span>
+          <button type="button" class="btn btn-primary" id="titleCastSave">Save cast</button>
+        </div>
+      </div>`;
+    document.getElementById("titleCastSave").addEventListener("click", saveCast);
+    openCast(item);
+    return;
+  }
+  if (titleState.dtab === "jobs") {
+    body.innerHTML = `
+      <div class="panel" style="padding:6px 18px 10px;">
+        <div id="titleJobs"><p style="color:var(--muted);font-size:13px;padding:12px 4px;">Loading…</p></div>
+      </div>`;
+    fetch("api/jobs").then(r => r.json()).then(data => {
+      if (state.page === "Title" && titleState.dtab === "jobs")
+        renderTitleJobs(jobsFor(item, data.jobs || []));
+    }).catch(() => {
+      const n = document.getElementById("titleJobs");
+      if (n) n.innerHTML = `<p style="color:var(--muted);font-size:13px;padding:12px 4px;">Jobs unavailable.</p>`;
+    });
+    return;
+  }
+  // meta
+  const show = isShow(item);
+  const langs = (item.audio_langs && item.audio_langs.length)
+    ? item.audio_langs.join(" · ") : (item.existing_audio || item.original);
+  const facts = [
+    ["Type", show ? "Series (per-episode files)" : "Film (single file)"],
+    ["Source", item.source],
+    ["Year", item.year || "—"],
+    ["Original language", item.original],
+    ["Audio tracks present", langs],
+    ["Target languages", (library.targets || []).join(", ") || "—"],
+    ["Plex label", item.label],
+    ["Auto-dub", item.auto_dub ? "On" : "Off"],
+    ["Path", item.path || "—"],
+    ["TMDB id", item.tmdb_id || "—"],
+    ["TVDB id", item.tvdb_id || "—"],
+  ];
+  body.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="panel" style="padding:20px 24px 22px;">
+        <h3 style="font-size:17px;margin:0 0 2px;">Matched metadata</h3>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--muted);">Read from ${escapeHtml(item.source)} — used to pick the source language and the voice profile.</p>
+        ${facts.map(([k, v]) => `
+          <div class="frow" style="grid-template-columns:190px minmax(0,1fr);">
+            <div class="flabel" style="font-weight:500;color:var(--muted);">${escapeHtml(k)}</div>
+            <div class="m" style="font-size:13px;padding-top:8px;word-break:break-all;user-select:all;">${escapeHtml(String(v))}</div>
+          </div>`).join("")}
+      </div>
+      <div class="panel" style="padding:20px 24px 22px;">
+        <h3 style="font-size:17px;margin:0 0 10px;">Audio languages</h3>
+        <div class="lang-chips">${langChipsHtml(item)}</div>
+        <p style="margin:12px 0 0;font-size:12.5px;color:var(--muted);">Dashed chips are target languages with no audio track yet — that's what a dub adds.</p>
+      </div>
+    </div>`;
+}
+
+function renderTitleJobs(list) {
+  const box = document.getElementById("titleJobs");
+  if (!box) return;
+  if (!list.length) {
+    box.innerHTML = `<p style="color:var(--muted);font-size:13px;padding:12px 4px;">No jobs for this title yet.</p>`;
+    return;
+  }
+  box.innerHTML = list.slice(0, 10).map(j => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);font-size:13px;">
+      <span class="m" style="color:var(--muted);font-size:12px;">${escapeHtml((j.created_at || "").slice(5, 16))}</span>
+      ${jobStatusTag(j.status)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}
+      <span style="color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(j.message || j.stage || "")}</span>
+      ${j.has_file ? `<button type="button" class="btn btn-ghost detail-watch" data-id="${j.id}" style="margin-left:auto;">Watch</button>` : ""}
+    </div>`).join("");
+  box.querySelectorAll(".detail-watch").forEach(b =>
+    b.addEventListener("click", () => openWatch(b.dataset.id, { jobs: list })));
+}
+
 // ---- Voice cast editor (per-title, shared by teases and full dubs) ----
-const castModal = document.getElementById("castModal");
 const castState = { item: null, cast: [], voices: null };
 
 function castParams(item) {
@@ -1381,7 +1766,8 @@ function castParams(item) {
 }
 
 function renderCastRows() {
-  const box = document.getElementById("castRows");
+  const box = document.getElementById("titleCastRows");
+  if (!box) return;
   if (!castState.cast.length) {
     box.innerHTML = `<p style="color:var(--muted);font-size:13px;">No cast yet — run a Tease to auto-assign voices by archetype, then adjust here.</p>`;
     return;
@@ -1405,10 +1791,8 @@ function renderCastRows() {
 
 async function openCast(item) {
   castState.item = item;
-  document.getElementById("castTitle").textContent = `Voice cast — ${item.title}`;
-  const status = document.getElementById("castStatus");
-  status.textContent = "";
-  castModal.hidden = false;
+  const status = document.getElementById("titleCastStatus");
+  if (status) status.textContent = "";
   try {
     const fetches = [fetch("api/cast?" + castParams(item))];
     if (!castState.voices) fetches.push(fetch("api/voices"));
@@ -1417,15 +1801,19 @@ async function openCast(item) {
     if (vr) castState.voices = (await vr.json()).voices || [];
   } catch (e) {
     castState.cast = [];
-    status.textContent = "Cast unavailable — is the API reachable?";
+    if (status) status.textContent = "Cast unavailable — is the API reachable?";
   }
   renderCastRows();
+  const stat = document.getElementById("tpStatVoices");
+  if (stat && titleState.item === item)
+    stat.textContent = castState.cast.length
+      ? `${castState.cast.filter(e => e.voice).length} / ${castState.cast.length}` : "0";
 }
 
 async function saveCast() {
-  const status = document.getElementById("castStatus");
+  const status = document.getElementById("titleCastStatus");
   const item = castState.item;
-  if (!item) return;
+  if (!item || !status) return;
   const body = { title: item.title, cast: castState.cast };
   if (item.path) body.path = item.path;
   else if (item.tmdb_id) body.tmdb_id = item.tmdb_id;
@@ -1444,14 +1832,7 @@ async function saveCast() {
   }
 }
 
-document.getElementById("castSave").addEventListener("click", saveCast);
-document.getElementById("castCancel").addEventListener("click", () => { castModal.hidden = true; });
-castModal.addEventListener("click", e => { if (e.target === castModal) castModal.hidden = true; });
-
-// ---- Library item detail modal ----
-const detailModal = document.getElementById("detailModal");
-let detailItem = null;
-
+// ---- Jobs that share a library title (used by the title page) ----
 function jobsFor(item, jobs) {
   const norm = p => (p || "").replace(/\//g, "\\").toLowerCase();
   const ip = norm(item.path);
@@ -1464,64 +1845,10 @@ function jobsFor(item, jobs) {
   });
 }
 
-function renderDetailJobs(list) {
-  const box = document.getElementById("detailJobs");
-  if (!list.length) {
-    box.innerHTML = `<p style="color:var(--muted);font-size:13px;">No jobs for this title yet.</p>`;
-    return;
-  }
-  box.innerHTML = list.slice(0, 6).map(j => `
-    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px;">
-      <span class="m" style="color:var(--muted);font-size:12px;">${escapeHtml((j.created_at || "").slice(5, 16))}</span>
-      ${jobStatusTag(j.status)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}
-      <span style="color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(j.message || j.stage || "")}</span>
-      ${j.has_file ? `<button type="button" class="btn btn-ghost detail-watch" data-id="${j.id}" style="margin-left:auto;">Watch</button>` : ""}
-    </div>`).join("");
-  box.querySelectorAll(".detail-watch").forEach(b =>
-    b.addEventListener("click", () => {
-      detailModal.hidden = true;  // watch modal sits under this one in the DOM
-      openWatch(b.dataset.id, { jobs: list });
-    }));
-}
-
-async function openDetail(item) {
-  detailItem = item;
-  document.getElementById("detailTitle").innerHTML =
-    `${escapeHtml(item.title)}${item.year ? ` <span class="m" style="color:var(--muted);font-size:14px;">${item.year}</span>` : ""}`;
-  document.getElementById("detailMeta").innerHTML =
-    `<span class="tag tag-neutral">${escapeHtml(item.source)}</span> ${statusTag(item.label)}`;
-  document.getElementById("detailLangs").innerHTML = langChipsHtml(item);
-  document.getElementById("detailPath").textContent = item.path || "";
-  document.getElementById("detailPoster").innerHTML = item.poster
-    ? `<img src="${escapeHtml(item.poster)}" alt="" style="width:100%;border-radius:10px;"
-            onerror="this.onerror=null;this.hidden=true;this.nextElementSibling.hidden=false">
-       <div class="poster-fallback" hidden style="border-radius:10px;">${escapeHtml(item.title)}</div>`
-    : `<div class="poster-fallback" style="border-radius:10px;">${escapeHtml(item.title)}</div>`;
-  document.getElementById("dtQueue").onclick = e => queueDub(item, e.currentTarget, "full");
-  document.getElementById("dtTease").onclick = e => queueDub(item, e.currentTarget, "tease");
-  document.getElementById("dtCast").onclick = () => {
-    detailModal.hidden = true;  // cast modal sits under this one in the DOM
-    openCast(item);
-  };
-  detailModal.hidden = false;
-  renderDetailJobs([]);
-  try {
-    const res = await fetch("api/jobs");
-    const data = await res.json();
-    if (detailModal.hidden) return;  // closed while loading
-    renderDetailJobs(jobsFor(item, data.jobs || []));
-  } catch (e) {}
-}
-
-document.getElementById("detailClose").addEventListener("click", () => { detailModal.hidden = true; });
-detailModal.addEventListener("click", e => { if (e.target === detailModal) detailModal.hidden = true; });
-
 // Esc closes whichever modal is open.
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  if (!detailModal.hidden) detailModal.hidden = true;
-  else if (!watchModal.hidden) closeWatch();
-  else if (!castModal.hidden) castModal.hidden = true;
+  if (!watchModal.hidden) closeWatch();
   else if (!newDubModal.hidden) closeNewDub();
 });
 

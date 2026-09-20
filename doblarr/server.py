@@ -56,6 +56,7 @@ class JobCreateIn(BaseModel):
     path: str | None = None
     kind: Literal["full", "tease"] = "full"
     force: bool = False  # re-run every stage, ignoring cached artifacts
+    overrides: dict[str, Any] | None = None  # per-title config overrides
 
 
 class CastEntryIn(BaseModel):
@@ -80,6 +81,15 @@ class CastPutIn(BaseModel):
     tvdb_id: int | None = None
     title: str = ""
     cast: list[CastEntryIn]
+
+
+class PlanPutIn(BaseModel):
+    key: str | None = None       # explicit title key, or computed from the rest
+    path: str | None = None
+    tmdb_id: int | None = None
+    tvdb_id: int | None = None
+    title: str = ""
+    plan: dict[str, Any] = {}    # per-title config overrides ({} = inherit global)
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -412,6 +422,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             input_file=body.path,
             kind=body.kind,
             force=body.force,
+            overrides=body.overrides,
         )
         bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
         return {"ok": True, "job": asdict(job)}
@@ -477,6 +488,30 @@ def create_app(config: Config | None = None) -> FastAPI:
         db.save_cast(k, body.title, [e.model_dump() for e in body.cast])
         bus.publish("cast", {"type": "updated", "key": k})
         return {"ok": True, "key": k, "saved": len(body.cast)}
+
+    # -- per-title dub plans ------------------------------------------------
+    @api.get("/api/plan")
+    def get_plan(key: str | None = None, title: str | None = None,
+                 path: str | None = None, tmdb_id: int | None = None,
+                 tvdb_id: int | None = None):
+        """Per-title config overrides; the key is computed like the cast key."""
+        if key:
+            k = key
+        elif path or title or tmdb_id or tvdb_id:
+            k = cast_key(title=title, path=path, tmdb_id=tmdb_id, tvdb_id=tvdb_id)
+        else:
+            raise ConfigError("plan lookup needs key / path / tmdb_id / tvdb_id / title")
+        saved = db.load_plan(k)
+        return {"key": k, "title": (saved or {}).get("title", ""),
+                "plan": (saved or {}).get("plan", {})}
+
+    @api.put("/api/plan")
+    def put_plan(body: PlanPutIn):
+        k = body.key or cast_key(title=body.title, path=body.path,
+                                 tmdb_id=body.tmdb_id, tvdb_id=body.tvdb_id)
+        db.save_plan(k, body.title, body.plan)
+        bus.publish("plan", {"type": "updated", "key": k})
+        return {"ok": True, "key": k, "overrides": len(body.plan)}
 
     app.include_router(api)
 
