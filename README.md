@@ -51,6 +51,28 @@ cp config.example.yaml config.yaml        # set Radarr/Sonarr URLs + API keys
 python -m doblarr serve                    # http://127.0.0.1:6363
 ```
 
+### AI translation
+
+Prompture is the shared AI translation layer for every real translation provider.
+It handles structured JSON generation and provider capabilities; Doblarr validates
+nonempty translated text and an exact one-to-one mapping of segment IDs before TTS.
+Malformed responses get two attempts, followed by individual-line attempts for a
+failed batch. Exhausted attempts fail the job rather than substitute source dialogue.
+Character budgets remain approximate dubbing guidance, not a guarantee of audio duration.
+
+Existing configuration remains supported:
+
+- `translate.provider: claude` uses Prompture's Claude driver with the existing
+  model ID and `ANTHROPIC_API_KEY` (or Prompture's `CLAUDE_API_KEY`).
+- `translate.provider: prompture` accepts `provider/model` and an optional endpoint.
+- `translate.provider: voicebox` adapts the service's local LLM through the same
+  Prompture schema and validation pipeline.
+- `translate.provider: passthrough` is an explicit stub for development.
+
+Prompture is installed with the core dependencies. Translation loads it lazily,
+so dry runs do not initialize an AI provider. Parsed-response usage metadata is
+available on the translator's `last_usage`; Voicebox does not report token usage.
+
 ### API authentication
 
 Set `web.api_key` in `config.yaml` to lock the API: every `/api/*` route (except
@@ -173,7 +195,7 @@ doblarr/
     sonarr.py       # Sonarr API (shows)
     plex.py         # Plex API (labels; token in header)
     voicebox.py     # voicebox HTTP client (transcribe, profiles, generate, audio)
-    translator.py   # Claude / passthrough translation
+    translator.py   # shared Prompture structured translation
   stages/           # one module per pipeline step (see table above)
 web/index.html      # application shell
 web/styles.css      # shared styles

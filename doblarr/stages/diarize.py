@@ -72,6 +72,10 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan 
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
         return dry(f"would run pyannote diarization on {job.vocals or job.source_audio}")
 
+    if job.speakers:
+        log.info("diarize: speakers already assigned (restored script) — skipping")
+        return None
+
     token = os.environ.get("HF_TOKEN")
     if not token:
         _single_narrator(job, "no HF_TOKEN (HuggingFace) in the environment")

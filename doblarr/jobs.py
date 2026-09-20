@@ -19,6 +19,7 @@ import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from .clients.plex import PlexError
 from .errors import ConfigError, JobCancelled
@@ -253,10 +254,21 @@ class Worker(threading.Thread):
             self._process(job)
 
     def _process(self, job: Job) -> None:
+        current: dict[str, Any] = {"i": 0, "total": 1, "stage": "probe"}
+
         def on_stage(name: str, i: int, total: int) -> None:
+            current.update(i=i, total=total, stage=name)
             self.store.update(job.id, status="running", stage=name,
-                              progress=int(i / total * 100))
+                              progress=int(i / total * 100), message=name)
             self._publish(job, "stage", stage=name, progress=int(i / total * 100))
+
+        def on_progress(stage_name: str, frac: float, detail: str) -> None:
+            pct = int((current["i"] + min(max(frac, 0.0), 1.0)) / current["total"] * 100)
+            message = f"{stage_name} · {detail}"
+            self.store.update(job.id, status="running", stage=stage_name,
+                              progress=pct, message=message)
+            self._publish(job, "progress", stage=stage_name, progress=pct,
+                          message=message)
 
         # Read live so toggling dub.dry_run in Settings applies without a restart.
         # A job carrying per-title overrides runs against a merged copy of the
@@ -279,7 +291,8 @@ class Worker(threading.Thread):
             )
             run_job(dj, config, dry_run=dry_run, on_stage=on_stage,
                     cancel_event=cancel_evt, services=self.services,
-                    force=job.force, db=self.store.db, events=self.events)
+                    force=job.force, db=self.store.db, events=self.events,
+                    on_progress=on_progress)
             out = str(dj.output_file) if dj.output_file else "(planned)"
             message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,

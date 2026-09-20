@@ -21,6 +21,7 @@ from .stages import (
     transcribe,
     translate,
 )
+from .stages.common import save_script
 from .voices import ensure_cast
 
 log = logging.getLogger("doblarr.pipeline")
@@ -29,11 +30,13 @@ log = logging.getLogger("doblarr.pipeline")
 def run_job(job: DubJob, config: Config, dry_run: bool = False,
             on_stage=None, cancel_event: threading.Event | None = None,
             services: Services | None = None, force: bool = False,
-            db=None, events=None) -> DubJob:
+            db=None, events=None, on_progress=None) -> DubJob:
     """Run every stage in order, mutating and returning the job.
 
     `on_stage(name, index, total)` is called before each stage, so a caller (the
-    job worker) can report progress. `cancel_event` is checked between stages —
+    job worker) can report progress. `on_progress(stage, frac, detail)` is called
+    by long-running stages with in-stage progress (e.g. "line 12/52"), frac in
+    0..1. `cancel_event` is checked between stages —
     raise JobCancelled when set — and handed to the ffmpeg-bound stages, so a
     cancel kills an in-flight ffmpeg run. Note: a cancel while waiting on a
     voicebox *remote* generation aborts the wait but leaves the server-side
@@ -66,6 +69,22 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
             return None
         cast_holder["cast"] = ensure_cast(job, db, events=events)
 
+    def _report(stage_name: str):
+        if on_progress is None:
+            return None
+        return lambda done, total, detail: on_progress(
+            stage_name, done / total if total else 0.0, detail)
+
+    def _diarize():
+        diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run)
+        if not dry_run and job.segments:
+            save_script(job, work)  # transcript + speakers survive a crash now
+
+    def _translate():
+        translate.run(job, translator, dry_run=dry_run, progress=_report("translate"))
+        if not dry_run and job.segments:
+            save_script(job, work)  # + translations
+
     steps = [
         ("probe", lambda: extract.run(job, work, dry_run=dry_run,
                                       cancel=cancel_event, force=force,
@@ -75,15 +94,16 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
         ("transcribe", lambda: transcribe.run(job, work, source=config["transcribe"]["source"],
                                               whisper_model=config["transcribe"]["whisper_model"],
                                               vb=vb, segment_limit=seg_limit,
-                                              max_seconds=teaser_s, dry_run=dry_run)),
-        ("diarize", lambda: diarize.run(job, enabled=config["transcribe"]["diarize"],
-                                        dry_run=dry_run)),
+                                              max_seconds=teaser_s, dry_run=dry_run,
+                                              force=force)),
+        ("diarize", _diarize),
         ("cast", _ensure_cast),
-        ("translate", lambda: translate.run(job, translator, dry_run=dry_run)),
+        ("translate", _translate),
         ("synthesize", lambda: synthesize.run(
             job, vb, work, voice_mode=config["dub"]["voice_mode"],
             dry_run=dry_run, cancel=cancel_event, force=force,
-            cast={e["speaker_id"]: e for e in (cast_holder["cast"] or [])})),
+            cast={e["speaker_id"]: e for e in (cast_holder["cast"] or [])},
+            progress=_report("synthesize"))),
         ("fit", lambda: fit_timing.run(job, work,
                                        enabled=config["dub"]["duration_match"],
                                        dry_run=dry_run, cancel=cancel_event,

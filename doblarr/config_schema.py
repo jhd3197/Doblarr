@@ -67,7 +67,7 @@ class PlexModel(_Section):
 
 class VoiceboxModel(_Section):
     base_url: str = "http://127.0.0.1:17493"
-    timeout_seconds: int = 600
+    timeout_seconds: int = 1800  # first CPU generation includes the model load
     default_engine: str = "chatterbox-multilingual"
 
 

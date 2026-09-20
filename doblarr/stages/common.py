@@ -16,6 +16,7 @@ job in place):
 from __future__ import annotations
 
 import functools
+import json
 import logging
 from collections.abc import Iterable
 from pathlib import Path
@@ -68,6 +69,50 @@ def cached(artifacts: Path | Iterable[Path], input_file: Path,
         except OSError:
             return None      # missing artifact — do the work
     return CachedPlan(paths)
+
+
+def script_path(job, work_dir: Path) -> Path:
+    """Where the persisted transcript+translation lives for a job."""
+    return work_dir / f"{work_stem(job)}.script.json"
+
+
+def save_script(job, work_dir: Path) -> Path:
+    """Persist segments + speakers so a retry skips transcribe/diarize/translate.
+
+    voicebox profile ids are deliberately NOT saved — synthesize re-resolves
+    them by profile name, so a reset voicebox server can't poison the cache.
+    """
+    p = script_path(job, work_dir)
+    payload = {
+        "script_is_target": job.script_is_target,
+        "speakers": [s.label for s in job.speakers.values()],
+        "segments": [
+            {"index": s.index, "start": s.start, "end": s.end,
+             "text_src": s.text_src, "speaker": s.speaker,
+             "text_translated": s.text_translated}
+            for s in job.segments
+        ],
+    }
+    p.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    return p
+
+
+def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
+    """Restore segments+speakers from a cached script when fresh vs the input."""
+    from ..models import Segment, Speaker
+
+    p = script_path(job, work_dir)
+    if cached(p, job.input_file, force) is None:
+        return None
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    job.segments = [Segment(index=s["index"], start=float(s["start"]),
+                            end=float(s["end"]), text_src=s["text_src"],
+                            speaker=s.get("speaker", "SPEAKER_00"),
+                            text_translated=s.get("text_translated"))
+                    for s in payload["segments"]]
+    job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}
+    job.script_is_target = bool(payload.get("script_is_target"))
+    return p
 
 
 def stage(name: str):

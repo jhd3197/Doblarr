@@ -15,6 +15,7 @@ two projects stay decoupled and voicebox upgrades come for free.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from pathlib import Path
 
@@ -114,7 +115,13 @@ class VoiceboxClient(ArrClient):
                 raise VoiceboxError(
                     f"generation {generation_id} failed: {data.get('error') or data}")
             time.sleep(poll)
+        self._cancel_quietly(generation_id)
         raise VoiceboxError(f"generation {generation_id} timed out")
+
+    def _cancel_quietly(self, generation_id: str) -> None:
+        """Best-effort server-side cancel so a wedged generation frees the queue."""
+        with contextlib.suppress(Exception):
+            self._post(f"/generate/{generation_id}/cancel", json={})
 
     def download_audio(self, generation_id: str, dest: Path) -> Path:
         resp = self._request("GET", f"/audio/{generation_id}")

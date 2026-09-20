@@ -127,7 +127,8 @@ def test_worker_threads_tease_kind(tmp_path, monkeypatch):
     seen = {}
 
     def fake_run_job(dj, config, dry_run=False, on_stage=None, cancel_event=None,
-                     services=None, force=False, db=None, events=None):
+                     services=None, force=False, db=None, events=None,
+                     on_progress=None):
         seen["kind"] = dj.kind
     monkeypatch.setattr("doblarr.jobs.run_job", fake_run_job)
     store = JobStore(tmp_path / "jobs.db")

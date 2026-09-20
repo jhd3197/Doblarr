@@ -31,19 +31,33 @@ def _extract_ref(source_audio: Path, start: float, end: float, dest: Path,
     return dest
 
 
-def _safe_transcribe(vb, clip: Path, lang: str) -> str:
-    try:
-        data = vb.transcribe(clip, language=None if lang in ("auto", "", None) else lang)
-        return (data.get("text") or "").strip()
-    except Exception as exc:  # noqa: BLE001
-        log.warning("reference transcribe failed: %s", exc)
-        return ""
+_MAX_REF_CHARS = 300
+
+
+def _bad_ref_text(text: str) -> bool:
+    """Detect a hallucinated reference transcript (whisper repetition loop).
+
+    A runaway "このように、このように、…" style transcript wedges the TTS
+    engine server-side (observed: generations never leave 'generating').
+    """
+    if len(text) > _MAX_REF_CHARS:
+        return True
+    words = text.split()
+    if len(words) >= 12 and len(set(words)) / len(words) < 0.3:
+        return True
+    # character-level loop for languages without spaces (ja/zh)
+    if " " not in text and len(text) >= 40:
+        chunk = text[:10]
+        if chunk and text.count(chunk) > 3:
+            return True
+    return False
 
 
 @stage("synthesize")
 def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         dry_run: bool = False, cancel: threading.Event | None = None,
-        force: bool = False, cast: dict | None = None) -> Plan | None:
+        force: bool = False, cast: dict | None = None,
+        progress=None) -> Plan | None:
     clips_dir = work_dir / ("clips-tease" if job.kind == "tease" else "clips")
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
 
@@ -76,18 +90,38 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
         spk.voicebox_profile_id = assigned
         log.info("  using cast voice %s for %s", assigned, spk.label)
 
-    # Clone one voice from the longest segment's original audio.
+    # Clone one voice from the longest segment's original audio. On a resume
+    # (previous run died mid-generation), reuse the profile we already created
+    # instead of cloning a duplicate onto the voicebox server.
     if voice_mode == "clone" and not spk.voicebox_profile_id:
-        candidates = sorted(job.segments, key=lambda s: s.duration, reverse=True)[:3]
-        pid = vb.create_profile(name=f"{job.input_file.stem}-{spk.label}",
-                                language=job.target_lang)
+        profile_name = f"{job.input_file.stem}-{spk.label}"
+        existing = next((v for v in vb.list_voices() if v.get("name") == profile_name),
+                        None)
+        if existing:
+            spk.voicebox_profile_id = existing["id"]
+            log.info("  reusing existing voice profile %s", profile_name)
+    if voice_mode == "clone" and not spk.voicebox_profile_id:
+        candidates = sorted(job.segments, key=lambda s: s.duration, reverse=True)[:5]
+        # The vocals stem (no music/FX) makes a cleaner cloning reference than
+        # the full mix — and a cleaner reference transcribes without loops.
+        ref_source = (job.vocals if job.vocals and job.vocals.exists()
+                      else job.source_audio)
+        pid = vb.create_profile(name=profile_name, language=job.target_lang)
         added = False
         for c in candidates:
-            ref = _extract_ref(job.source_audio, c.start, c.end,
+            ref = _extract_ref(ref_source, c.start, c.end,
                                clips_dir / "reference.wav", cancel=cancel)
-            ref_text = _safe_transcribe(vb, ref, job.source_lang) or "reference"
+            # The segment's own transcript is the reference text — far more
+            # reliable than re-transcribing the clip (voicebox's transcribe
+            # loops into "X、X、X…" on quiet dialogue, and a runaway reference
+            # text wedges the TTS engine server-side).
+            ref_text = c.text_src.strip()
+            if _bad_ref_text(ref_text):
+                log.warning("  segment at %.0fs looks like a transcription loop, "
+                            "trying another", c.start)
+                continue
             try:
-                vb.add_sample(pid, ref, ref_text)
+                vb.add_sample(pid, ref, ref_text or "reference")
                 added = True
                 log.info("  cloned voice from %.1fs segment", c.duration)
                 break
@@ -97,12 +131,31 @@ def run(job: DubJob, vb, work_dir: Path, voice_mode: str = "clone",
             raise RuntimeError("could not build a usable voice reference from the audio")
         spk.voicebox_profile_id = pid
 
-    # Generate every line.
+    # Generate every line. Per-line resume: clips already on disk from a
+    # previous (failed/interrupted) run are kept, not regenerated.
+    total = len(job.segments)
     for seg in job.segments:
-        text = seg.text_translated or seg.text_src
         dest = clips_dir / f"line_{seg.index:04d}.wav"
-        vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang, dest,
-                              cancel_event=cancel)
+        if not force and dest.exists() and dest.stat().st_size > 0:
+            seg.audio_clip = dest
+            log.info("  line %d/%d kept (already synthesized)", seg.index + 1, total)
+            if progress:
+                progress(seg.index + 1, total, f"line {seg.index + 1}/{total} (cached)")
+            continue
+        text = seg.text_translated or seg.text_src
+        try:
+            vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang,
+                                  dest, cancel_event=cancel)
+        except VoiceboxError:
+            # One fresh retry: a wedged server-side generation shouldn't kill
+            # the whole job. The stuck remote generation is cancelled first so
+            # it can't block the queue behind the retry.
+            log.warning("  line %d/%d generation failed — retrying once",
+                        seg.index + 1, total)
+            vb.synthesize_to_file(spk.voicebox_profile_id, text, job.target_lang,
+                                  dest, cancel_event=cancel)
         seg.audio_clip = dest
-        log.info("  line %d/%d done", seg.index + 1, len(job.segments))
+        log.info("  line %d/%d done", seg.index + 1, total)
+        if progress:
+            progress(seg.index + 1, total, f"line {seg.index + 1}/{total}")
     return None
