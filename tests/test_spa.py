@@ -1,19 +1,11 @@
 """SPA fallback — History API paths serve index.html; API misses stay JSON."""
 
 import pytest
-import yaml
-from fastapi.testclient import TestClient
-
-from doblarr.config import Config
-from doblarr.server import create_app
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    p = tmp_path / "config.yaml"
-    p.write_text(yaml.safe_dump({}), encoding="utf-8")
-    return TestClient(create_app(Config.load(p)))
+def client(client_factory):
+    return client_factory()
 
 
 def test_spa_paths_serve_index_html(client):

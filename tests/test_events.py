@@ -3,8 +3,6 @@
 import json
 
 import pytest
-import yaml
-from fastapi.testclient import TestClient
 
 from doblarr.config import Config
 from doblarr.events import EventBus
@@ -42,13 +40,10 @@ def test_event_bus_buffer_is_capped():
 
 
 @pytest.fixture
-def sse_client(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    p = tmp_path / "config.yaml"
-    p.write_text(yaml.safe_dump({"web": {"api_key": API_KEY}}), encoding="utf-8")
-    app = create_app(Config.load(p))
-    app.state.events.publish("job", {"type": "queued", "job_id": "abc", "title": "T"})
-    return TestClient(app)
+def sse_client(client_factory):
+    client = client_factory({"web": {"api_key": API_KEY}})
+    client.app.state.events.publish("job", {"type": "queued", "job_id": "abc", "title": "T"})
+    return client
 
 
 def test_sse_requires_auth(sse_client):
@@ -125,7 +120,6 @@ def test_log_records_stream_to_bus(sse_client):
     assert q.empty()
 
     # a second app replaces the handler instead of stacking another
-    from doblarr.server import create_app
     app2 = create_app(Config.load("nope.yaml"))
     bus_handlers = [h for h in logging.getLogger().handlers
                     if isinstance(h, BusLogHandler)]

@@ -48,6 +48,7 @@ class Job:
     message: str = ""
     kind: str = "full"           # full | tease (a dubbed first-minutes preview)
     force: bool = False        # re-run every stage, ignoring cached artifacts
+    overrides: dict | None = None   # per-title config overrides (dub.*, transcribe.*, …)
     output_file: str | None = None   # muxed result (planned path in dry-run)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
@@ -258,7 +259,12 @@ class Worker(threading.Thread):
             self._publish(job, "stage", stage=name, progress=int(i / total * 100))
 
         # Read live so toggling dub.dry_run in Settings applies without a restart.
-        dry_run = self.config.get("dub", {}).get("dry_run", self.dry_run)
+        # A job carrying per-title overrides runs against a merged copy of the
+        # config — the global config object is never mutated.
+        config = self.config
+        if job.overrides:
+            config = self.config.with_overrides(job.overrides)
+        dry_run = config.get("dub", {}).get("dry_run", self.dry_run)
         cancel_evt = threading.Event()
         self._current_id = job.id
         self._cancel_evt = cancel_evt
@@ -271,7 +277,7 @@ class Worker(threading.Thread):
                 target_lang=job.target_lang,
                 kind=job.kind,
             )
-            run_job(dj, self.config, dry_run=dry_run, on_stage=on_stage,
+            run_job(dj, config, dry_run=dry_run, on_stage=on_stage,
                     cancel_event=cancel_evt, services=self.services,
                     force=job.force, db=self.store.db, events=self.events)
             out = str(dj.output_file) if dj.output_file else "(planned)"
