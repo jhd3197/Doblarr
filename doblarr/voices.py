@@ -39,7 +39,7 @@ def ensure_cast(job, db, events=None) -> list[dict] | None:
     """
     key = cast_key(path=str(job.input_file))
     existing = db.load_cast(key)
-    if job.kind == "tease":
+    if job.speakers:
         cast = assign_default_cast(list(job.speakers), existing=(existing or {}).get("cast"))
         if not existing or len(cast) != len(existing["cast"]):
             db.save_cast(key, job.input_file.stem, cast)

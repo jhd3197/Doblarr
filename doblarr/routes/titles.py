@@ -20,6 +20,8 @@ class CastEntryIn(BaseModel):
     category: str
     voice: str = ""            # voicebox profile id; "" = unassigned
     previewed: bool = False
+    delivery: str = Field(default="", max_length=500)
+    revision: int = Field(default=0, ge=0)
 
     @field_validator("category")
     @classmethod

@@ -143,6 +143,24 @@ Each run writes stage timings and cache/retry counters to `work/reports`, availa
 through `GET /api/jobs/{id}/report`. See [the generation guide](docs/generation-roadmap.md)
 for configuration, benchmark acceptance, and current limitations.
 
+### Shows and narrator voices
+
+TV show pages open on **Episodes**, grouped by season, including episodes Sonarr
+knows about that are not downloaded. Select the dub language to see source audio,
+completed AI outputs, active jobs, and missing dubs separately. Queue individual
+files, selected episodes, or missing dubs; shared files and active jobs are skipped.
+A series folder is never sent to the media pipeline. Refresh episodes to fetch new
+Sonarr inventory or the latest generation status.
+
+In **Speakers & voices**, pick a saved narrator voice and optionally a Qwen delivery
+direction, then **Save narrator**. These are defaults for new jobs in that show or
+movie. Explicit episode character assignments take precedence. Use **Voices** on
+an episode row to rename discovered speakers, choose their roles and voices, and
+set delivery direction. Use **Audition** on that episode to hear the result before
+queueing its full dub. Create/clone additional profiles in Voicebox and refresh the
+voice list. A missing diarization model can still yield a single-narrator fallback;
+voice settings do not recover undetected speakers.
+
 ### Teasers & voice casting
 
 Before committing to a full dub, queue a **tease** (Library card → "Tease", or

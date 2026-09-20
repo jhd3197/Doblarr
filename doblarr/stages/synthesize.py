@@ -150,6 +150,9 @@ def run(
     seed=None,
     preset_voices=None,
     pronunciations=None,
+    narrator_voice="",
+    narrator_delivery="",
+    narrator_speakers=None,
 ) -> Plan | None:
     clips_dir = work_dir / ("clips-tease" if job.kind == "tease" else "clips")
     identity = hashlib.sha256(str(job.input_file.resolve()).encode()).hexdigest()[:12]
@@ -176,6 +179,21 @@ def run(
         if seg.speaker not in job.speakers:
             raise ValueError(f"unknown speaker {seg.speaker} on line {seg.index}")
     cast = dict(cast or {})
+    for speaker in job.speakers.values():
+        entry = dict(cast.get(speaker.label, {}))
+        is_narrator = (
+            speaker.label in narrator_speakers
+            if narrator_speakers is not None
+            else len(job.speakers) == 1
+            or speaker.label == "NARRATOR"
+            or entry.get("category") == "narrator"
+        )
+        if is_narrator:
+            if narrator_voice and not entry.get("voice"):
+                entry["voice"] = narrator_voice
+            if narrator_delivery and not entry.get("delivery"):
+                entry["delivery"] = narrator_delivery
+        cast[speaker.label] = entry
     if voice_mode == "preset" and preset_voices:
         for i, speaker in enumerate(job.speakers.values()):
             if not cast.get(speaker.label, {}).get("voice"):
@@ -208,6 +226,7 @@ def run(
         if stop.is_set():
             raise JobCancelled("cancelled before speech generation")
         spk = job.speakers[seg.speaker]
+        delivery = seg.delivery or cast.get(seg.speaker, {}).get("delivery", "")
         dest = clips_dir / f"line_{seg.index:04d}.wav"
         text = spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
         signature = {
@@ -217,7 +236,7 @@ def run(
             "engine": engine,
             "model_size": model_size,
             "seed": seed,
-            "delivery": seg.delivery,
+            "delivery": delivery,
             "line_revision": seg.revision,
             "revision": (cast or {}).get(seg.speaker, {}).get("revision", ""),
         }
@@ -242,8 +261,8 @@ def run(
             kwargs["model_size"] = model_size
         if seed is not None:
             kwargs["seed"] = seed + seg.revision
-        if seg.delivery:
-            kwargs["instruct"] = seg.delivery
+        if delivery:
+            kwargs["instruct"] = delivery
         try:
             client.synthesize_to_file(
                 seg.voice or spk.voicebox_profile_id,

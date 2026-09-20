@@ -174,6 +174,18 @@ def run_job(
             seed=config["voicebox"].get("seed"),
             preset_voices=config["dub"].get("preset_voices", []),
             pronunciations=config["dub"].get("pronunciations", {}),
+            narrator_voice=config["dub"].get("narrator_voice", ""),
+            narrator_delivery=config["dub"].get("narrator_delivery", ""),
+            narrator_speakers={
+                label
+                for label in job.speakers
+                if len(job.speakers) == 1
+                or label == "NARRATOR"
+                or any(
+                    e["speaker_id"] == label and e.get("category") == "narrator"
+                    for e in (cast_holder["cast"] or [])
+                )
+            },
         )
         if db is not None and not dry_run and segments is None:
             save_characters(job, db, character_group, character_map)

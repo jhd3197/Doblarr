@@ -148,6 +148,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
 
     @api.post("/api/jobs")
     def create_job(body: JobCreateIn):
+        if body.path and Path(body.path).is_dir():
+            raise HTTPException(
+                422,
+                "Choose episode files from the show's Episodes tab; a folder is not a dub input",
+            )
         default_target = config["general"]["target_languages"][0]
         job = store.add(
             title=body.title,

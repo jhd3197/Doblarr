@@ -89,6 +89,8 @@ separate:
 # Dubbing behaviour
 dub:
   preset: custom               # custom | preview | final
+  narrator_voice: ""           # saved Voicebox profile ID; blank uses original voice cloning
+  narrator_delivery: ""        # Qwen only; e.g. warm, calm storytelling
   voice_mode: clone             # clone (per-speaker cloned voice) | preset
   dry_run: true                 # plan-only (no heavy stages) until you flip this off
   teaser_minutes: 10            # a "tease" job dubs just this opening window

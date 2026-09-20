@@ -79,6 +79,9 @@ export function createLibrary({ goTitle }) {
   }
 
   async function queueDub(item, btn, kind = "full") {
+    if (item.media_type === 'show' || /^sonarr/i.test(item.source || '')) {
+      goTitle(item, 'episodes'); return;
+    }
     btn.disabled = true; btn.textContent = kind === "tease" ? "Teasing…" : "Queuing…";
     try {
       // The title's dub plan rides along: target_lang picks the job's language,

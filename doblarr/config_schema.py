@@ -101,6 +101,8 @@ class SeparateModel(_Section):
 
 
 class DubModel(_Section):
+    narrator_voice: str = ""
+    narrator_delivery: str = ""
     preset: str = "custom"
     voice_mode: str = "clone"
     dry_run: bool = True
