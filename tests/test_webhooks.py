@@ -3,11 +3,7 @@
 import time
 
 import pytest
-import yaml
-from fastapi.testclient import TestClient
 
-from doblarr.config import Config
-from doblarr.server import create_app
 from doblarr.webhooks import Debouncer, is_test_event, should_rescan
 
 API_KEY = "test-key"
@@ -45,8 +41,7 @@ def test_debouncer_coalesces_burst():
 
 
 @pytest.fixture
-def webhook_client(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def webhook_client(client_factory, monkeypatch):
     calls = {"n": 0}
 
     def fake_movies(self):
@@ -56,13 +51,12 @@ def webhook_client(tmp_path, monkeypatch):
                  "movieFile": {"mediaInfo": {"audioLanguages": "kor"}}}]
     monkeypatch.setattr("doblarr.clients.radarr.RadarrClient.list_movies", fake_movies)
 
-    p = tmp_path / "config.yaml"
-    p.write_text(yaml.safe_dump({
+    client = client_factory({
         "web": {"api_key": API_KEY},
         "connect": {"radarr_url": "http://r", "radarr_api_key": "k"},
         "discovery": {"webhook_debounce": 0.1},
-    }), encoding="utf-8")
-    return TestClient(create_app(Config.load(p))), calls
+    })
+    return client, calls
 
 
 def test_webhook_requires_auth(webhook_client):

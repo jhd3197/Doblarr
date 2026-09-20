@@ -29,11 +29,8 @@ def _config(tmp_path, data: dict) -> Path:
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    """A TestClient over a temp config with web.api_key set (no lifespan)."""
-    monkeypatch.chdir(tmp_path)  # work/, doblarr.db and logs land in tmp
-    cfg = Config.load(_config(tmp_path, {"web": {"api_key": API_KEY}}))
-    return TestClient(create_app(cfg))
+def client(client_factory):
+    return client_factory({"web": {"api_key": API_KEY}})
 
 
 def _patch_voicebox_down(monkeypatch):

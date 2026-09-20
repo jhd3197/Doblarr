@@ -2,12 +2,8 @@
 
 
 import pytest
-import yaml
-from fastapi.testclient import TestClient
 
-from doblarr.config import Config
 from doblarr.jobs import JobStore
-from doblarr.server import create_app
 from doblarr.store import SCHEMA_VERSION, Database
 from doblarr.voices import assign_default_cast, cast_key
 
@@ -85,13 +81,9 @@ def test_assign_default_cast_merges_existing():
 
 
 @pytest.fixture
-def cast_client(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    p = tmp_path / "config.yaml"
-    p.write_text(yaml.safe_dump({"web": {"api_key": API_KEY},
-                                 "dub": {"preset_voices": ["narrator-deep"]}}),
-                 encoding="utf-8")
-    return TestClient(create_app(Config.load(p)))
+def cast_client(client_factory):
+    return client_factory({"web": {"api_key": API_KEY},
+                           "dub": {"preset_voices": ["narrator-deep"]}})
 
 
 def test_cast_api_round_trip(cast_client):

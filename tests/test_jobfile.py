@@ -1,11 +1,6 @@
 """Job output streaming — range requests, traversal guard, has_file flag."""
 
 import pytest
-import yaml
-from fastapi.testclient import TestClient
-
-from doblarr.config import Config
-from doblarr.server import create_app
 
 API_KEY = "test-key"
 HEADERS = {"X-Api-Key": API_KEY}
@@ -13,18 +8,13 @@ CONTENT = b"fake-video-bytes" * 100  # 1600 bytes
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def client(tmp_path, client_factory):
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     (out_dir / "film.tease.mkv").write_bytes(CONTENT)
-    p = tmp_path / "config.yaml"
-    p.write_text(yaml.safe_dump({
-        "web": {"api_key": API_KEY},
-        "paths": {"output_dir": str(out_dir), "work_dir": str(tmp_path / "work")},
-    }), encoding="utf-8")
-    app = create_app(Config.load(p))
-    return TestClient(app), app, out_dir
+    client = client_factory({"web": {"api_key": API_KEY},
+                              "paths": {"output_dir": str(out_dir)}})
+    return client, client.app, out_dir
 
 
 def _job_with_output(app, output_file):
