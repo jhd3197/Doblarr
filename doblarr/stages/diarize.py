@@ -13,6 +13,7 @@ import logging
 import os
 from typing import Any
 
+from ..model_pool import model as pooled_model
 from ..models import DubJob, Speaker
 from .common import DryRunPlan, dry, stage
 
@@ -96,14 +97,19 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan 
             "diarize needs vocals or source audio (extract/separate must run first)")
 
     try:
-        pipe = _load_pipeline(token)
+        context = pooled_model(("diarization", MODEL_ID), lambda: _load_pipeline(token),
+                               job.transcription_options.get("keep_models_loaded", False))
+        with context as pipe:
+            log.info("diarizing %s with %s", audio.name, MODEL_ID)
+            diarization = pipe(str(audio))
+            if hasattr(diarization, "speaker_diarization"):
+                diarization = diarization.speaker_diarization
+            del pipe
     except Exception as exc:  # noqa: BLE001 — gated model, bad token, download failure
         _single_narrator(job, f"could not load {MODEL_ID} ({exc}); accept the model terms at "
                               f"huggingface.co/{MODEL_ID} and check HF_TOKEN")
         return None
 
-    log.info("diarizing %s with %s", audio.name, MODEL_ID)
-    diarization = pipe(str(audio))
     _assign_speakers(job, diarization)
     log.info("diarize -> %d speakers (%s)", len(job.speakers), ", ".join(job.speakers))
     return None

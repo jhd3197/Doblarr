@@ -68,7 +68,11 @@ class PlexModel(_Section):
 class VoiceboxModel(_Section):
     base_url: str = "http://127.0.0.1:17493"
     timeout_seconds: int = 1800  # first CPU generation includes the model load
-    default_engine: str = "chatterbox-multilingual"
+    default_engine: str = "chatterbox"
+    model_size: str | None = None
+    concurrency: int = 1
+    seed: int | None = None
+    preview_engine: str = "kokoro"
 
 
 class TranslateModel(_Section):
@@ -85,6 +89,10 @@ class TranscribeModel(_Section):
     whisper_model: str = "large-v3"
     diarize: bool = True
     clean_cues: bool = True
+    batch_size: int = 8
+    device: str = "auto"
+    compute_type: str = "auto"
+    keep_models_loaded: bool = False
 
 
 class SeparateModel(_Section):
@@ -92,6 +100,7 @@ class SeparateModel(_Section):
 
 
 class DubModel(_Section):
+    preset: str = "custom"
     voice_mode: str = "clone"
     dry_run: bool = True
     duration_match: bool = True

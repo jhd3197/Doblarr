@@ -39,6 +39,11 @@ class VoiceboxClient(ArrClient):
 
     def __init__(self, base_url: str, timeout: int = 600):
         super().__init__(base_url, timeout=timeout)
+        self.observer = None
+
+    def observe(self, name, value=1):
+        if self.observer:
+            self.observer(name, value)
 
     # -- health -----------------------------------------------------------
     def health(self, timeout: int = 15) -> dict:
@@ -88,14 +93,19 @@ class VoiceboxClient(ArrClient):
     # -- speech generation ------------------------------------------------
     def generate(self, profile_id: str, text: str, language: str,
                  seed: int | None = None, model_size: str | None = None,
-                 engine: str | None = None) -> str:
+                 engine: str | None = None, instruct: str | None = None) -> str:
         payload: dict = {"profile_id": profile_id, "text": text, "language": language}
         if seed is not None:
             payload["seed"] = seed
         if model_size is not None:
             payload["model_size"] = model_size
         if engine is not None:
-            payload["engine"] = engine
+            payload["engine"] = {"chatterbox-multilingual": "chatterbox",
+                                 "qwen3-tts": "qwen"}.get(engine, engine)
+        if instruct:
+            if payload.get("engine") not in {"qwen", "qwen_custom_voice"}:
+                raise VoiceboxError("delivery instructions require a Qwen engine")
+            payload["instruct"] = instruct
         # Creation is not idempotent. A lost response must not silently submit twice.
         data = self._attempt("POST", "/generate", json=payload).json()
         gen_id = data.get("id") or data.get("generation_id")
@@ -120,6 +130,7 @@ class VoiceboxClient(ArrClient):
                 self._cancel_quietly(generation_id)
                 raise JobCancelled(f"cancelled while waiting for {generation_id}")
             data = self._get(f"/history/{generation_id}", timeout=30)
+            self.observe("tts_polls")
             status = (data.get("status") or "").lower()
             if status in {"done", "completed", "success", "ready"}:
                 return
@@ -158,11 +169,24 @@ class VoiceboxClient(ArrClient):
         if not gen_id:
             gen_id = self.generate(profile_id, text, language, **kwargs)
             write_json(receipt, {"request": request, "generation_id": gen_id})
+        else:
+            self.observe("remote_resumes")
         try:
-            self.wait_for(gen_id, cancel_event=cancel_event)
+            started = time.perf_counter()
+            try:
+                self.wait_for(gen_id, cancel_event=cancel_event)
+            finally:
+                self.observe("tts_wait_seconds", time.perf_counter() - started)
+            started = time.perf_counter()
             result = self.download_audio(gen_id, dest)
+            self.observe("tts_download_seconds", time.perf_counter() - started)
         except GenerationFailed:
             receipt.unlink(missing_ok=True)
+            raise
+        except VoiceboxError as exc:
+            if exc.status == 404:
+                receipt.unlink(missing_ok=True)
+                raise GenerationFailed("remote generation no longer exists") from exc
             raise
         receipt.unlink(missing_ok=True)
         return result

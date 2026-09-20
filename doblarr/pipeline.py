@@ -12,6 +12,7 @@ from .clients.translator import build_translator
 from .config import Config
 from .errors import JobCancelled
 from .models import DubJob
+from .presets import effective_config
 from .services import Services
 from .stages import (
     diarize,
@@ -55,6 +56,7 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     given, a tease creates/merges the title's voice cast after diarization (and
     publishes a `cast` event); full dubs read the saved cast into synthesize.
     """
+    config = effective_config(config)
     shared_work = media_work(config.work_dir, job)
     work = shared_work / job.target_lang
     job.artifacts_dir = work
@@ -105,7 +107,11 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
                        dry_run=dry_run, cancel=cancel_event, force=force,
                        cast={e["speaker_id"]: e for e in (cast_holder["cast"] or [])},
                        progress=_report("synthesize") if segments is None else None,
-                       engine=config["voicebox"].get("default_engine"))
+                       engine=config["voicebox"].get("default_engine"),
+                       concurrency=config["voicebox"].get("concurrency", 1),
+                       model_size=config["voicebox"].get("model_size"),
+                       seed=config["voicebox"].get("seed"),
+                       preset_voices=config["dub"].get("preset_voices", []))
 
     def _fit():
         fit_timing.run(job, work, enabled=config["dub"]["duration_match"],
@@ -126,9 +132,7 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
                                               whisper_model=config["transcribe"]["whisper_model"],
                                               vb=vb, segment_limit=seg_limit,
                                               max_seconds=teaser_s, dry_run=dry_run,
-                                              options={"diarize": config["transcribe"]["diarize"],
-                                                       "clean_cues": config["transcribe"].get(
-                                                           "clean_cues", True)},
+                                              options=dict(config["transcribe"]),
                                               force=force)),
         ("diarize", _diarize),
         ("cast", _ensure_cast),
