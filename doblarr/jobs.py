@@ -21,7 +21,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .clients.plex import PlexError
-from .config import Config, _deep_merge
 from .errors import ConfigError, JobCancelled
 from .models import DubJob
 from .pipeline import run_job
@@ -264,8 +263,7 @@ class Worker(threading.Thread):
         # config — the global config object is never mutated.
         config = self.config
         if job.overrides:
-            config = Config(_deep_merge(self.config.as_dict(), job.overrides),
-                            self.config.path)
+            config = self.config.with_overrides(job.overrides)
         dry_run = config.get("dub", {}).get("dry_run", self.dry_run)
         cancel_evt = threading.Event()
         self._current_id = job.id
