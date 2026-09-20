@@ -69,7 +69,7 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
         segs = [
             Segment(index=i, start=line.start / 1000.0, end=line.end / 1000.0,
                     text_src=line.plaintext.replace("\n", " ").strip())
-            for i, line in enumerate(subs) if line.plaintext.strip()
+            for i, line in enumerate(subs) if line.plaintext.strip() and not line.is_comment
         ]
     if max_seconds:
         segs = [s for s in segs if s.start < max_seconds]  # tease window
@@ -121,7 +121,7 @@ def _to_segments(raw: list[dict]) -> list[Segment]:
         if not text or s.get("start") is None or s.get("end") is None:
             continue
         segs.append(Segment(index=i, start=float(s["start"]), end=float(s["end"]),
-                            text_src=text))
+                            text_src=text, words=s.get("words", [])))
     return segs
 
 

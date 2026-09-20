@@ -75,12 +75,16 @@ class TranslateModel(_Section):
     provider: str = "claude"
     model: str = "claude-sonnet-5"
     endpoint: str | None = None  # prompture driver URL override (local LLMs)
+    batch_size: int = 12
+    chars_per_second: float = 14
+    glossary: dict[str, str] = {}
 
 
 class TranscribeModel(_Section):
     source: str = "subtitles"
     whisper_model: str = "large-v3"
     diarize: bool = True
+    clean_cues: bool = True
 
 
 class SeparateModel(_Section):
@@ -91,7 +95,7 @@ class DubModel(_Section):
     voice_mode: str = "clone"
     dry_run: bool = True
     duration_match: bool = True
-    max_fit_attempts: int = 5
+    max_fit_attempts: int = 2
     ducking_ratio: str = "12:1"
     track_name_template: str = "{language_name} AI"
     preset_voices: list[str] = []

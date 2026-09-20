@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
+from dataclasses import replace
 
 from .artifacts import media_work
 from .clients.translator import build_translator
@@ -17,6 +19,7 @@ from .stages import (
     fit_timing,
     mix,
     mux,
+    prepare,
     separate,
     synthesize,
     transcribe,
@@ -83,14 +86,37 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
     def _diarize():
         diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run)
         if not dry_run and job.segments:
+            prepare.run(job, enabled=config["transcribe"].get("clean_cues", True))
             save_script(job, work)  # transcript + speakers survive a crash now
 
     def _translate():
-        translate.run(job, translator, dry_run=dry_run, progress=_report("translate"))
+        translate.run(job, translator, dry_run=dry_run, progress=_report("translate"),
+                      batch_size=config["translate"].get("batch_size", 12),
+                      glossary=config["translate"].get("glossary", {}),
+                      chars_per_second=config["translate"].get("chars_per_second", 14),
+                      checkpoint=lambda: save_script(job, work), cancel=cancel_event)
         if not dry_run and job.segments:
             save_script(job, work)  # + translations
 
-    steps = [
+    def _synthesize(segments=None):
+        target = job if segments is None else replace(job, segments=segments,
+                    speakers={s.speaker: job.speakers[s.speaker] for s in segments})
+        synthesize.run(target, vb, work, voice_mode=config["dub"]["voice_mode"],
+                       dry_run=dry_run, cancel=cancel_event, force=force,
+                       cast={e["speaker_id"]: e for e in (cast_holder["cast"] or [])},
+                       progress=_report("synthesize") if segments is None else None,
+                       engine=config["voicebox"].get("default_engine"))
+
+    def _fit():
+        fit_timing.run(job, work, enabled=config["dub"]["duration_match"],
+                       dry_run=dry_run, cancel=cancel_event, force=force,
+                       translator=translator, regenerate=lambda seg: _synthesize([seg]),
+                       checkpoint=lambda: save_script(job, work),
+                       max_attempts=config["dub"].get("max_fit_attempts", 2))
+        if not dry_run:
+            save_script(job, work)
+
+    steps: list[tuple[str, Callable[[], object]]] = [
         ("probe", lambda: extract.run(job, shared_work, dry_run=dry_run,
                                       cancel=cancel_event, force=force,
                                       duration=teaser_s)),
@@ -100,20 +126,15 @@ def run_job(job: DubJob, config: Config, dry_run: bool = False,
                                               whisper_model=config["transcribe"]["whisper_model"],
                                               vb=vb, segment_limit=seg_limit,
                                               max_seconds=teaser_s, dry_run=dry_run,
-                                              options={"diarize": config["transcribe"]["diarize"]},
+                                              options={"diarize": config["transcribe"]["diarize"],
+                                                       "clean_cues": config["transcribe"].get(
+                                                           "clean_cues", True)},
                                               force=force)),
         ("diarize", _diarize),
         ("cast", _ensure_cast),
         ("translate", _translate),
-        ("synthesize", lambda: synthesize.run(
-            job, vb, work, voice_mode=config["dub"]["voice_mode"],
-            dry_run=dry_run, cancel=cancel_event, force=force,
-            cast={e["speaker_id"]: e for e in (cast_holder["cast"] or [])},
-            progress=_report("synthesize"))),
-        ("fit", lambda: fit_timing.run(job, work,
-                                       enabled=config["dub"]["duration_match"],
-                                       dry_run=dry_run, cancel=cancel_event,
-                                       force=force)),
+        ("synthesize", _synthesize),
+        ("fit", _fit),
         ("mix", lambda: mix.run(job, work, ducking_ratio=config["dub"]["ducking_ratio"],
                                 dry_run=dry_run, cancel=cancel_event, force=force)),
         ("mux", lambda: mux.run(job, out,

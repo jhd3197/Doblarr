@@ -17,6 +17,11 @@ class Segment:
     speaker: str = "SPEAKER_00"      # diarization label
     text_translated: str | None = None
     audio_clip: Path | None = None   # generated dub clip for this line
+    words: list[dict] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+    delivery: str = ""
+    voice: str | None = None
+    revision: int = 0
 
     @property
     def duration(self) -> float:

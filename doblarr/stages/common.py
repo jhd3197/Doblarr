@@ -99,6 +99,8 @@ def save_script(job, work_dir: Path) -> Path:
         "segments": [
             {"index": s.index, "start": s.start, "end": s.end,
              "text_src": s.text_src, "speaker": s.speaker,
+             "words": s.words, "issues": s.issues, "delivery": s.delivery,
+             "voice": s.voice, "revision": s.revision,
              "text_translated": s.text_translated}
             for s in job.segments
         ],
@@ -132,6 +134,9 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     job.segments = [Segment(index=s["index"], start=float(s["start"]),
                             end=float(s["end"]), text_src=s["text_src"],
                             speaker=s.get("speaker", "SPEAKER_00"),
+                            words=s.get("words", []), issues=s.get("issues", []),
+                            delivery=s.get("delivery", ""), voice=s.get("voice"),
+                            revision=s.get("revision", 0),
                             text_translated=s.get("text_translated"))
                     for s in payload["segments"]]
     job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}
