@@ -379,3 +379,18 @@ pushes to `dev`, `main` and `master`.
 
 MIT — see [LICENSE](LICENSE). voicebox is MIT; neutrinus/dubarr is GPL-3.0 (used
 only as a reference to re-implement from, never copied in).
+
+
+### Share a dub recipe
+
+Movies and episodes have a **Recipes** tab with a persistent `/recipes` route.
+Export a `.dobdub` file containing saved generation settings, pronunciation rules,
+character directions and voice names. Import it on the matching local title,
+review its contents, choose local voices and engines, then apply it. Queue generation
+separately after checking the character assignments.
+
+Version 1 is recipe-only JSON: no audio, video, dialogue, subtitles, cloned voice
+samples, credentials, or local file paths. Translation services and model locations
+remain local. Different models, source cuts and speaker detection can produce different
+results. Expected runtime is optional release information, not automatic verification.
+See [the recipe format and API](docs/dub-recipes.md).

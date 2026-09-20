@@ -111,15 +111,18 @@ class Database:
             "INSERT INTO scan_state (id, last_scan, counts, items) VALUES (1, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET last_scan=excluded.last_scan, "
             "counts=excluded.counts, items=excluded.items",
-            (last_scan, json.dumps(counts), json.dumps(items)))
+            (last_scan, json.dumps(counts), json.dumps(items)),
+        )
 
     def load_scan(self) -> dict | None:
         row = self.query_one("SELECT last_scan, counts, items FROM scan_state WHERE id = 1")
         if row is None:
             return None
-        return {"last_scan": row["last_scan"],
-                "counts": json.loads(row["counts"]),
-                "items": json.loads(row["items"])}
+        return {
+            "last_scan": row["last_scan"],
+            "counts": json.loads(row["counts"]),
+            "items": json.loads(row["items"]),
+        }
 
     # -- voice casts (one row per title) ------------------------------------
     def save_cast(self, title_key: str, title: str, cast: list[dict]) -> None:
@@ -128,17 +131,20 @@ class Database:
             "VALUES (?, ?, ?, ?) ON CONFLICT(title_key) DO UPDATE SET "
             "title=excluded.title, cast_data=excluded.cast_data, "
             "updated_at=excluded.updated_at",
-            (title_key, title, json.dumps(cast),
-             _dt.datetime.now().isoformat(timespec="seconds")))
+            (title_key, title, json.dumps(cast), _dt.datetime.now().isoformat(timespec="seconds")),
+        )
 
     def load_cast(self, title_key: str) -> dict | None:
         row = self.query_one(
-            "SELECT title, cast_data, updated_at FROM voice_casts WHERE title_key = ?",
-            (title_key,))
+            "SELECT title, cast_data, updated_at FROM voice_casts WHERE title_key = ?", (title_key,)
+        )
         if row is None:
             return None
-        return {"title": row["title"], "cast": json.loads(row["cast_data"]),
-                "updated_at": row["updated_at"]}
+        return {
+            "title": row["title"],
+            "cast": json.loads(row["cast_data"]),
+            "updated_at": row["updated_at"],
+        }
 
     # -- per-title dub plans (config overrides, one row per title) ----------
     def save_plan(self, title_key: str, title: str, plan: dict) -> None:
@@ -147,17 +153,37 @@ class Database:
             "VALUES (?, ?, ?, ?) ON CONFLICT(title_key) DO UPDATE SET "
             "title=excluded.title, plan=excluded.plan, "
             "updated_at=excluded.updated_at",
-            (title_key, title, json.dumps(plan),
-             _dt.datetime.now().isoformat(timespec="seconds")))
+            (title_key, title, json.dumps(plan), _dt.datetime.now().isoformat(timespec="seconds")),
+        )
 
     def load_plan(self, title_key: str) -> dict | None:
         row = self.query_one(
-            "SELECT title, plan, updated_at FROM title_plans WHERE title_key = ?",
-            (title_key,))
+            "SELECT title, plan, updated_at FROM title_plans WHERE title_key = ?", (title_key,)
+        )
         if row is None:
             return None
-        return {"title": row["title"], "plan": json.loads(row["plan"]),
-                "updated_at": row["updated_at"]}
+        return {
+            "title": row["title"],
+            "plan": json.loads(row["plan"]),
+            "updated_at": row["updated_at"],
+        }
+
+    def save_recipe(self, title_key: str, title: str, plan: dict, cast: list[dict]) -> None:
+        """Apply a recipe's plan and cast together, or leave both untouched."""
+        now = _dt.datetime.now().isoformat(timespec="seconds")
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO title_plans (title_key,title,plan,updated_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(title_key) DO UPDATE SET title=excluded.title,plan=excluded.plan,"
+                "updated_at=excluded.updated_at",
+                (title_key, title, json.dumps(plan), now),
+            )
+            self._conn.execute(
+                "INSERT INTO voice_casts (title_key,title,cast_data,updated_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(title_key) DO UPDATE SET title=excluded.title,"
+                "cast_data=excluded.cast_data,updated_at=excluded.updated_at",
+                (title_key, title, json.dumps(cast), now),
+            )
 
     def close(self) -> None:
         with self._lock:

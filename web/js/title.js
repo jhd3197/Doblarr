@@ -6,13 +6,14 @@ import { api } from './api.js';
 import { pickVoice } from './voice-picker.js';
 import { renderEpisodes } from './episodes.js';
 import { getJobs } from './jobs-data.js';
+import { renderRecipes } from './recipes.js';
 
 const ROLE_LABELS = {speaker:'Unknown speaker', narrator:'Narrator', child_f:'Girl', child_m:'Boy',
   young_f:'Young woman', young_m:'Young man', adult_f:'Adult woman', adult_m:'Adult man',
   elderly_f:'Older woman', elderly_m:'Older man'};
 
 export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch }) {
-  const TITLE_TABS = [["plan", "Dub plan"], ["voices", "Speakers & voices"], ["jobs", "Jobs"], ["meta", "Metadata"]];
+  const TITLE_TABS = [["plan", "Dub plan"], ["voices", "Speakers & voices"], ["jobs", "Jobs"], ["meta", "Metadata"], ["recipes", "Recipes"]];
 
   // Per-title dub plan — real config keys, so the overrides genuinely reach the
   // pipeline (the worker deep-merges them over the global config for that job).
@@ -174,7 +175,7 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${(show ? [["episodes", "Episodes"], ...TITLE_TABS] : TITLE_TABS).map(([k, t]) => `<button type="button" class="tab" data-dtab="${k}" aria-current="${titleState.dtab === k ? "page" : "false"}">${t}</button>`).join("")}
+        ${(show ? [["episodes", "Episodes"], ...TITLE_TABS.filter(([key]) => key !== "recipes")] : TITLE_TABS).map(([k, t]) => `<button type="button" class="tab" data-dtab="${k}" aria-current="${titleState.dtab === k ? "page" : "false"}">${t}</button>`).join("")}
       </div>
       <div id="titleTabBody"></div>`;
     document.getElementById("titleBack").addEventListener("click", () => item.parent ? goTitle(item.parent, "episodes") : setPage("Library"));
@@ -215,6 +216,11 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
     const body = document.getElementById("titleTabBody");
     if (!body || !titleState.item) return;
     const item = titleState.item;
+    if (titleState.dtab === "recipes") {
+      renderRecipes(body, { item, target: titleState.plan?.target_lang || library.targets?.[0] || 'en',
+        onApplied: plan => { if (titleState.item === item) { titleState.plan = plan; titleState.castItem = null; } } });
+      return;
+    }
     if (titleState.dtab === "episodes" && isShow(item)) {
       body.className = 'panel episode-panel';
       const target = titleState.plan?.target_lang || library.targets?.[0] || 'en';

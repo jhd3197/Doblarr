@@ -1,4 +1,4 @@
-const TABS = ['plan', 'voices', 'jobs', 'meta'];
+const TABS = ['plan', 'voices', 'jobs', 'meta', 'recipes'];
 
 export function parseTitlePath(path) {
   const parts = path.split('/').filter(Boolean);
@@ -15,7 +15,7 @@ export function parseTitlePath(path) {
 
 export function resolveTitleTab(item, requested) {
   const show = item.media_type === 'show' || (!item.media_type && /^sonarr/i.test(item.source || ''));
-  const allowed = show ? ['episodes', ...TABS] : TABS;
+  const allowed = show ? ['episodes', ...TABS.filter(tab => tab !== 'recipes')] : TABS;
   return allowed.includes(requested) ? requested : item.episode_id ? 'voices' : show ? 'episodes' : 'plan';
 }
 
