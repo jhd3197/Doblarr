@@ -131,13 +131,13 @@ Demucs/voicebox are added.
 | # | Stage | Tool | Status |
 |---|-------|------|--------|
 | 1 | Extract audio | ffmpeg | ✅ real |
-| 2 | Separate dialogue vs music+FX | Demucs `htdemucs_ft` | 🚧 stub |
-| 3 | Timed transcript | subtitles (pysubs2) / WhisperX | ✅ subs · 🚧 whisper |
-| 4 | Speaker diarization | pyannote 3.1 | 🚧 stub |
-| 5 | Translate (dubbing-aware, length-budgeted) | Claude | ✅ wiring · 🚧 impl |
+| 2 | Separate dialogue vs music+FX | Demucs `htdemucs_ft` | ✅ real |
+| 3 | Timed transcript | subtitles (pysubs2) / WhisperX | ✅ real |
+| 4 | Speaker diarization | pyannote 3.1 | ✅ real |
+| 5 | Translate (dubbing-aware, length-budgeted) | Claude | ✅ real |
 | 6 | Clone voices + synthesize lines | **voicebox** | ✅ wiring |
-| 7 | Fit timing (isochrony) | rubberband / ffmpeg | 🚧 stub |
-| 8 | Mix dialogue over M&E + ducking | ffmpeg | 🚧 stub |
+| 7 | Fit timing (isochrony) | ffmpeg `atempo` | ✅ real |
+| 8 | Mix dialogue over M&E + ducking | ffmpeg `sidechaincompress` | ✅ real |
 | 9 | Mux new track back | ffmpeg | ✅ real |
 
 The whole thing runs end-to-end today in **`--dry-run`** (prints the plan, no heavy
@@ -265,9 +265,11 @@ pushes to `dev`, `main` and `master`.
 - [x] Plex labeling + hide (Kometa handoff) + scheduled auto-sync
 - [x] Docker packaging
 - [ ] **The real dub** — flip the worker to `dry_run=False` once these land:
-  - [ ] `separate` (Demucs), `diarize` (pyannote), `whisper` transcribe, `fit_timing`, `mix`
-  - [ ] wire `ClaudeTranslator` (load the `claude-api` skill for current model ids)
-  - [ ] voicebox running locally on `17493`
+  - [x] `separate` (Demucs two-stems), `diarize` (pyannote), `whisper` transcribe
+        (whisperx/faster-whisper), `fit_timing` (atempo stretch), `mix`
+        (sidechain ducking) — `pip install doblarr[real]`
+  - [x] wire `ClaudeTranslator` (Anthropic Messages API, numbered-lines protocol)
+  - [x] voicebox running locally on `17493`
 - [ ] Voices page from real diarization/cloning data
 - [ ] Radarr/Sonarr/Plex webhook trigger → auto-dub new foreign titles overnight
 - [ ] Borrow & re-implement the duration-matching + ducking approach proven by

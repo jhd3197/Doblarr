@@ -54,8 +54,8 @@ voicebox:
 
 # Translation
 translate:
-  provider: claude              # claude | passthrough (stub)
-  model: claude-sonnet-5        # used when provider = claude
+  provider: claude              # claude | voicebox | passthrough (stub)
+  model: claude-sonnet-5        # used when provider = claude (Anthropic model id)
   # api_key is read from the ANTHROPIC_API_KEY env var, not stored here.
 
 # Transcription / alignment

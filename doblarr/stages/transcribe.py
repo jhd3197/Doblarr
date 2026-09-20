@@ -3,7 +3,8 @@
 Sources, in order of preference:
   - an external subtitle file (job.subtitle_file)
   - an embedded subtitle track (target language preferred → already the script)
-  - whisper on the audio (stub; no timestamps from voicebox transcribe)
+  - whisper on the extracted audio (whisperx, or faster-whisper as fallback),
+    selected via transcribe.source: whisper
 """
 
 from __future__ import annotations
@@ -26,31 +27,34 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
     if dry_run:
         return dry(f"would build timed segments ({source})")
 
-    sub_path = job.subtitle_file
     used_lang = None
-    if not sub_path:
-        # Try an embedded subtitle track — prefer the target language (already the script).
-        streams = subtitles.sub_streams(job.input_file)
-        chosen = subtitles.pick_stream(streams, job.target_lang) \
-            or subtitles.pick_stream(streams, job.source_lang) \
-            or (next((s for s in streams if s["codec"] in subtitles._TEXT_CODECS), None))
-        if not chosen:
-            raise RuntimeError(
-                "no subtitle track found (give --subs or add WhisperX for timing); "
-                f"streams: {streams}")
-        used_lang = chosen["lang"]
-        sub_path = subtitles.extract_srt(
-            job.input_file, chosen["index"],
-            work_dir / f"{job.input_file.stem}.{used_lang}.srt")
-        log.info("extracted embedded %s subtitles -> %s", used_lang, sub_path.name)
+    if source == "whisper":
+        segs = _whisper_segments(job, whisper_model)
+    else:
+        sub_path = job.subtitle_file
+        if not sub_path:
+            # Try an embedded subtitle track — prefer the target language (already the script).
+            streams = subtitles.sub_streams(job.input_file)
+            chosen = subtitles.pick_stream(streams, job.target_lang) \
+                or subtitles.pick_stream(streams, job.source_lang) \
+                or (next((s for s in streams if s["codec"] in subtitles._TEXT_CODECS), None))
+            if not chosen:
+                raise RuntimeError(
+                    "no subtitle track found (give --subs or set transcribe.source "
+                    f"to 'whisper'); streams: {streams}")
+            used_lang = chosen["lang"]
+            sub_path = subtitles.extract_srt(
+                job.input_file, chosen["index"],
+                work_dir / f"{job.input_file.stem}.{used_lang}.srt")
+            log.info("extracted embedded %s subtitles -> %s", used_lang, sub_path.name)
 
-    import pysubs2  # lazy
-    subs = pysubs2.load(str(sub_path))
-    segs = [
-        Segment(index=i, start=line.start / 1000.0, end=line.end / 1000.0,
-                text_src=line.plaintext.replace("\n", " ").strip())
-        for i, line in enumerate(subs) if line.plaintext.strip()
-    ]
+        import pysubs2  # lazy
+        subs = pysubs2.load(str(sub_path))
+        segs = [
+            Segment(index=i, start=line.start / 1000.0, end=line.end / 1000.0,
+                    text_src=line.plaintext.replace("\n", " ").strip())
+            for i, line in enumerate(subs) if line.plaintext.strip()
+        ]
     if max_seconds:
         segs = [s for s in segs if s.start < max_seconds]  # tease window
     if segment_limit:
@@ -69,3 +73,69 @@ def run(job: DubJob, work_dir: Path, source: str = "subtitles",
     log.info("transcribe -> %d segments%s", len(job.segments),
              " (already target language)" if job.script_is_target else "")
     return None
+
+
+def _whisper_segments(job: DubJob, whisper_model: str) -> list[Segment]:
+    """Transcribe the extracted dialogue with whisperx; fall back to faster-whisper."""
+    audio = job.vocals if job.vocals and job.vocals.exists() else job.source_audio
+    if audio is None or not audio.exists():
+        raise RuntimeError(
+            "transcribe.source is 'whisper' but no extracted audio exists yet — "
+            "the extract stage must run first")
+    try:
+        return _whisperx_segments(job, audio, whisper_model)
+    except ImportError:
+        pass
+    try:
+        return _faster_whisper_segments(job, audio, whisper_model)
+    except ImportError:
+        raise RuntimeError(
+            "transcribe.source is 'whisper' but no whisper backend is installed. "
+            "Install whisperx (pip install whisperx, plus a torch build for your "
+            "platform — see the notes in requirements.txt) or faster-whisper, or "
+            "set transcribe.source back to 'subtitles'.") from None
+
+
+def _to_segments(raw: list[dict]) -> list[Segment]:
+    """Whisper result dicts -> Segments; entries without usable timings are dropped."""
+    segs = []
+    for i, s in enumerate(raw):
+        text = str(s.get("text", "")).replace("\n", " ").strip()
+        if not text or s.get("start") is None or s.get("end") is None:
+            continue
+        segs.append(Segment(index=i, start=float(s["start"]), end=float(s["end"]),
+                            text_src=text))
+    return segs
+
+
+def _whisperx_segments(job: DubJob, audio: Path, whisper_model: str) -> list[Segment]:
+    import whisperx  # lazy — heavy ML dep
+    try:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        device = "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+    log.info("whisperx transcribe (%s on %s) -> %s", whisper_model, device, audio.name)
+    model = whisperx.load_model(whisper_model, device, compute_type=compute_type,
+                                language=job.source_lang)
+    result = model.transcribe(str(audio))
+    # Align against the audio for word-accurate timings — fit_timing and diarize
+    # downstream key off these start/end values.
+    lang = result.get("language") or job.source_lang
+    try:
+        align_model, metadata = whisperx.load_align_model(language_code=lang, device=device)
+        result = whisperx.align(result["segments"], align_model, metadata,
+                                str(audio), device)
+    except Exception as exc:  # noqa: BLE001 — no align model for some languages; keep raw timings
+        log.warning("whisperx alignment failed (%s) — using raw segment timings", exc)
+    return _to_segments(result["segments"])
+
+
+def _faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str) -> list[Segment]:
+    from faster_whisper import WhisperModel  # lazy — heavy ML dep
+    log.info("faster-whisper transcribe (%s) -> %s", whisper_model, audio.name)
+    model = WhisperModel(whisper_model, device="auto")
+    raw, _info = model.transcribe(str(audio), language=job.source_lang,
+                                  word_timestamps=True)
+    return _to_segments([{"start": s.start, "end": s.end, "text": s.text} for s in raw])
