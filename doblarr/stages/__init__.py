@@ -8,12 +8,12 @@ artifacts are fresh (checkpoint/resume; `force` bypasses).
 Implementation status:
     extract    - real (ffmpeg)
     mux        - real (ffmpeg)
-    transcribe - real for subtitles; whisper path is a stub
-    separate   - stub (Demucs)
-    diarize    - stub (pyannote)
+    transcribe - real (subtitles; whisper via whisperx / faster-whisper)
+    separate   - real (Demucs two-stems; falls back to the original bed)
+    diarize    - real (pyannote; falls back to a single narrator)
     translate  - real wiring; quality depends on the translator provider
                  (inline dry-run passthrough — no @stage short-circuit)
     synthesize - real wiring to voicebox
-    fit_timing - stub (time-stretch / duration match)
+    fit_timing - real (ffprobe measure + atempo stretch to the slot)
     mix        - real (ffmpeg mix + duck)
 """

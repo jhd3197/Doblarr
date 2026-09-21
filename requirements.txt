@@ -8,12 +8,12 @@ tenacity>=8           # retry/backoff for the service clients
 fastapi>=0.110
 uvicorn>=0.27
 pydantic>=2           # request-body models + config schema validation
+prompture[anthropic]>=1.12.0     # shared structured AI translation for every provider
 
-# --- Translation (optional, for the real translate stage) ---
-# anthropic>=0.40     # Claude-based translation
-
-# --- Heavy ML deps (only needed when running real stages, install separately) ---
-# These are large and GPU-specific — keep them out of the base install.
+# --- Real-dub deps (only needed when running real stages) ---
+# Installed as an extra: pip install doblarr[real]
+# (kept out of the base install because torch is large and GPU-specific —
+#  install a torch build matching your platform first, from https://pytorch.org)
 # torch                # match your CUDA build from https://pytorch.org
 # demucs>=4.0          # music/vocal source separation
 # whisperx             # transcription + word-level alignment

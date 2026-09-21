@@ -19,6 +19,7 @@ import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from .clients.plex import PlexError
 from .errors import ConfigError, JobCancelled
@@ -50,6 +51,13 @@ class Job:
     force: bool = False        # re-run every stage, ignoring cached artifacts
     overrides: dict | None = None   # per-title config overrides (dub.*, transcribe.*, …)
     output_file: str | None = None   # muxed result (planned path in dry-run)
+    report_file: str | None = None
+    review_file: str | None = None
+    review_count: int = 0
+    version_id: str | None = None
+    translation_id: str | None = None
+    version_name: str = ""
+    version_file: str | None = None
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -253,10 +261,21 @@ class Worker(threading.Thread):
             self._process(job)
 
     def _process(self, job: Job) -> None:
+        current: dict[str, Any] = {"i": 0, "total": 1, "stage": "probe"}
+
         def on_stage(name: str, i: int, total: int) -> None:
+            current.update(i=i, total=total, stage=name)
             self.store.update(job.id, status="running", stage=name,
-                              progress=int(i / total * 100))
+                              progress=int(i / total * 100), message=name)
             self._publish(job, "stage", stage=name, progress=int(i / total * 100))
+
+        def on_progress(stage_name: str, frac: float, detail: str) -> None:
+            pct = int((current["i"] + min(max(frac, 0.0), 1.0)) / current["total"] * 100)
+            message = f"{stage_name} · {detail}"
+            self.store.update(job.id, status="running", stage=stage_name,
+                              progress=pct, message=message)
+            self._publish(job, "progress", stage=stage_name, progress=pct,
+                          message=message)
 
         # Read live so toggling dub.dry_run in Settings applies without a restart.
         # A job carrying per-title overrides runs against a merged copy of the
@@ -279,11 +298,18 @@ class Worker(threading.Thread):
             )
             run_job(dj, config, dry_run=dry_run, on_stage=on_stage,
                     cancel_event=cancel_evt, services=self.services,
-                    force=job.force, db=self.store.db, events=self.events)
+                    force=job.force, db=self.store.db, events=self.events,
+                    on_progress=on_progress)
             out = str(dj.output_file) if dj.output_file else "(planned)"
             message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
                               message=message,
+                              report_file=str(dj.report_file) if dj.report_file else None,
+                              review_file=str(dj.review_file) if dj.review_file else None,
+                              review_count=sum(bool(s.issues) for s in dj.segments),
+                              version_id=dj.version_id, translation_id=dj.translation_id,
+                              version_name=dj.version_name,
+                              version_file=str(dj.version_file) if dj.version_file else None,
                               output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
             if not dry_run:
@@ -297,5 +323,10 @@ class Worker(threading.Thread):
             self.store.update(job.id, status="failed", message=str(exc))
             self._publish(job, "failed", message=str(exc))
         finally:
+            if 'dj' in locals() and dj.report_file:
+                self.store.update(job.id, report_file=str(dj.report_file),
+                                  review_file=str(dj.review_file) if dj.review_file else None,
+                                  review_count=sum(bool(s.issues) for s in dj.segments))
+                self._publish(job, "review_ready")
             self._current_id = None
             self._cancel_evt = None

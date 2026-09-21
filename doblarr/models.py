@@ -17,6 +17,12 @@ class Segment:
     speaker: str = "SPEAKER_00"      # diarization label
     text_translated: str | None = None
     audio_clip: Path | None = None   # generated dub clip for this line
+    words: list[dict] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+    delivery: str = ""
+    voice: str | None = None
+    revision: int = 0
+    source_start: float | None = None
 
     @property
     def duration(self) -> float:
@@ -51,6 +57,17 @@ class DubJob:
     dubbed_track: Path | None = None       # mixed dialogue + background
     output_file: Path | None = None        # final remuxed video
     script_is_target: bool = False         # segments already in the target language
+    script_lang: str | None = None         # subtitle language can differ from audio
+    transcription_options: dict = field(default_factory=dict)
+    metrics: dict = field(default_factory=dict)
+    report_file: Path | None = None
+    review_file: Path | None = None
+    artifacts_dir: Path | None = None
+    translation_options: dict = field(default_factory=dict)
+    version_id: str | None = None
+    translation_id: str | None = None
+    version_name: str = ""
+    version_file: Path | None = None
 
     def summary(self) -> str:
         return (

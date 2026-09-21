@@ -18,9 +18,18 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "pydantic>=2",
+    "prompture[anthropic]>=1.12.0",  # shared structured AI translation for every provider
 ]
 
 [project.optional-dependencies]
+# Real (non-dry-run) pipeline: pip install doblarr[real]
+# Install a torch build matching your platform/CUDA first (https://pytorch.org) —
+# whisperx/pyannote pull in torch, but you want the right wheel for your GPU.
+real = [
+    "demucs>=4.0",          # music/vocal source separation
+    "whisperx",             # transcription + word-level alignment
+    "pyannote.audio>=3.1",  # speaker diarization (needs a HuggingFace token)
+]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",

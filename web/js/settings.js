@@ -19,7 +19,13 @@ export function createSettings({ setPage, onConfigLoaded }) {
     row.append(left);
 
     const right = el("div", {});
-    if (["text", "number", "list"].includes(f.t)) {
+    if (f.t === "json") {
+      const value = fieldDisplay(f);
+      const input = el("textarea", { class: "input m", rows: 4, "aria-label": f.l,
+        oninput: e => { state.vals[f.k] = e.target.value; } });
+      input.value = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+      right.append(input);
+    } else if (["text", "number", "list"].includes(f.t)) {
       const value = fieldDisplay(f);
       right.append(el("input", {
         class: "input m", type: f.t === "number" ? "number" : "text", value: Array.isArray(value) ? value.join(", ") : value, style: "max-width: 420px;",
@@ -54,6 +60,12 @@ export function createSettings({ setPage, onConfigLoaded }) {
       let val = (f && isBoolField(f)) ? (v === "On") : v;
       if (f?.t === "number") val = Number(v);
       if (f?.t === "list") val = String(v).split(",").map(s => s.trim()).filter(Boolean);
+      if (f?.t === "json") {
+        try {
+          val = JSON.parse(v);
+          if (!val || Array.isArray(val) || typeof val !== 'object' || Object.values(val).some(x => typeof x !== 'string')) throw new Error();
+        } catch { status.textContent = `${f.l}: enter a JSON object with text values.`; return; }
+      }
       const parts = k.split(".");
       let node = payload;
       parts.forEach((p, i) => { if (i === parts.length - 1) node[p] = val; else node = (node[p] = node[p] || {}); });

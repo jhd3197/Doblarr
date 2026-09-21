@@ -342,6 +342,9 @@
       </div>
       <label style="display:block;font-size:13px;font-weight:600;margin:10px 0 4px;">File path <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
       <input id="ndPath" class="input m" type="text" placeholder="M:/Plex/Movies/…/film.mkv">
+      <label for="ndKind" style="display:block;margin:12px 0 6px;font-size:13px;">Output</label>
+      <select id="ndKind" class="input"><option value="full">Full dubbed video</option>
+        <option value="audition">Short voice audition (audio)</option><option value="tease">Opening teaser (video)</option></select>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
         <button type="button" class="btn btn-secondary" id="ndCancel">Cancel</button>
         <span id="ndStatus" role="alert" style="color:var(--muted);margin-right:auto;"></span>
@@ -349,6 +352,18 @@
       </div>
     </div>
   </div>
+
+  <dialog id="reviewDialog" class="review-dialog" aria-labelledby="reviewTitle">
+    <div class="review-header"><div><h2 id="reviewTitle">Review dialogue</h2>
+      <p id="reviewSummary" class="hint"></p></div>
+      <button type="button" id="reviewClose" class="btn btn-secondary">Close</button></div>
+    <div class="review-toolbar"><label><input type="checkbox" id="reviewFlagged"> Flagged lines only</label>
+      <span class="hint">Listen, edit, then render the changed lines.</span></div>
+    <div class="review-layout"><nav id="reviewLines" class="review-lines" aria-label="Dialogue lines"></nav>
+      <section id="reviewEditor" class="review-editor" aria-label="Line editor"></section></div>
+    <div class="review-footer"><p id="reviewStatus" role="status"></p>
+      <button type="button" id="reviewSubmit" class="btn btn-primary" disabled>Render changes</button></div>
+  </dialog>
 
   <!-- Watch a produced dub/tease -->
   <div id="watchModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:100;">

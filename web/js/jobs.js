@@ -40,19 +40,24 @@ export function createJobs({ loadLibrary, goTitle, onTitleJobs, loadConfig }) {
       const stage = j.status === "done" ? escapeHtml(j.message || "done")
                   : j.status === "failed" ? escapeHtml(j.message || "failed")
                   : j.status === "cancelled" ? escapeHtml(j.message || "cancelled")
-                  : (escapeHtml(j.stage || "queued"));
+                  : escapeHtml(j.message || j.stage || "queued");
       const barColor = j.status === "failed" || j.status === "cancelled" ? "background: var(--color-neutral-600);" : "";
+      const pct = (j.status === "running" || j.status === "queued")
+        ? `<div class="m" style="font-size:11px;color:var(--muted);margin-top:3px;">${j.progress || 0}%</div>` : "";
       const act = (j.status === "queued" || j.status === "running") ? "Cancel" : "Remove";
       const watch = j.has_file
         ? `<button type="button" class="btn btn-ghost job-watch" data-id="${j.id}">Watch</button>` : "";
-      const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch;
+      const review = j.has_review
+        ? `<button type="button" class="btn btn-secondary job-review" data-id="${j.id}">Review${j.review_count ? ` (${j.review_count})` : ''}</button>` : '';
+      const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch + review;
       const st = (j.status === "done" && (j.message || "").startsWith("planned")) ? "planned" : j.status;
+      const version = j.version_id ? `<div class="m" style="font-size:11px;color:var(--muted);" title="${escapeHtml(j.version_id)}">${escapeHtml(j.version_name || 'Dub')} · ${escapeHtml(j.version_id.slice(0, 12))}<br>Script ${escapeHtml((j.translation_id || '').slice(0, 12))}</div>` : '';
       return `
         <tr>
           <td style="font-weight:600;">${escapeHtml(j.title)}${j.kind === "tease" ? ' <span class="tag tag-outline" style="font-size:10.5px;padding:1px 7px;">tease</span>' : ""}</td>
-          <td class="m" style="font-size:13px;">${track}</td>
+          <td class="m" style="font-size:13px;">${track}${version}</td>
           <td>${stage}</td>
-          <td><div class="bar"><span style="width:${j.progress || 0}%;${barColor}"></span></div></td>
+          <td><div class="bar"><span style="width:${j.progress || 0}%;${barColor}"></span></div>${pct}</td>
           <td>${jobStatusTag(st)}</td>
           <td>${action}</td>
         </tr>`;
@@ -147,9 +152,10 @@ export function createJobs({ loadLibrary, goTitle, onTitleJobs, loadConfig }) {
         <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;">
           <span style="font-family:var(--font-heading);font-weight:800;font-size:16px;">${escapeHtml(j.title)}</span>
           <span class="m" style="font-size:12.5px;color:var(--muted);">${escapeHtml(j.source_lang)} → ${escapeHtml(j.target_lang)}</span>
-          <span class="tag ${j.status === "running" ? "tag-accent" : "tag-neutral"}" style="margin-left:auto;">${j.status === "running" ? escapeHtml(j.stage || "running") : "queued"}</span>
+          <span class="tag ${j.status === "running" ? "tag-accent" : "tag-neutral"}" style="margin-left:auto;">${j.status === "running" ? escapeHtml(j.message || j.stage || "running") : "queued"}</span>
         </div>
         <div class="bar" style="margin-top:14px;"><span style="width:${j.progress || 0}%;"></span></div>
+        <div class="m" style="font-size:11.5px;color:var(--muted);margin-top:6px;">${j.progress || 0}%${j.status === "running" && j.message ? " — " + escapeHtml(j.message) : ""}</div>
       </div>`).join("");
   }
 

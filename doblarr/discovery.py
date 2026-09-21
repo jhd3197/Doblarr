@@ -59,6 +59,7 @@ class LibraryItem:
     audio_langs: list[str] = field(default_factory=list)  # ISO 639-1 codes present
     tmdb_id: int | None = None
     tvdb_id: int | None = None
+    media_type: str | None = None
 
 
 def _poster_url(images: list | None) -> str | None:
@@ -144,6 +145,7 @@ def scan_radarr(movies: list[dict], targets: list[str],
             poster=_poster_url(m.get("images")),
             audio_langs=sorted(audio_codes),
             tmdb_id=m.get("tmdbId"),
+            media_type="movie",
         ))
 
     return sort_items(items)
@@ -176,7 +178,7 @@ def scan_sonarr(series_list: list[dict], fetch_files, targets: list[str],
                 label="available", status="available", auto_dub=False,
                 path=s.get("path"), poster=_poster_url(s.get("images")),
                 audio_langs=[original] if original else [],
-                tvdb_id=s.get("tvdbId")))
+                tvdb_id=s.get("tvdbId"), media_type="show"))
             continue
 
         files = fetch_files(s.get("id")) or []
@@ -205,7 +207,7 @@ def scan_sonarr(series_list: list[dict], fetch_files, targets: list[str],
             source=source_label, existing_audio=f"{audio_disp} ({with_target}/{total})",
             label=status, status=status, auto_dub=(status != "available"),
             path=s.get("path"), poster=_poster_url(s.get("images")),
-            audio_langs=sorted(all_codes), tvdb_id=s.get("tvdbId")))
+            audio_langs=sorted(all_codes), tvdb_id=s.get("tvdbId"), media_type="show"))
 
     return sort_items(items)
 

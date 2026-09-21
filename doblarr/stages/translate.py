@@ -1,40 +1,77 @@
-"""Stage 5 — translate each segment into the target language, for dubbing.
-
-We pass a per-line character budget derived from the original spoken duration so
-the translator can keep lines short enough to fit the time slot.
-
-Unlike the other stages this one does NOT use the @stage/dry() short-circuit:
-its dry-run is real per-line work (passthrough placeholders must still populate
-text_translated so downstream stages have something to plan with).
-"""
+"""Contextual translation with bounded batches and immediate checkpoints."""
 
 from __future__ import annotations
 
-import logging
+from ..errors import JobCancelled
 
-from ..clients.translator import Translator
-from ..models import DubJob
-
-log = logging.getLogger("doblarr.translate")
-
-# Rough speaking rate used to turn a time slot into a character budget.
 CHARS_PER_SECOND = 14
 
 
-def run(job: DubJob, translator: Translator, dry_run: bool = False) -> None:
-    if job.script_is_target:
-        log.info("translate: script already in %s — skipping", job.target_lang)
+def run(
+    job,
+    translator,
+    dry_run=False,
+    progress=None,
+    batch_size=12,
+    glossary=None,
+    chars_per_second=CHARS_PER_SECOND,
+    checkpoint=None,
+    cancel=None,
+):
+    if job.script_is_target or dry_run:
         for seg in job.segments:
             seg.text_translated = seg.text_translated or seg.text_src
         return
-    log.info("translate %d segments -> %s", len(job.segments), job.target_lang)
-    for seg in job.segments:
-        if seg.text_translated:
-            continue
-        budget = int(seg.duration * CHARS_PER_SECOND) or None
-        if dry_run:
-            seg.text_translated = seg.text_src  # passthrough placeholder
-            continue
-        seg.text_translated = translator.translate(
-            seg.text_src, job.source_lang, job.target_lang, target_chars=budget,
-        )
+    size = max(1, min(32, int(batch_size)))
+    pending = [s for s in job.segments if not s.text_translated]
+    positions = {s.index: i for i, s in enumerate(job.segments)}
+    batches: list[list] = []
+    for seg in pending:
+        if not batches or len(batches[-1]) >= size or seg.start - batches[-1][-1].end > 8:
+            batches.append([])
+        batches[-1].append(seg)
+    for batch in batches:
+        if cancel is not None and cancel.is_set():
+            raise JobCancelled("cancelled before translation batch")
+        payload = [
+            {
+                "text": s.text_src,
+                "speaker": s.speaker,
+                "duration": s.duration,
+                "target_chars": max(1, int(s.duration * chars_per_second)),
+            }
+            for s in batch
+        ]
+        start, end = positions[batch[0].index], positions[batch[-1].index]
+        context = [
+            {"speaker": s.speaker, "text": s.text_src}
+            for s in job.segments[max(0, start - 3) : end + 4]
+        ]
+        if hasattr(translator, "translate_batch"):
+            results = translator.translate_batch(
+                payload,
+                job.script_lang or job.source_lang,
+                job.target_lang,
+                context=context,
+                glossary=glossary,
+            )
+        else:
+            results = [
+                translator.translate(
+                    s.text_src,
+                    job.script_lang or job.source_lang,
+                    job.target_lang,
+                    target_chars=p["target_chars"],
+                )
+                for s, p in zip(batch, payload, strict=True)
+            ]
+        if len(results) != len(batch) or any(not str(t).strip() for t in results):
+            raise ValueError("translation did not return every spoken line")
+        for seg, text in zip(batch, results, strict=True):
+            seg.text_translated = text
+        job.metrics["translation_batches"] = job.metrics.get("translation_batches", 0) + 1
+        if checkpoint:
+            checkpoint()
+        if progress:
+            done = sum(bool(s.text_translated) for s in job.segments)
+            progress(done, len(job.segments), f"translated {done}/{len(job.segments)}")

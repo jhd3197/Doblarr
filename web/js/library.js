@@ -75,10 +75,17 @@ export function createLibrary({ goTitle }) {
 
   async function fetchPlan(item) {
     const data = await api("plan?" + castParams(item));
+    if (item.parent) {
+      const parentPlan = await api("plan?" + castParams(item.parent));
+      return { ...parentPlan.plan, ...data.plan };
+    }
     return data.plan || {};
   }
 
   async function queueDub(item, btn, kind = "full") {
+    if (!item.episode_id && (item.media_type === 'show' || /^sonarr/i.test(item.source || ''))) {
+      goTitle(item, 'episodes'); return;
+    }
     btn.disabled = true; btn.textContent = kind === "tease" ? "Teasing…" : "Queuing…";
     try {
       // The title's dub plan rides along: target_lang picks the job's language,
@@ -87,6 +94,13 @@ export function createLibrary({ goTitle }) {
       const overrides = { ...plan };
       const target = overrides.target_lang;
       delete overrides.target_lang;
+      if (item.episode_id) {
+        const result = await api(`series/${item.tvdb_id}/queue`, { method:'POST', json: {
+          episode_ids:[item.episode_id], target_lang:target || library.targets?.[0] || 'en', kind, missing_only:false,
+        } });
+        if (!result.queued.length) throw new Error(result.skipped.map(s => s.reason).join('; '));
+        btn.textContent = 'Queued ✓'; return;
+      }
       await api("jobs", {
         method: "POST",
         json: {

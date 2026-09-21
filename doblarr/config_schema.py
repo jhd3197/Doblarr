@@ -8,6 +8,7 @@ runtime still accesses config as plain dicts via `doblarr.config.Config`.
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -67,19 +68,37 @@ class PlexModel(_Section):
 
 class VoiceboxModel(_Section):
     base_url: str = "http://127.0.0.1:17493"
-    timeout_seconds: int = 600
-    default_engine: str = "chatterbox-multilingual"
+    timeout_seconds: int = 1800  # first CPU generation includes the model load
+    default_engine: str = "chatterbox"
+    model_size: str | None = None
+    concurrency: int = 1
+    seed: int | None = None
+    preview_engine: str = "kokoro"
 
 
 class TranslateModel(_Section):
     provider: str = "claude"
     model: str = "claude-sonnet-5"
+    endpoint: str | None = None  # prompture driver URL override (local LLMs)
+    batch_size: int = 12
+    chars_per_second: float = 14
+    glossary: dict[str, str] = {}
+    locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
+    adaptation: Literal["natural", "faithful", "localized"] = "natural"
+    direction: str = ""
+    character_notes: dict[str, str] = {}
 
 
 class TranscribeModel(_Section):
     source: str = "subtitles"
     whisper_model: str = "large-v3"
     diarize: bool = True
+    clean_cues: bool = True
+    align_subtitles: bool = False
+    batch_size: int = 8
+    device: str = "auto"
+    compute_type: str = "auto"
+    keep_models_loaded: bool = False
 
 
 class SeparateModel(_Section):
@@ -87,15 +106,40 @@ class SeparateModel(_Section):
 
 
 class DubModel(_Section):
+    version_name: str = ""
+    preserve_versions: bool = True
+    narrator_voice: str = ""
+    narrator_delivery: str = ""
+    preset: str = "custom"
     voice_mode: str = "clone"
     dry_run: bool = True
     duration_match: bool = True
-    max_fit_attempts: int = 5
-    ducking_ratio: str = "12:1"
+    max_fit_attempts: int = 2
+    ducking_ratio: str = "4:1"
+    background_volume: float = 1.0
+    fallback_volume: float = 0.2
+    duck_threshold: float = 0.05
+    duck_attack_ms: float = 30
+    duck_release_ms: float = 350
+    output_codec: str = "aac"
+    output_bitrate: str = "192k"
+    pronunciations: dict[str, str] = {}
+    line_edits: dict[str, dict] = {}
+    cast_group: str = ""
+    character_map: dict[str, str] = {}
+    audition_lines: int = 8
     track_name_template: str = "{language_name} AI"
     preset_voices: list[str] = []
     teaser_minutes: int = 10
     segment_limit: int | None = None
+
+
+class QualityModel(_Section):
+    enabled: bool = True
+    normalize: bool = True
+    dialogue_lufs: float = -18
+    asr: str = "off"
+    max_retries: int = 1
 
 
 class ConfigModel(_Section):
@@ -111,6 +155,7 @@ class ConfigModel(_Section):
     transcribe: TranscribeModel = TranscribeModel()
     separate: SeparateModel = SeparateModel()
     dub: DubModel = DubModel()
+    quality: QualityModel = QualityModel()
 
 
 def validate_config(data: dict) -> None:

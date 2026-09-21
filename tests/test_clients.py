@@ -1,5 +1,6 @@
 """ArrClient base behavior with a mocked requests.Session — no network."""
 
+
 import requests
 
 from doblarr.clients.plex import PlexClient, PlexError

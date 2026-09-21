@@ -27,3 +27,6 @@ class SonarrClient(ArrClient):
 
     def episode_files(self, series_id: int) -> list[dict]:
         return self._get(f"/api/v3/episodefile?seriesId={series_id}")
+
+    def episodes(self, series_id: int) -> list[dict]:
+        return self._get(f"/api/v3/episode?seriesId={series_id}")

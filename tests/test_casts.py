@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from doblarr.clients.voicebox import VoiceboxError
 from doblarr.jobs import JobStore
 from doblarr.store import SCHEMA_VERSION, Database
 from doblarr.voices import assign_default_cast, cast_key
@@ -76,8 +77,8 @@ def test_assign_default_cast_numbering():
                        "category": "narrator", "voice": "", "previewed": False}]
     multi = assign_default_cast(["S0", "S1", "S2", "S3"])
     assert [(e["label"], e["category"]) for e in multi] == [
-        ("Adult M 1", "adult_m"), ("Adult F 1", "adult_f"),
-        ("Adult M 2", "adult_m"), ("Adult F 2", "adult_f"),
+        ("Speaker 1", "speaker"), ("Speaker 2", "speaker"),
+        ("Speaker 3", "speaker"), ("Speaker 4", "speaker"),
     ]
 
 
@@ -86,9 +87,9 @@ def test_assign_default_cast_merges_existing():
                  "voice": "custom-voice", "previewed": True}]
     merged = assign_default_cast(["S0", "S1"], existing=existing)
     assert merged[0]["voice"] == "custom-voice"      # user choice preserved
-    assert merged[1]["label"] == "Adult F 1"          # new speaker numbered fresh
+    assert merged[1]["label"] == "Speaker 1"          # new speaker numbered fresh
     again = assign_default_cast(["S0", "S1", "S2"], existing=merged)
-    assert again[2]["label"] == "Adult M 2"           # numbering continues
+    assert again[2]["label"] == "Speaker 2"           # numbering continues
     assert len(again) == 3                            # nothing dropped
 
 
@@ -158,8 +159,13 @@ def test_cast_api_validation(cast_client):
     assert cast_client.get("/api/cast", params={"key": "k"}).status_code == 401
 
 
-def test_voices_endpoint_falls_back_to_config(cast_client):
-    # voicebox is not running in tests -> config preset fallback
+def test_voices_endpoint_falls_back_to_config(cast_client, monkeypatch):
+    # voicebox unreachable -> config preset fallback (patched: a real voicebox
+    # may be running on the dev machine)
+    def down(self):
+        raise VoiceboxError("connection refused")
+
+    monkeypatch.setattr("doblarr.clients.voicebox.VoiceboxClient.list_voices", down)
     r = cast_client.get("/api/voices", headers=HEADERS)
     assert r.status_code == 200
     body = r.json()

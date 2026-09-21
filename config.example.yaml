@@ -48,21 +48,38 @@ plex:
 voicebox:
   # Installed/native app default: 17493.  Docker maps host 17600 -> 17493.
   base_url: http://127.0.0.1:17493
-  timeout_seconds: 600
+  timeout_seconds: 1800
   # Which TTS engine profile voicebox should use (see voicebox docs).
-  default_engine: chatterbox-multilingual
+  default_engine: chatterbox
+  concurrency: 1               # raise only after measuring server throughput / memory
+  model_size: null
+  seed: null
+  preview_engine: kokoro
 
 # Translation
 translate:
-  provider: claude              # claude | passthrough (stub)
-  model: claude-sonnet-5        # used when provider = claude
-  # api_key is read from the ANTHROPIC_API_KEY env var, not stored here.
+  provider: claude              # claude | prompture | voicebox | passthrough (stub)
+  batch_size: 12
+  chars_per_second: 14
+  glossary: {}                 # source name/term: preferred translation
+  model: claude-sonnet-5        # claude: Anthropic model id · prompture: provider/model
+                                #   string, e.g. ollama/llama3.1:8b or lmstudio/<model>
+  # endpoint: http://127.0.0.1:1234/v1/chat/completions  # prompture URL override
+  # claude: api_key is read from the ANTHROPIC_API_KEY env var, not stored here.
+  # prompture: local servers need no key (OLLAMA_ENDPOINT / LMSTUDIO_ENDPOINT env
+  # vars work too); hosted providers use their usual env vars.
 
 # Transcription / alignment
 transcribe:
   source: subtitles             # subtitles | whisper
   whisper_model: large-v3       # used when source = whisper
   diarize: true                 # split speakers with pyannote
+  clean_cues: true              # remove recognized nonspoken cues; retain ambiguous text
+  align_subtitles: false        # word alignment only for source-language subtitles
+  batch_size: 8
+  device: auto
+  compute_type: auto
+  keep_models_loaded: false     # opt in only with enough RAM / VRAM
   # hf_token read from HF_TOKEN env var (pyannote needs it)
 
 # Source separation
@@ -71,11 +88,33 @@ separate:
 
 # Dubbing behaviour
 dub:
+  preset: custom               # custom | preview | final
+  narrator_voice: ""           # saved Voicebox profile ID; blank uses original voice cloning
+  narrator_delivery: ""        # Qwen only; e.g. warm, calm storytelling
   voice_mode: clone             # clone (per-speaker cloned voice) | preset
   dry_run: true                 # plan-only (no heavy stages) until you flip this off
   teaser_minutes: 10            # a "tease" job dubs just this opening window
-  preset_voices: []             # fallback voice list when voicebox is unreachable
+  preset_voices: []             # existing Voicebox profile IDs; required for preset mode
+  audition_lines: 8             # representative short dialogue montage (kind: audition)
+  cast_group: ""               # explicit series/group name for recurring characters
+  character_map: {}             # current speaker ID: stable character name
+  pronunciations: {}            # written term: TTS spelling (captions stay unchanged)
   duration_match: true          # time-fit each line to the original slot
-  max_fit_attempts: 5           # shorten/retranslate to fit before stretching
-  ducking_ratio: "12:1"         # sidechain ducking of background under speech
+  max_fit_attempts: 2           # shorten/retranslate to fit before stretching
+  ducking_ratio: "4:1"         # sidechain ducking of background under speech
+  background_volume: 1.0
+  fallback_volume: 0.2          # original soundtrack when separation is unavailable
+  duck_threshold: 0.05
+  duck_attack_ms: 30
+  duck_release_ms: 350
+  output_codec: aac             # aac | flac | copy
+  output_bitrate: 192k
   track_name_template: "{language_name} AI"   # track title; {language}=code, {language_name}=name
+
+# Generated speech validation (bounded retries, followed by review flags)
+quality:
+  enabled: true
+  normalize: true
+  dialogue_lufs: -18
+  asr: "off"                     # off | suspicious | all (adds recognition cost)
+  max_retries: 1

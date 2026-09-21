@@ -37,11 +37,14 @@ The **app** is live — a real backend + web UI you can run and use:
 - **Job queue** — enqueue a dub from the Library; a background worker runs it and the
   Dubs page + Overview update live.
 
-What's **not** real yet is the **dub output itself** — the worker runs the pipeline in
-**dry-run** (it plans every stage but produces no audio) until the heavy stages are
-implemented and voicebox is running (see Pipeline + Roadmap). This is the
-`dub.dry_run: true` default in config — flip it to `false` once voicebox + the heavy
-deps are in place.
+The worker defaults to **dry-run** (`dub.dry_run: true`), which plans stages without
+producing audio. Real extraction, separation, subtitle transcription, translation,
+speech generation, timing, mixing and muxing are implemented. Set dry-run to false
+when the required local services and dependencies are ready.
+
+For an interrupted first episode with existing audio stems, the explicit
+`scripts/finish_episode.py` runner saves translation batches and individual voice
+clips, then assembles a full-length video. See [episode recovery](docs/episode-recovery.md).
 
 ## Running it
 
@@ -50,6 +53,28 @@ pip install -r requirements.txt          # core + FastAPI/uvicorn
 cp config.example.yaml config.yaml        # set Radarr/Sonarr URLs + API keys
 python -m doblarr serve                    # http://127.0.0.1:6363
 ```
+
+### AI translation
+
+Prompture is the shared AI translation layer for every real translation provider.
+It handles structured JSON generation and provider capabilities; Doblarr validates
+nonempty translated text and an exact one-to-one mapping of segment IDs before TTS.
+Malformed responses get two attempts, followed by individual-line attempts for a
+failed batch. Exhausted attempts fail the job rather than substitute source dialogue.
+Character budgets remain approximate dubbing guidance, not a guarantee of audio duration.
+
+Existing configuration remains supported:
+
+- `translate.provider: claude` uses Prompture's Claude driver with the existing
+  model ID and `ANTHROPIC_API_KEY` (or Prompture's `CLAUDE_API_KEY`).
+- `translate.provider: prompture` accepts `provider/model` and an optional endpoint.
+- `translate.provider: voicebox` adapts the service's local LLM through the same
+  Prompture schema and validation pipeline.
+- `translate.provider: passthrough` is an explicit stub for development.
+
+Prompture is installed with the core dependencies. Translation loads it lazily,
+so dry runs do not initialize an AI provider. Parsed-response usage metadata is
+available on the translator's `last_usage`; Voicebox does not report token usage.
 
 ### API authentication
 
@@ -82,12 +107,84 @@ Jobs and the last library scan live in a SQLite database (`paths.db`, default
 `<work_dir>/doblarr.db`; in Docker that's inside the mounted `/data`), so the Dubs
 page and Overview survive restarts. A legacy `work/jobs.json` is imported once and
 renamed to `jobs.json.migrated`. Jobs interrupted mid-run are re-queued at startup,
-and the pipeline **skips stages whose output artifact already exists** and is newer
-than the input file (extract/separate/synthesize/mix/mux) — resubmitting continues
-where the artifacts stop. Enqueue with `"force": true` to redo every stage. After a
+and the pipeline reuses artifacts whose input and configuration manifests still
+match. Source artifacts are shared across target languages; translated scripts and
+outputs use separate language namespaces. Completed TTS clips are verified by
+content fingerprints, and interrupted waits resume the saved remote generation ID. Enqueue with `"force": true` to redo every stage. After a
 real (non-dry-run) mux, Doblarr asks Plex to refresh that item so the new
 "`<Language>` AI" track shows up at once (`plex.auto_refresh`, default on; failures
 never fail the job).
+
+### Faster generation and dialogue review
+
+Choose **Custom**, **Preview**, or **Final** in generation settings. Preview uses
+preset voices, the preview engine, faster separation, and no translation repair
+retries; assign existing compatible Voicebox profile IDs first. Final enables
+duration fitting. Custom respects your individual settings. Engine availability
+and throughput depend on your Voicebox installation.
+
+Use **Audition voices** on a title, or `--kind audition` on the CLI, for a short
+WAV montage covering speakers, fast dialogue, quiet/loud passages, and different
+points in the source. Transcription and speaker detection still inspect the source;
+separation and speech generation run on the selected excerpts.
+
+Completed or failed jobs with dialogue snapshots expose **Review** on the Dubs page.
+Listen to a line, edit its wording, timing, voice, or delivery, then render changes.
+A new job reuses matching clips and rebuilds the mix/export; the previous review
+snapshot stays available. **Generate a new take** invalidates that line explicitly.
+Delivery instructions require a compatible Qwen engine.
+
+Translation supports scene context, terminology dictionaries, and bounded shortening
+of overlong lines. Speech checks flag silence, clipping, duration problems, and
+optional ASR mismatches. Loudness normalization and configurable ducking preserve
+background dynamics. Unresolved flags remain visible for human review.
+
+Each run writes stage timings and cache/retry counters to `work/reports`, available
+through `GET /api/jobs/{id}/report`. See [the generation guide](docs/generation-roadmap.md)
+for configuration, benchmark acceptance, and current limitations.
+
+### Shows and narrator voices
+
+Click an episode title to open its own page at
+`/title/tvdb-<show-id>/episode/<sonarr-episode-id>/voices`. Each title tab has
+its own URL (`plan`, `voices`, `jobs`, or `meta`; shows also have `episodes`),
+so refresh, shared links, and browser back/forward preserve the current workspace.
+Movies use `/title/tmdb-<movie-id>/<tab>` and shows use `/title/tvdb-<show-id>/<tab>`.
+Older links without a tab automatically open the appropriate default tab. Voice assignments, narrator
+settings, audition actions, plans, and jobs are scoped to that episode; the back
+button returns to its show. Episode plans initially inherit the show's saved plan.
+
+**Browse all voices & samples** and **Find matching voice** expose saved profiles
+and both preset catalogs provided by the connected Voicebox version (Kokoro and
+Qwen CustomVoice). Filtering and ranking use language, declared voice gender, and
+listening tags. Set a character role such as **Older man**, audition a candidate,
+then save the cast. Unknown ages stay unknown, and diarization creates neutral
+speaker labels rather than guessing age/gender. Voice traits can be tagged after
+listening. Each cast assignment saves its engine so mixed-engine casts work.
+
+Catalog browsing is read-only. Selecting a preset registers it as a Voicebox
+profile if necessary; **Generate sample** submits a short TTS request. Qwen accepts
+delivery directions, while Kokoro presets require their declared language. Model
+availability and the resulting age/timbre still need auditioning. Text-only voice
+design is not enabled: the installed Voicebox exposes its metadata but does not
+implement the full generation path. Closing the picker stops polling/playback;
+a submitted preview can finish in Voicebox history.
+
+TV show pages open on **Episodes**, grouped by season, including episodes Sonarr
+knows about that are not downloaded. Select the dub language to see source audio,
+completed AI outputs, active jobs, and missing dubs separately. Queue individual
+files, selected episodes, or missing dubs; shared files and active jobs are skipped.
+A series folder is never sent to the media pipeline. Refresh episodes to fetch new
+Sonarr inventory or the latest generation status.
+
+In **Speakers & voices**, pick a saved narrator voice and optionally a Qwen delivery
+direction, then **Save narrator**. These are defaults for new jobs in that show or
+movie. Explicit episode character assignments take precedence. Use **Voices** on
+an episode row to rename discovered speakers, choose their roles and voices, and
+set delivery direction. Use **Audition** on that episode to hear the result before
+queueing its full dub. Create/clone additional profiles in Voicebox and refresh the
+voice list. A missing diarization model can still yield a single-narrator fallback;
+voice settings do not recover undetected speakers.
 
 ### Teasers & voice casting
 
@@ -131,13 +228,13 @@ Demucs/voicebox are added.
 | # | Stage | Tool | Status |
 |---|-------|------|--------|
 | 1 | Extract audio | ffmpeg | ✅ real |
-| 2 | Separate dialogue vs music+FX | Demucs `htdemucs_ft` | 🚧 stub |
-| 3 | Timed transcript | subtitles (pysubs2) / WhisperX | ✅ subs · 🚧 whisper |
-| 4 | Speaker diarization | pyannote 3.1 | 🚧 stub |
-| 5 | Translate (dubbing-aware, length-budgeted) | Claude | ✅ wiring · 🚧 impl |
+| 2 | Separate dialogue vs music+FX | Demucs `htdemucs_ft` | ✅ real |
+| 3 | Timed transcript | subtitles (pysubs2) / WhisperX | ✅ real |
+| 4 | Speaker diarization | pyannote 3.1 | ✅ real |
+| 5 | Translate (dubbing-aware, length-budgeted) | Claude | ✅ real |
 | 6 | Clone voices + synthesize lines | **voicebox** | ✅ wiring |
-| 7 | Fit timing (isochrony) | rubberband / ffmpeg | 🚧 stub |
-| 8 | Mix dialogue over M&E + ducking | ffmpeg | 🚧 stub |
+| 7 | Fit timing (isochrony) | ffmpeg `atempo` | ✅ real |
+| 8 | Mix dialogue over M&E + ducking | ffmpeg `sidechaincompress` | ✅ real |
 | 9 | Mux new track back | ffmpeg | ✅ real |
 
 The whole thing runs end-to-end today in **`--dry-run`** (prints the plan, no heavy
@@ -173,7 +270,7 @@ doblarr/
     sonarr.py       # Sonarr API (shows)
     plex.py         # Plex API (labels; token in header)
     voicebox.py     # voicebox HTTP client (transcribe, profiles, generate, audio)
-    translator.py   # Claude / passthrough translation
+    translator.py   # shared Prompture structured translation
   stages/           # one module per pipeline step (see table above)
 web/index.html      # application shell
 web/styles.css      # shared styles
@@ -195,6 +292,9 @@ web/js/             # settings, library, jobs and title feature controllers
 | GET/POST | `/api/jobs` | list / enqueue dub jobs (`force: true` ignores cached artifacts) |
 | POST | `/api/jobs/clear-finished` | remove done+failed+cancelled jobs |
 | DELETE | `/api/jobs/{id}` | remove one job (a *running* job is cancelled instead) |
+| GET | `/api/jobs/{id}/report` | stage timings and generation counters |
+| GET / POST | `/api/jobs/{id}/review` | read dialogue snapshot / queue line edits |
+| GET | `/api/jobs/{id}/clips/{index}` | listen to a generated line (HTTP Range) |
 | GET | `/api/jobs/{id}/file` | stream the produced dub/tease (HTTP Range; only under output/work dirs) |
 | GET | `/api/events` | SSE stream of job/scan/log events (replay + live; `?api_key=` from browsers) |
 | POST | `/api/webhooks/radarr` | Radarr webhook (Download → debounced rescan; Test → 200) |
@@ -206,8 +306,8 @@ web/js/             # settings, library, jobs and title feature controllers
 The UI consumes `/api/events` via `EventSource` for live job progress and a log
 tail (slow polling as a fallback). Cancelling a running job stops it between
 pipeline stages and kills
-any in-flight ffmpeg process; a cancel while waiting on a voicebox generation aborts
-the wait but leaves the remote generation running (voicebox has no cancel endpoint).
+any in-flight ffmpeg process. Cancelling a Voicebox wait also requests remote
+cancellation; if the server cannot be reached, remote generation may continue.
 
 ## Development
 
@@ -265,9 +365,11 @@ pushes to `dev`, `main` and `master`.
 - [x] Plex labeling + hide (Kometa handoff) + scheduled auto-sync
 - [x] Docker packaging
 - [ ] **The real dub** — flip the worker to `dry_run=False` once these land:
-  - [ ] `separate` (Demucs), `diarize` (pyannote), `whisper` transcribe, `fit_timing`, `mix`
-  - [ ] wire `ClaudeTranslator` (load the `claude-api` skill for current model ids)
-  - [ ] voicebox running locally on `17493`
+  - [x] `separate` (Demucs two-stems), `diarize` (pyannote), `whisper` transcribe
+        (whisperx/faster-whisper), `fit_timing` (atempo stretch), `mix`
+        (sidechain ducking) — `pip install doblarr[real]`
+  - [x] wire `ClaudeTranslator` (Anthropic Messages API, numbered-lines protocol)
+  - [x] voicebox running locally on `17493`
 - [ ] Voices page from real diarization/cloning data
 - [ ] Radarr/Sonarr/Plex webhook trigger → auto-dub new foreign titles overnight
 - [ ] Borrow & re-implement the duration-matching + ducking approach proven by
@@ -277,3 +379,18 @@ pushes to `dev`, `main` and `master`.
 
 MIT — see [LICENSE](LICENSE). voicebox is MIT; neutrinus/dubarr is GPL-3.0 (used
 only as a reference to re-implement from, never copied in).
+
+
+### Share a dub recipe
+
+Movies and episodes have a **Recipes** tab with a persistent `/recipes` route.
+Export a `.dobdub` file containing saved generation settings, pronunciation rules,
+character directions and voice names. Import it on the matching local title,
+review its contents, choose local voices and engines, then apply it. Queue generation
+separately after checking the character assignments.
+
+Version 1 is recipe-only JSON: no audio, video, dialogue, subtitles, cloned voice
+samples, credentials, or local file paths. Translation services and model locations
+remain local. Different models, source cuts and speaker detection can produce different
+results. Expected runtime is optional release information, not automatic verification.
+See [the recipe format and API](docs/dub-recipes.md).

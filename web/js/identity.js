@@ -1,6 +1,7 @@
 function castParams(item) {
   const p = new URLSearchParams();
-  if (item.path) p.set("path", item.path);
+  if (item.episode_id && !item.path) p.set("key", `episode:${item.tvdb_id}:${item.episode_id}`);
+  else if (item.path) p.set("path", item.path);
   else if (item.tmdb_id) p.set("tmdb_id", item.tmdb_id);
   else if (item.tvdb_id) p.set("tvdb_id", item.tvdb_id);
   else p.set("title", item.title);

@@ -23,6 +23,36 @@ test('nested routes load modules and save real settings', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('translation region and named versions persist in settings', async ({ page }) => {
+  await page.goto('/settings/translate');
+  await page.locator('.frow').filter({ hasText: 'Spanish region' })
+    .getByRole('button', { name: 'es-419', exact: true }).click();
+  let saved = page.waitForResponse(r => r.url().endsWith('/api/config') && r.request().method() === 'POST');
+  await page.locator('#saveSettings').click();
+  expect((await (await saved).json()).config.translate.locale).toBe('es-419');
+  await page.goto('/settings/output');
+  await page.locator('.frow').filter({ hasText: 'Version name' }).locator('input').fill('LATAM quiet');
+  saved = page.waitForResponse(r => r.url().endsWith('/api/config') && r.request().method() === 'POST');
+  await page.locator('#saveSettings').click();
+  const config = (await (await saved).json()).config;
+  expect(config.dub.version_name).toBe('LATAM quiet');
+  expect(config.dub.preserve_versions).toBe(true);
+  await page.reload();
+  await expect(page.locator('.frow').filter({ hasText: 'Version name' }).locator('input')).toHaveValue('LATAM quiet');
+});
+
+test('finished dubs show independent script and dub identities', async ({ page }) => {
+  await page.route('**/api/jobs', route => route.fulfill({ json: { counts: { done: 1 }, jobs: [{
+    id: 'version-test', title: 'Test Film', source_lang: 'en', target_lang: 'es',
+    status: 'done', progress: 100, version_name: 'LATAM <quiet>',
+    version_id: 'abc123456789ffff', translation_id: 'def123456789ffff',
+  }] } }));
+  await page.goto('/dubs');
+  await expect(page.locator('#dubsBody')).toContainText('LATAM <quiet> · abc123456789');
+  await expect(page.locator('#dubsBody')).toContainText('Script def123456789');
+  await expect(page.locator('#dubsBody quiet')).toHaveCount(0);
+});
+
 test('failed manual enqueue keeps the form open and displays the server error', async ({ page }) => {
   await page.route('**/api/jobs', route => route.request().method() === 'POST'
     ? route.fulfill({ status: 503, json: { error: 'Queue unavailable' } }) : route.continue());
@@ -64,4 +94,18 @@ test('title plans save and accompany queued jobs from a deep link', async ({ pag
   await page.reload();
   await expect(field.getByRole('button', { name: 'preset', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(errors).toEqual([]);
+});
+
+
+test('movie tabs have persistent deep links and normalize unsupported tabs', async ({ page }) => {
+  await page.goto('/title/tmdb-42');
+  await expect(page).toHaveURL(/\/title\/tmdb-42\/plan$/);
+  for (const tab of ['voices', 'jobs', 'meta', 'plan']) {
+    await page.locator(`[data-dtab="${tab}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`/title/tmdb-42/${tab}$`));
+    await page.reload();
+    await expect(page.locator(`[data-dtab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
+  }
+  await page.goto('/title/tmdb-42/episodes');
+  await expect(page).toHaveURL(/\/title\/tmdb-42\/plan$/);
 });

@@ -3,15 +3,24 @@ import { PLAN_FIELDS } from './settings-model.js';
 import { escapeHtml, el } from './dom.js';
 import { castParams, jobsFor } from './identity.js';
 import { api } from './api.js';
+import { pickVoice } from './voice-picker.js';
+import { renderEpisodes } from './episodes.js';
 import { getJobs } from './jobs-data.js';
+import { renderRecipes } from './recipes.js';
 
-export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch }) {
-  const TITLE_TABS = [["plan", "Dub plan"], ["voices", "Speakers & voices"], ["jobs", "Jobs"], ["meta", "Metadata"]];
+const ROLE_LABELS = {speaker:'Unknown speaker', narrator:'Narrator', child_f:'Girl', child_m:'Boy',
+  young_f:'Young woman', young_m:'Young man', adult_f:'Adult woman', adult_m:'Adult man',
+  elderly_f:'Older woman', elderly_m:'Older man'};
+
+export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, setPage, queueDub, fetchPlan, statusTag, langChipsHtml, jobStatusTag, openWatch }) {
+  const TITLE_TABS = [["plan", "Dub plan"], ["voices", "Speakers & voices"], ["jobs", "Jobs"], ["meta", "Metadata"], ["recipes", "Recipes"]];
 
   // Per-title dub plan — real config keys, so the overrides genuinely reach the
   // pipeline (the worker deep-merges them over the global config for that job).
   // Shows come from Sonarr with a series folder; films from Radarr with a file.
-  function isShow(item) { return !/^radarr/i.test(item.source || ""); }
+  function isShow(item) { return item.media_type === "show" || (!item.media_type && /^sonarr/i.test(item.source || "")); }
+  let shownItem;
+  let recipeView;
 
   function titlePosterHtml(item) {
     return item.poster
@@ -43,7 +52,17 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     row.append(left);
 
     const right = el("div", {});
-    if (f.t === "text") {
+    if (f.t === "json") {
+      const input = el("textarea", { class: "input m", rows: 4, "aria-label": f.l,
+        onchange: e => {
+          try {
+            const value = JSON.parse(e.target.value);
+            if (!value || Array.isArray(value) || typeof value !== 'object' || Object.values(value).some(x => typeof x !== 'string')) throw new Error();
+            setPlanValue(f.k, value);
+          } catch { titleState.planStatus = 'Enter a JSON object with text values.'; updatePlanStatus(); }
+        } });
+      input.value = JSON.stringify(v || {}, null, 2); right.append(input);
+    } else if (f.t === "text") {
       right.append(el("input", {
         class: "input m", type: "text", value: v, style: "max-width: 420px;",
         onchange: e => setPlanValue(f.k, e.target.value),
@@ -78,7 +97,8 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     updatePlanStatus();
     try {
       const body = { title: item.title, plan: titleState.plan || {} };
-      if (item.path) body.path = item.path;
+      if (item.episode_id && !item.path) body.key = `episode:${item.tvdb_id}:${item.episode_id}`;
+      else if (item.path) body.path = item.path;
       else if (item.tmdb_id) body.tmdb_id = item.tmdb_id;
       else if (item.tvdb_id) body.tvdb_id = item.tvdb_id;
       await api("api/plan", {
@@ -112,6 +132,9 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     }
     titleState.item = item;
     const show = isShow(item);
+    if (shownItem !== item) {
+      shownItem = item; titleState.castItem = null;
+    }
     const target = (titleState.plan && titleState.plan.target_lang)
       || (library.targets && library.targets[0]) || "en";
     const langs = (item.audio_langs && item.audio_langs.length)
@@ -120,29 +143,30 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     const statVal = 'margin:3px 0 0;font-size:14px;font-weight:600;';
     root.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <button type="button" class="btn btn-ghost" id="titleBack">← Library</button>
+        <button type="button" class="btn btn-ghost" id="titleBack">← ${item.parent ? escapeHtml(item.parent.title) : "Library"}</button>
         <span class="m" style="font-size:12.5px;color:var(--muted);user-select:all;word-break:break-all;">${escapeHtml(item.path || "")}</span>
         <span style="margin-left:auto;display:flex;gap:6px;">
-          ${statusTag(item.label)}
+          ${show ? '<span class="tag tag-accent">TV Show</span>' : `<span class="tag tag-accent">${item.parent ? 'Episode' : 'Movie'}</span>` + statusTag(item.label)}
           <span class="tag tag-neutral">${escapeHtml(item.source)}</span>
         </span>
       </div>
-      <div class="panel" style="padding:20px;display:grid;grid-template-columns:180px minmax(0,1fr);gap:24px;">
-        <div style="width:180px;">${titlePosterHtml(item)}</div>
+      <div class="panel title-hero">
+        <div class="title-poster">${titlePosterHtml(item)}</div>
         <div style="min-width:0;display:flex;flex-direction:column;gap:12px;">
           <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
             <div style="min-width:0;">
               <h2 style="font-size:27px;margin:0;letter-spacing:-0.015em;">${escapeHtml(item.title)}${item.year ? ` <span style="font-weight:500;color:var(--muted);">(${item.year})</span>` : ""}</h2>
-              <p class="m" style="margin:5px 0 0;font-size:12.5px;color:var(--muted);">${show ? "Series" : "Film"} · ${escapeHtml(item.original)} · ${escapeHtml(langs)}</p>
+              <p class="m" style="margin:5px 0 0;font-size:12.5px;color:var(--muted);">${show ? "TV Show" : item.parent ? "Episode" : "Movie"} · ${escapeHtml(item.original)} · ${escapeHtml(langs)}</p>
             </div>
             <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
-              <button type="button" class="btn btn-secondary" id="tpTease">Preview a tease</button>
-              <button type="button" class="btn btn-primary" id="tpQueue" style="color:#fff;">Queue dub</button>
+              ${!show ? '<button type="button" class="btn btn-secondary" id="tpTease">Preview a tease</button>' : ""}
+              ${!show ? '<button type="button" class="btn btn-secondary" id="tpAudition">Audition voices</button>' : ""}
+              <button type="button" class="btn btn-primary" id="tpQueue" style="color:#fff;">${show ? "Choose episodes" : "Queue dub"}</button>
             </div>
           </div>
           <p style="margin:0;font-size:12.5px;color:var(--muted);">${show
-            ? "Queueing sends the series folder — every episode file under it gets the AI track."
-            : "Queueing sends this film's file — the dub is muxed in as an extra audio track."}</p>
+            ? "Choose episodes below. Each downloaded file gets its own job; missing episodes are never queued."
+            : `Queueing processes this ${item.parent ? "episode" : "movie"} file and writes an output with an extra audio track.`}</p>
           <div style="display:flex;gap:26px;flex-wrap:wrap;padding-top:4px;">
             <div><p style="${statHead}">Dub direction</p><p class="m" style="${statVal}">${escapeHtml(item.original)} → ${escapeHtml(target)}</p></div>
             <div><p style="${statHead}">Audio tracks</p><p class="m" style="${statVal}">${escapeHtml(langs)}</p></div>
@@ -152,14 +176,18 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${TITLE_TABS.map(([k, t]) => `<button type="button" class="tab" data-dtab="${k}" aria-current="${titleState.dtab === k ? "page" : "false"}">${t}</button>`).join("")}
+        ${(show ? [["episodes", "Episodes"], ...TITLE_TABS.filter(([key]) => key !== "recipes")] : TITLE_TABS).map(([k, t]) => `<button type="button" class="tab" data-dtab="${k}" aria-current="${titleState.dtab === k ? "page" : "false"}">${t}</button>`).join("")}
       </div>
       <div id="titleTabBody"></div>`;
-    document.getElementById("titleBack").addEventListener("click", () => setPage("Library"));
-    document.getElementById("tpQueue").addEventListener("click", e => queueDub(item, e.currentTarget, "full"));
-    document.getElementById("tpTease").addEventListener("click", e => queueDub(item, e.currentTarget, "tease"));
+    document.getElementById("titleBack").addEventListener("click", () => item.parent ? goTitle(item.parent, "episodes") : setPage("Library"));
+    document.getElementById("tpQueue").addEventListener("click", e => { if (show) { goTitleTab("episodes"); } else queueDub(item, e.currentTarget, "full"); });
+    document.getElementById("tpTease")?.addEventListener("click", e => queueDub(item, e.currentTarget, "tease"));
+    document.getElementById("tpAudition")?.addEventListener("click", e => queueDub(item, e.currentTarget, "audition"));
+    if (item.parent && !item.path) {
+      ['tpQueue', 'tpTease', 'tpAudition'].forEach(id => { const button = document.getElementById(id); if (button) { button.disabled = true; button.title = 'Download this episode in Sonarr first'; } });
+    }
     root.querySelectorAll("[data-dtab]").forEach(b =>
-      b.addEventListener("click", () => { titleState.dtab = b.dataset.dtab; renderTitle(); }));
+      b.addEventListener("click", () => goTitleTab(b.dataset.dtab)));
     // Hero stats + the plan load lazily; the plan re-renders once it arrives.
     if (!titleState.plan) {
       fetchPlan(item).then(p => {
@@ -189,6 +217,33 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     const body = document.getElementById("titleTabBody");
     if (!body || !titleState.item) return;
     const item = titleState.item;
+    if (titleState.dtab !== "recipes" || recipeView?.item !== item) recipeView = null;
+    if (titleState.dtab === "recipes") {
+      if (!titleState.plan) {
+        body.textContent = 'Loading saved recipe settings…';
+        return;
+      }
+      const target = titleState.plan.target_lang || library.targets?.[0] || 'en';
+      // Background config refreshes must not discard an import or unsaved notes.
+      if (recipeView?.target === target) {
+        body.replaceWith(recipeView.body);
+        return;
+      }
+      renderRecipes(body, { item, target,
+        onApplied: plan => { if (titleState.item === item) { titleState.plan = plan; titleState.castItem = null; } } });
+      recipeView = { item, target, body };
+      return;
+    }
+    if (titleState.dtab === "episodes" && isShow(item)) {
+      body.className = 'panel episode-panel';
+      const target = titleState.plan?.target_lang || library.targets?.[0] || 'en';
+      renderEpisodes(body, { item, target, targets: library.targets || ['en'],
+        onTarget: value => setPlanValue('target_lang', value),
+        onCast: episode => goEpisode(item, episode),
+        openWatch });
+      return;
+    }
+    body.className = '';
     if (titleState.dtab === "plan") {
       body.innerHTML = `
         <div class="panel" style="padding:20px 24px 22px;">
@@ -215,16 +270,21 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
         <div class="panel" style="padding:20px 24px 22px;">
           <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
             <h3 style="font-size:17px;margin:0;">Speakers and voices</h3>
-            <p style="margin:0;font-size:13px;color:var(--muted);">One voice per speaker — reused by teases and the full dub. Run a tease to auto-assign by archetype, then adjust here.</p>
+            <p style="margin:0;font-size:13px;color:var(--muted);">Choose a narrator below, or edit voices discovered by an audition. Speaker labels identify this episode only; they do not prove character identity.</p>
           </div>
-          <div id="titleCastRows" style="margin-top:12px;"></div>
+          <div id="narratorControls"></div><p id="castScope" class="hint"></p><div id="titleCastRows" style="margin-top:12px;"></div>
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;align-items:center;">
             <span id="titleCastStatus" style="margin-right:auto;font-size:12.5px;color:var(--muted);"></span>
             <button type="button" class="btn btn-primary" id="titleCastSave">Save cast</button>
           </div>
         </div>`;
       document.getElementById("titleCastSave").addEventListener("click", saveCast);
-      openCast(item);
+      renderNarrator(item);
+      const castItem = titleState.castItem || item;
+      document.getElementById('castScope').textContent = isShow(item)
+        ? (titleState.castItem ? `Character cast: ${castItem.title}` : 'Choose Voices on an episode to edit its discovered cast. Narrator defaults apply to new jobs throughout this show.')
+        : item.parent ? `Character cast: S${String(item.season).padStart(2,'0')}E${String(item.episode_number).padStart(2,'0')} · saved for this episode` : 'Character cast for this movie';
+      openCast(castItem);
       return;
     }
     if (titleState.dtab === "jobs") {
@@ -233,7 +293,7 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
           <div id="titleJobs"><p style="color:var(--muted);font-size:13px;padding:12px 4px;">Loading…</p></div>
         </div>`;
       getJobs().then(data => {
-        if (state.page === "Title" && titleState.dtab === "jobs")
+        if (state.page === "Title" && titleState.item === item && titleState.dtab === "jobs")
           renderTitleJobs(jobsFor(item, data.jobs || []));
       }).catch(() => {
         const n = document.getElementById("titleJobs");
@@ -246,7 +306,7 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     const langs = (item.audio_langs && item.audio_langs.length)
       ? item.audio_langs.join(" · ") : (item.existing_audio || item.original);
     const facts = [
-      ["Type", show ? "Series (per-episode files)" : "Film (single file)"],
+      ["Type", item.episode_id ? "Episode (single file)" : show ? "Series (per-episode files)" : "Film (single file)"],
       ["Source", item.source],
       ["Year", item.year || "—"],
       ["Original language", item.original],
@@ -297,45 +357,121 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
 
   // ---- Voice cast editor (per-title, shared by teases and full dubs) ----
 
+  async function renderNarrator(item) {
+    const root = document.getElementById('narratorControls');
+    const value = key => titleState.plan?.[key] ?? cfgGet(key) ?? '';
+    root.innerHTML = `<div class="narrator-panel"><h3>Narrator voice</h3>
+      <p class="hint">Used for a single narrator or a speaker marked Narrator. An explicit character voice takes priority. Multiple detected speakers keep their own voices.</p>
+      <div class="narrator-fields"><label>Voice<select class="input" id="narratorVoice" aria-label="Voice"><option value="">Clone from the original audio</option></select></label>
+      <label>Voice engine<select class="input" id="narratorEngine" aria-label="Voice engine">${['chatterbox', 'qwen', 'qwen_custom_voice', 'kokoro'].map(e => `<option value="${e}">${e}</option>`).join('')}</select></label>
+      <label class="narrator-direction">Delivery direction<input class="input" id="narratorDelivery" maxlength="500" placeholder="Warm, calm storytelling with gentle pauses" value="${escapeHtml(value('dub.narrator_delivery'))}"></label></div>
+      <p class="hint">Delivery direction requires Qwen and a compatible voice. Engine selection applies to this title's new jobs. Create or clone additional voices in Voicebox, then refresh this list.</p>
+      <div class="episode-actions"><button class="btn btn-primary" id="narratorSave">Save narrator</button><button class="btn btn-secondary" id="narratorBrowse">Browse all voices & samples</button><button class="btn btn-ghost" id="narratorRefresh">Refresh voices</button><span id="narratorStatus" role="status"></span></div></div>`;
+    const engine = root.querySelector('#narratorEngine');
+    const currentEngine = value('voicebox.default_engine');
+    if (![...engine.options].some(o => o.value === currentEngine)) engine.add(new Option(currentEngine, currentEngine));
+    engine.value = currentEngine;
+    const field = root.querySelector('#narratorVoice');
+    const current = value('dub.narrator_voice');
+    if (current) { field.add(new Option(current, current)); field.value = current; }
+    const status = root.querySelector('#narratorStatus');
+    root.querySelector('#narratorSave').onclick = async () => {
+      const delivery = root.querySelector('#narratorDelivery').value.trim();
+      if (delivery && !['qwen', 'qwen_custom_voice'].includes(engine.value)) {
+        status.textContent = 'Choose a Qwen engine to use delivery direction, or leave it empty.'; return;
+      }
+      titleState.plan = { ...titleState.plan, 'dub.narrator_voice': field.value,
+        'dub.narrator_delivery': delivery, 'voicebox.default_engine': engine.value };
+      status.textContent = 'Saving…'; await savePlan();
+      if (root.isConnected) status.textContent = titleState.planStatus;
+    };
+    async function refresh() {
+      try {
+        const result = await api('voices');
+        if (!root.isConnected || titleState.item !== item) return;
+        const chosen = field.value;
+        field.replaceChildren(new Option('Clone from the original audio', ''));
+        (result.voices || []).forEach(v => field.add(new Option(v.name, v.id)));
+        if (chosen && ![...field.options].some(o => o.value === chosen)) field.add(new Option(`${chosen} (not currently listed)`, chosen));
+        field.value = chosen;
+        status.textContent = result.warning || (!result.voices?.length ? 'No saved voices found. Create a voice in Voicebox first.' : '');
+      } catch(e) { if (root.isConnected) status.textContent = e.message; }
+    }
+    root.querySelector('#narratorBrowse').onclick = () => pickVoice({ language: titleState.plan?.target_lang || library.targets?.[0] || 'en', onSelect: voice => {
+      if (!root.isConnected) return;
+      if (![...field.options].some(o => o.value === voice.profile_id)) field.add(new Option(voice.name, voice.profile_id));
+      field.value=voice.profile_id;
+      if (![...engine.options].some(o => o.value === voice.engine)) engine.add(new Option(voice.engine,voice.engine));
+      engine.value=voice.engine;
+      root.querySelector('#narratorDelivery').value=voice.direction || '';
+      status.textContent='Voice selected. Save narrator to apply it to new jobs.';
+    } });
+    root.querySelector('#narratorRefresh').onclick = refresh;
+    refresh();
+  }
+
   function renderCastRows() {
     const box = document.getElementById("titleCastRows");
     if (!box) return;
     if (!castState.cast.length) {
-      box.innerHTML = `<p style="color:var(--muted);font-size:13px;">No cast yet — run a Tease to auto-assign voices by archetype, then adjust here.</p>`;
+      box.innerHTML = `<p style="color:var(--muted);font-size:13px;">No speakers discovered for this file yet. Assign a narrator above, or run an episode audition to discover its speakers.</p>`;
       return;
     }
-    const voiceOpts = cur => [`<option value="">(unassigned)</option>`]
+    const voiceOpts = cur => [`<option value="">Use narrator default / clone original</option>`,
+      cur && !(castState.voices || []).some(v => v.id === cur) ? `<option value="${escapeHtml(cur)}" selected>${escapeHtml(cur)} (not currently listed)</option>` : '']
       .concat((castState.voices || []).map(v =>
         `<option value="${escapeHtml(v.id)}"${v.id === cur ? " selected" : ""}>${escapeHtml(v.name)}</option>`))
       .join("");
     box.innerHTML = castState.cast.map((e, i) => `
       <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">
-        <span style="font-weight:600;min-width:100px;">${escapeHtml(e.label)}</span>
-        <span class="lang-chip">${escapeHtml(e.category)}</span>
+        <label class="cast-name-field">Character name<input class="input cast-name" data-idx="${i}" value="${escapeHtml(e.label)}"></label>
+        <label>Role<select class="input cast-category" data-idx="${i}">${['speaker', 'narrator', 'child_f', 'child_m', 'young_f', 'young_m', 'adult_f', 'adult_m', 'elderly_f', 'elderly_m'].map(c => `<option value="${c}" ${c === e.category ? 'selected' : ''}>${escapeHtml(ROLE_LABELS[c] || c)}</option>`).join('')}</select></label>
         <span class="m" style="font-size:11.5px;color:var(--muted);">${escapeHtml(e.speaker_id)}</span>
-        <select class="input cast-voice" data-idx="${i}" style="margin-left:auto;max-width:210px;">${voiceOpts(e.voice)}</select>
+        <label>Voice<select class="input cast-voice" data-idx="${i}">${voiceOpts(e.voice)}</select></label>
+        <button class="btn btn-secondary cast-browse" data-idx="${i}">Find matching voice</button><label>Delivery (Qwen)<input class="input cast-delivery" data-idx="${i}" maxlength="500" value="${escapeHtml(e.delivery || '')}"></label>
       </div>`).join("");
     box.querySelectorAll(".cast-voice").forEach(sel =>
       sel.addEventListener("change", () => {
-        castState.cast[Number(sel.dataset.idx)].voice = sel.value;
+        const entry=castState.cast[Number(sel.dataset.idx)];
+        entry.voice = sel.value;
+        entry.engine = (castState.voices || []).find(v=>v.id===sel.value)?.engine || '';
+        if (entry.engine && !['qwen','qwen_custom_voice'].includes(entry.engine)) entry.delivery='';
       }));
+    box.querySelectorAll('.cast-browse').forEach(button => button.onclick = () => {
+      const entry=castState.cast[Number(button.dataset.idx)];
+      pickVoice({language:titleState.plan?.target_lang || library.targets?.[0] || 'en',category:entry.category,onSelect:voice=>{
+        entry.voice=voice.profile_id;entry.engine=voice.engine;
+        entry.delivery=voice.direction || '';
+        if(!(castState.voices || []).some(v=>v.id===voice.profile_id)) (castState.voices ||= []).push({id:voice.profile_id,name:voice.name});
+        renderCastRows(); document.getElementById('titleCastStatus').textContent='Voice selected. Save cast to apply.';
+      }});
+    });
+    for (const [selector, key] of [['.cast-name', 'label'], ['.cast-category', 'category'], ['.cast-delivery', 'delivery']]) {
+      box.querySelectorAll(selector).forEach(input => input.addEventListener('input', () => {
+        castState.cast[Number(input.dataset.idx)][key] = input.value;
+      }));
+    }
   }
 
   async function openCast(item) {
     castState.item = item;
     const status = document.getElementById("titleCastStatus");
+    const box = document.getElementById("titleCastRows");
     if (status) status.textContent = "";
     try {
       const fetches = [api("api/cast?" + castParams(item))];
       if (!castState.voices) fetches.push(api("api/voices"));
       const [cr, vr] = await Promise.all(fetches);
+      if (!box?.isConnected || castState.item !== item) return;
       castState.cast = cr.cast || [];
       if (vr) castState.voices = vr.voices || [];
     } catch (e) {
+      if (!box?.isConnected || castState.item !== item) return;
       castState.cast = [];
       if (status) status.textContent = "Cast unavailable — is the API reachable?";
     }
     renderCastRows();
+    document.getElementById("titleCastSave").disabled = !castState.cast.length;
     const stat = document.getElementById("tpStatVoices");
     if (stat && titleState.item === item)
       stat.textContent = castState.cast.length
@@ -347,7 +483,8 @@ export function createTitle({ findItemByKey, setPage, queueDub, fetchPlan, statu
     const item = castState.item;
     if (!item || !status) return;
     const body = { title: item.title, cast: castState.cast };
-    if (item.path) body.path = item.path;
+    if (item.episode_id && !item.path) body.key = `episode:${item.tvdb_id}:${item.episode_id}`;
+    else if (item.path) body.path = item.path;
     else if (item.tmdb_id) body.tmdb_id = item.tmdb_id;
     else if (item.tvdb_id) body.tvdb_id = item.tvdb_id;
     status.textContent = "Saving…";
