@@ -200,10 +200,10 @@ def save_pack_release(
 def pack_releases(db: Database, pack_id: str | None = None) -> list[dict]:
     if pack_id:
         rows = db.query(
-            "SELECT * FROM knowledge_packs WHERE pack_id = ? ORDER BY installed_at", (pack_id,)
+            "SELECT * FROM knowledge_packs WHERE pack_id = ? ORDER BY rowid", (pack_id,)
         )
     else:
-        rows = db.query("SELECT * FROM knowledge_packs ORDER BY pack_id, installed_at")
+        rows = db.query("SELECT * FROM knowledge_packs ORDER BY pack_id, rowid")
     return [dict(r) for r in rows]
 
 
@@ -318,7 +318,7 @@ def search_entries(
     page_size: int = 25,
 ) -> tuple[list[Entry], int]:
     """Latest revisions matching the filters, paginated (1-based pages)."""
-    entries = latest_entries(db)
+    entries = latest_entries(db, active_installed_pins(db))
     if locale:
         entries = [e for e in entries if e.locale == locale]
     if kind:
@@ -346,7 +346,7 @@ def search_entries(
 def coverage_counts(db: Database) -> dict[str, dict[str, int]]:
     """Actual per-locale status counts of latest entries — never invented numbers."""
     counts: dict[str, dict[str, int]] = {}
-    for entry in latest_entries(db):
+    for entry in latest_entries(db, active_installed_pins(db)):
         if entry.suppresses:
             continue
         bucket = counts.setdefault(

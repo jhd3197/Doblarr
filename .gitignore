@@ -18,7 +18,7 @@ work/
 output/
 # docker-mounted config + data (secrets, runtime state)
 config/
-data/
+/data/
 *.log
 
 # Media (never commit sample movies/audio)

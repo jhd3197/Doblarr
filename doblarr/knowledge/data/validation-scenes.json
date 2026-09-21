@@ -1,0 +1,1922 @@
+[
+  {
+    "id": "en-greeting",
+    "scene_id": "greeting",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Hi, good to see you.",
+    "candidate": "Hi, good to see you.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-morning",
+    "scene_id": "morning",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Good morning. Did you sleep well?",
+    "candidate": "Good morning. Did you sleep well?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-farewell",
+    "scene_id": "farewell",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "See you tomorrow.",
+    "candidate": "See you tomorrow.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-thanks",
+    "scene_id": "thanks",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Thank you for waiting.",
+    "candidate": "Thank you for waiting.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-apology",
+    "scene_id": "apology",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Sorry, I got the time wrong.",
+    "candidate": "Sorry, I got the time wrong.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-formal-address",
+    "scene_id": "formal-address",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Could you help me, please?",
+    "candidate": "Could you help me, please?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-informal-address",
+    "scene_id": "informal-address",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Can you give me a hand?",
+    "candidate": "Can you give me a hand?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-decline-offer",
+    "scene_id": "decline-offer",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "No thanks, I am good.",
+    "candidate": "No thanks, I am good.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-health",
+    "scene_id": "health",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "I am good. The pain is gone.",
+    "candidate": "I am good. The pain is gone.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-negation",
+    "scene_id": "negation",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "I did not say she took it.",
+    "candidate": "I did not say she took it.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-names",
+    "scene_id": "names",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Mara, ask Leo to come in.",
+    "candidate": "Mara, ask Leo to come in.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-initials",
+    "scene_id": "initials",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Read the letters A, B, and C.",
+    "candidate": "Read the letters A, B, and C.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-abbreviation",
+    "scene_id": "abbreviation",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "The GPS says to turn left.",
+    "candidate": "The GPS says to turn left.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-object",
+    "scene_id": "object",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Put the cup on the table.",
+    "candidate": "Put the cup on the table.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-computer",
+    "scene_id": "computer",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Save the file on the computer.",
+    "candidate": "Save the file on the computer.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-transport",
+    "scene_id": "transport",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "We missed the bus.",
+    "candidate": "We missed the bus.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-phone",
+    "scene_id": "phone",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "My phone has no battery.",
+    "candidate": "My phone has no battery.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-food",
+    "scene_id": "food",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Do you want some more rice?",
+    "candidate": "Do you want some more rice?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-money",
+    "scene_id": "money",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Keep the change.",
+    "candidate": "Keep the change.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-urgency",
+    "scene_id": "urgency",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Wait! The door is still open.",
+    "candidate": "Wait! The door is still open.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-idiom",
+    "scene_id": "idiom",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Let us call it a day.",
+    "candidate": "Let us call it a day.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-literal",
+    "scene_id": "literal",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Break the ice into small pieces.",
+    "candidate": "Break the ice into small pieces.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-social-idiom",
+    "scene_id": "social-idiom",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "That joke helped break the ice.",
+    "candidate": "That joke helped break the ice.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-sarcasm",
+    "scene_id": "sarcasm",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Great. Now we are locked out.",
+    "candidate": "Great. Now we are locked out.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-affection",
+    "scene_id": "affection",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Take care of yourself, okay?",
+    "candidate": "Take care of yourself, okay?",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-boundary",
+    "scene_id": "boundary",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Please do not call me that.",
+    "candidate": "Please do not call me that.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-date",
+    "scene_id": "date",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "The appointment is on the third of May.",
+    "candidate": "The appointment is on the third of May.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-number",
+    "scene_id": "number",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "There are twenty-one boxes.",
+    "candidate": "There are twenty-one boxes.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-question",
+    "scene_id": "question",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "You knew about this?",
+    "candidate": "You knew about this?",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-timing",
+    "scene_id": "timing",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "Go!",
+    "candidate": "Go!",
+    "duration_seconds": 1,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-long-line",
+    "scene_id": "long-line",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "If we leave before sunrise, we can reach the village by noon.",
+    "candidate": "If we leave before sunrise, we can reach the village by noon.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "en-ambiguity",
+    "scene_id": "ambiguity",
+    "locale": "en",
+    "source_lang": "en",
+    "source": "She is cold. Bring a blanket.",
+    "candidate": "She is cold. Bring a blanket.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-greeting",
+    "scene_id": "greeting",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Hi, good to see you.",
+    "candidate": "Hola, qué bueno verte.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-morning",
+    "scene_id": "morning",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Good morning. Did you sleep well?",
+    "candidate": "Buenos días. ¿Dormiste bien?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-farewell",
+    "scene_id": "farewell",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "See you tomorrow.",
+    "candidate": "Nos vemos mañana.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-thanks",
+    "scene_id": "thanks",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Thank you for waiting.",
+    "candidate": "Gracias por esperar.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-apology",
+    "scene_id": "apology",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Sorry, I got the time wrong.",
+    "candidate": "Perdón, me equivoqué de hora.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-formal-address",
+    "scene_id": "formal-address",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Could you help me, please?",
+    "candidate": "¿Podría ayudarme, por favor?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-informal-address",
+    "scene_id": "informal-address",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Can you give me a hand?",
+    "candidate": "¿Me ayudas?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-decline-offer",
+    "scene_id": "decline-offer",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "No thanks, I am good.",
+    "candidate": "No, gracias. Estoy bien.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-health",
+    "scene_id": "health",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "I am good. The pain is gone.",
+    "candidate": "Estoy bien. Ya no me duele.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-negation",
+    "scene_id": "negation",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "I did not say she took it.",
+    "candidate": "No dije que ella lo hubiera tomado.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-names",
+    "scene_id": "names",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Mara, ask Leo to come in.",
+    "candidate": "Mara, dile a Leo que entre.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-initials",
+    "scene_id": "initials",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Read the letters A, B, and C.",
+    "candidate": "Lee las letras A, B y C.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-abbreviation",
+    "scene_id": "abbreviation",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "The GPS says to turn left.",
+    "candidate": "El GPS dice que giremos a la izquierda.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-object",
+    "scene_id": "object",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Put the cup on the table.",
+    "candidate": "Pon la taza en la mesa.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-computer",
+    "scene_id": "computer",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Save the file on the computer.",
+    "candidate": "Guarda el archivo en la computadora.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-transport",
+    "scene_id": "transport",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "We missed the bus.",
+    "candidate": "Se nos fue el autobús.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-phone",
+    "scene_id": "phone",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "My phone has no battery.",
+    "candidate": "Mi teléfono no tiene batería.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-food",
+    "scene_id": "food",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Do you want some more rice?",
+    "candidate": "¿Quieres más arroz?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-money",
+    "scene_id": "money",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Keep the change.",
+    "candidate": "Quédate con el cambio.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-urgency",
+    "scene_id": "urgency",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Wait! The door is still open.",
+    "candidate": "¡Espera! La puerta sigue abierta.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-idiom",
+    "scene_id": "idiom",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Let us call it a day.",
+    "candidate": "Dejémoslo por hoy.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-literal",
+    "scene_id": "literal",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Break the ice into small pieces.",
+    "candidate": "Rompe el hielo en pedazos pequeños.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-social-idiom",
+    "scene_id": "social-idiom",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "That joke helped break the ice.",
+    "candidate": "Ese chiste ayudó a romper el hielo.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-sarcasm",
+    "scene_id": "sarcasm",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Great. Now we are locked out.",
+    "candidate": "Genial. Ahora no podemos entrar.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-affection",
+    "scene_id": "affection",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Take care of yourself, okay?",
+    "candidate": "Cuídate, ¿sí?",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-boundary",
+    "scene_id": "boundary",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Please do not call me that.",
+    "candidate": "Por favor, no me llames así.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-date",
+    "scene_id": "date",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "The appointment is on the third of May.",
+    "candidate": "La cita es el tres de mayo.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-number",
+    "scene_id": "number",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "There are twenty-one boxes.",
+    "candidate": "Hay veintiuna cajas.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-question",
+    "scene_id": "question",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "You knew about this?",
+    "candidate": "¿Tú sabías de esto?",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-timing",
+    "scene_id": "timing",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "Go!",
+    "candidate": "¡Ve!",
+    "duration_seconds": 1,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-long-line",
+    "scene_id": "long-line",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "If we leave before sunrise, we can reach the village by noon.",
+    "candidate": "Si salimos antes del amanecer, llegaremos al pueblo al mediodía.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-MX-ambiguity",
+    "scene_id": "ambiguity",
+    "locale": "es-MX",
+    "source_lang": "en",
+    "source": "She is cold. Bring a blanket.",
+    "candidate": "Tiene frío. Trae una manta.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-greeting",
+    "scene_id": "greeting",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Hi, good to see you.",
+    "candidate": "Hola, qué bueno verte.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-morning",
+    "scene_id": "morning",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Good morning. Did you sleep well?",
+    "candidate": "Buenos días. ¿Dormiste bien?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-farewell",
+    "scene_id": "farewell",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "See you tomorrow.",
+    "candidate": "Nos vemos mañana.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-thanks",
+    "scene_id": "thanks",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Thank you for waiting.",
+    "candidate": "Gracias por esperar.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-apology",
+    "scene_id": "apology",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Sorry, I got the time wrong.",
+    "candidate": "Perdón, me equivoqué de hora.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-formal-address",
+    "scene_id": "formal-address",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Could you help me, please?",
+    "candidate": "¿Podría ayudarme, por favor?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-informal-address",
+    "scene_id": "informal-address",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Can you give me a hand?",
+    "candidate": "¿Me ayudas?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-decline-offer",
+    "scene_id": "decline-offer",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "No thanks, I am good.",
+    "candidate": "No, gracias. Estoy bien.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-health",
+    "scene_id": "health",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "I am good. The pain is gone.",
+    "candidate": "Estoy bien. Ya no me duele.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-negation",
+    "scene_id": "negation",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "I did not say she took it.",
+    "candidate": "No dije que ella lo hubiera tomado.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-names",
+    "scene_id": "names",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Mara, ask Leo to come in.",
+    "candidate": "Mara, dile a Leo que entre.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-initials",
+    "scene_id": "initials",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Read the letters A, B, and C.",
+    "candidate": "Lee las letras A, B y C.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-abbreviation",
+    "scene_id": "abbreviation",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "The GPS says to turn left.",
+    "candidate": "El GPS dice que giremos a la izquierda.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-object",
+    "scene_id": "object",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Put the cup on the table.",
+    "candidate": "Pon la taza en la mesa.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-computer",
+    "scene_id": "computer",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Save the file on the computer.",
+    "candidate": "Guarda el archivo en la computadora.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-transport",
+    "scene_id": "transport",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "We missed the bus.",
+    "candidate": "Se nos fue el autobús.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-phone",
+    "scene_id": "phone",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "My phone has no battery.",
+    "candidate": "Mi teléfono no tiene batería.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-food",
+    "scene_id": "food",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Do you want some more rice?",
+    "candidate": "¿Quieres más arroz?",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-money",
+    "scene_id": "money",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Keep the change.",
+    "candidate": "Quédate con el cambio.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-urgency",
+    "scene_id": "urgency",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Wait! The door is still open.",
+    "candidate": "¡Espera! La puerta sigue abierta.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-idiom",
+    "scene_id": "idiom",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Let us call it a day.",
+    "candidate": "Dejémoslo por hoy.",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-literal",
+    "scene_id": "literal",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Break the ice into small pieces.",
+    "candidate": "Rompe el hielo en pedazos pequeños.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-social-idiom",
+    "scene_id": "social-idiom",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "That joke helped break the ice.",
+    "candidate": "Ese chiste ayudó a romper el hielo.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-sarcasm",
+    "scene_id": "sarcasm",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Great. Now we are locked out.",
+    "candidate": "Genial. Ahora no podemos entrar.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-affection",
+    "scene_id": "affection",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Take care of yourself, okay?",
+    "candidate": "Cuídate, ¿sí?",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-boundary",
+    "scene_id": "boundary",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Please do not call me that.",
+    "candidate": "Por favor, no me llames así.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-date",
+    "scene_id": "date",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "The appointment is on the third of May.",
+    "candidate": "La cita es el tres de mayo.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-number",
+    "scene_id": "number",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "There are twenty-one boxes.",
+    "candidate": "Hay veintiuna cajas.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-question",
+    "scene_id": "question",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "You knew about this?",
+    "candidate": "¿Tú sabías de esto?",
+    "duration_seconds": 5,
+    "split": "held-out",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-timing",
+    "scene_id": "timing",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "Go!",
+    "candidate": "¡Ve!",
+    "duration_seconds": 1,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-long-line",
+    "scene_id": "long-line",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "If we leave before sunrise, we can reach the village by noon.",
+    "candidate": "Si salimos antes del amanecer, llegaremos al pueblo al mediodía.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  },
+  {
+    "id": "es-VE-ambiguity",
+    "scene_id": "ambiguity",
+    "locale": "es-VE",
+    "source_lang": "en",
+    "source": "She is cold. Bring a blanket.",
+    "candidate": "Tiene frío. Trae una manta.",
+    "duration_seconds": 5,
+    "split": "development",
+    "status": "proposed",
+    "review": {
+      "meaning": null,
+      "naturalness": null,
+      "pronunciation": null
+    },
+    "engine": null,
+    "model": null,
+    "voice": null,
+    "notes": "Authored scenario; validate register and when this wording is inappropriate. Shared regional candidates are intentional."
+  }
+]

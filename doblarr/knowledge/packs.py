@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,6 +99,7 @@ class PreparedPack:
     manifest: PackManifest
     entries: list[Entry]
     realizations: list[Realization]
+    document: dict
 
 
 def load_pack_file(path: str | Path) -> dict:
@@ -162,7 +164,26 @@ def validate_pack(db: Database, data: dict) -> PreparedPack:
             conflicts.append(entry.id)
     if conflicts:
         raise PackError(f"entry pins conflict with existing records: {sorted(conflicts)}")
-    return PreparedPack(manifest=manifest, entries=entries, realizations=realizations)
+    for realization in realizations:
+        row = db.query_one(
+            "SELECT * FROM knowledge_realizations WHERE id = ? AND revision = ?",
+            (realization.id, realization.revision),
+        )
+        if row is not None and knowledge_store._realization_from_row(row) != realization:
+            raise PackError(f"realization pin conflicts: {realization.id}")
+    for entry in entries:
+        entry.validate()
+    for realization in realizations:
+        realization.validate()
+    # A release cannot silently invalidate another active pack's dependency.
+    for release in knowledge_store.pack_releases(db):
+        if release["active"] and release["pack_id"] != manifest.id:
+            required = json.loads(release["manifest"]).get("dependencies", {}).get(manifest.id)
+            if required and required != manifest.release:
+                raise PackError(f"{release['pack_id']} requires {manifest.id}@{required}")
+    return PreparedPack(
+        manifest=manifest, entries=entries, realizations=realizations, document=data,
+    )
 
 
 def activate(db: Database, prepared: PreparedPack, *, source: str, distribution: str) -> dict:
@@ -175,13 +196,24 @@ def activate(db: Database, prepared: PreparedPack, *, source: str, distribution:
     if existing:
         raise PackError(f"release {manifest.release} of {manifest.id} is already installed")
     with db._lock, db._conn:
+        validate_pack(db, prepared.document)
+        # Validate the original hashed representation (defaults may have been omitted).
+        for entry in prepared.entries:
+            row = db.query_one(
+                "SELECT * FROM knowledge_entries WHERE id = ? AND revision = ?",
+                (entry.id, entry.revision),
+            )
+            if row is not None and knowledge_store._entry_from_row(row) != entry:
+                raise PackError(f"entry pin conflicts: {entry.id}")
         db._conn.execute(
             "UPDATE knowledge_packs SET active = 0 WHERE pack_id = ?", (manifest.id,)
         )
         for entry in prepared.entries:
-            knowledge_store.insert_entry_version(db._conn, entry)
+            if not knowledge_store.insert_entry_version(db._conn, entry):
+                raise PackError(f"entry pin conflicts: {entry.id}")
         for realization in prepared.realizations:
-            knowledge_store.insert_realization_version(db._conn, realization)
+            if not knowledge_store.insert_realization_version(db._conn, realization):
+                raise PackError(f"realization pin conflicts: {realization.id}")
         db._conn.execute(
             "INSERT INTO knowledge_packs (pack_id, release, name, manifest, content_hash,"
             " source, distribution, active, installed_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -189,7 +221,7 @@ def activate(db: Database, prepared: PreparedPack, *, source: str, distribution:
                 manifest.id,
                 manifest.release,
                 manifest.name,
-                json.dumps(manifest.model_dump(), ensure_ascii=False, sort_keys=True),
+                json.dumps(prepared.document, ensure_ascii=False, sort_keys=True),
                 manifest.content_sha256,
                 source,
                 distribution,
@@ -227,6 +259,9 @@ def rollback_pack(db: Database, pack_id: str) -> dict:
     if active is None or not candidates:
         raise PackError(f"pack {pack_id!r} has no earlier release to roll back to")
     previous = candidates[-1]
+    previous_manifest = json.loads(previous["manifest"])
+    previous_manifest["content_sha256"] = content_hash(previous_manifest["entries"])
+    validate_pack(db, previous_manifest)
     knowledge_store.set_active_release(db, pack_id, previous["release"])
     log.info("knowledge pack %s rolled back %s -> %s", pack_id, active["release"],
              previous["release"])
@@ -237,6 +272,8 @@ def rollback_pack(db: Database, pack_id: str) -> dict:
 def download_pack(db: Database, config: dict, pack_id: str, cache_dir: Path) -> Path:
     """Download-once fetch of a pack file into the local cache; never per line."""
     base = str(config.get("pack_distribution_url") or "").strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,99}", pack_id):
+        raise PackError("invalid pack id")
     if not base:
         raise PackError("knowledge.pack_distribution_url is not configured")
     import requests
@@ -245,14 +282,26 @@ def download_pack(db: Database, config: dict, pack_id: str, cache_dir: Path) -> 
     cache_dir.mkdir(parents=True, exist_ok=True)
     dest = cache_dir / f"{pack_id}.json"
     try:
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=30, stream=True)
     except requests.RequestException as exc:
         raise PackError(f"could not download pack: {exc}") from exc
-    if response.status_code != 200:
-        raise PackError(f"pack download failed (HTTP {response.status_code})")
-    if len(response.content) > MAX_PACK_BYTES:
-        raise PackError(f"pack exceeds {MAX_PACK_BYTES // 1024} KB")
-    dest.write_bytes(response.content)
+    try:
+        if response.status_code != 200:
+            raise PackError(f"pack download failed (HTTP {response.status_code})")
+        content = bytearray()
+        for chunk in response.iter_content(65536):
+            content.extend(chunk)
+            if len(content) > MAX_PACK_BYTES:
+                raise PackError(f"pack exceeds {MAX_PACK_BYTES // 1024} KB")
+        try:
+            validate_pack(db, json.loads(content))
+        except (ValueError, TypeError) as exc:
+            raise PackError(f"invalid downloaded pack: {exc}") from exc
+        temporary = dest.with_suffix(".partial")
+        temporary.write_bytes(content)
+        temporary.replace(dest)
+    finally:
+        response.close()
     return dest
 
 
@@ -269,7 +318,7 @@ def ensure_starter_pack(db: Database, config: dict) -> dict | None:
     """Install the bundled starter pack on first run so offline start works."""
     if not config.get("auto_install_starter", True):
         return None
-    if knowledge_store.pack_releases(db):
+    if knowledge_store.pack_releases(db, "doblarr-starter"):
         return None
     prepared = validate_pack(db, load_pack_file(starter_pack_path()))
     return activate(db, prepared, source=OFFICIAL, distribution="bundled")
@@ -341,6 +390,7 @@ def _portable_entry(entry: Entry) -> dict:
         "status": entry.status,
         "license": entry.license,
         "contributor": entry.contributor,
+        "review_history": list(entry.review_history),
     }
 
 

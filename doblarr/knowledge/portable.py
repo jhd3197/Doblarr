@@ -25,6 +25,7 @@ def entry_to_overlay(entry: Entry, realizations: list[Realization]) -> RecipeEnt
         status=entry.status,  # type: ignore[arg-type]
         license=entry.license,
         contributor=entry.contributor,
+        review_history=list(entry.review_history),
         realizations=[
             RecipeRealization(
                 id=r.id,
@@ -63,6 +64,7 @@ def overlay_to_entry(overlay: RecipeEntry, *, scope_ref: str) -> Entry:
         origin="local",
         license=overlay.license,
         contributor=overlay.contributor,
+        review_history=tuple(overlay.review_history),
     )
 
 

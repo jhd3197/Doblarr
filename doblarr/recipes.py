@@ -136,6 +136,7 @@ class RecipeEntry(StrictModel):
     status: KNOWLEDGE_STATUS = "proposed"
     license: str = Field(default="", max_length=300)
     contributor: str = Field(default="", max_length=300)
+    review_history: list[dict] = Field(default_factory=list, max_length=100)
     realizations: list[RecipeRealization] = Field(default_factory=list, max_length=50)
 
     @field_validator("locale")

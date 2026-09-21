@@ -68,7 +68,7 @@ export function createKnowledge() {
       return;
     }
     if (view.tab === 'packs') {
-      body.innerHTML = '<div class="panel" style="padding:20px 24px;"><p class="hint">No packs installed. Community and starter packs arrive in a later phase; your personal rules appear under Pronunciations and Terminology.</p></div>';
+      await renderPacks(body);
       return;
     }
     body.innerHTML = `
@@ -103,6 +103,31 @@ export function createKnowledge() {
       loadList();
     };
     await loadList();
+  }
+
+  async function renderPacks(body) {
+    try {
+      const data = await api('packs');
+      body.innerHTML = `<div class="panel" style="padding:20px 24px;">
+        <p class="hint">Pack updates affect new jobs. Existing jobs retain their pinned revisions. Proposed content stays inactive.</p>
+        <label class="review-field">Local pack JSON path<input class="input pack-path"></label>
+        <button class="btn btn-secondary pack-install">Install file</button>
+        <label class="review-field">Pack ID from configured distribution<input class="input pack-id"></label>
+        <button class="btn btn-secondary pack-download">Download and install</button>
+        <p class="pack-status hint" role="status"></p>
+        ${data.packs.map(p => `<h4>${esc(p.name)} · ${p.third_party ? 'Third-party' : 'Official'}</h4>
+          ${p.releases.map(r => `<p class="hint">${esc(r.release)} · ${r.active ? 'Active' : 'Retained'} · ${esc(JSON.stringify(r.coverage))}</p>`).join('')}
+          <button class="btn btn-ghost pack-rollback" data-id="${esc(p.pack_id)}" ${p.releases.length < 2 ? 'disabled' : ''}>Roll back</button>`).join('') || '<p>No packs installed.</p>'}
+      </div>`;
+      const perform = async (button, path, payload) => {
+        button.disabled = true;
+        try { await api(path, { method: 'POST', json: payload }); await renderKnowledge(); }
+        catch (e) { body.querySelector('.pack-status').textContent = e.message; button.disabled = false; }
+      };
+      body.querySelector('.pack-install').onclick = e => perform(e.target, 'packs/install', { path: body.querySelector('.pack-path').value });
+      body.querySelector('.pack-download').onclick = e => perform(e.target, 'packs/download', { pack_id: body.querySelector('.pack-id').value });
+      body.querySelectorAll('.pack-rollback').forEach(b => { b.onclick = () => perform(b, `packs/${encodeURIComponent(b.dataset.id)}/rollback`, {}); });
+    } catch (e) { body.textContent = e.message; }
   }
 
   async function loadList() {
