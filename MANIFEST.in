@@ -1,0 +1,2 @@
+include config.example.yaml
+recursive-include web *.html *.css *.js *.png *.ico *.webmanifest

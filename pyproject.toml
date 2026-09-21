@@ -42,6 +42,10 @@ dev = [
 [project.scripts]
 doblarr = "doblarr.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/jhd3197/Doblarr"
+Issues = "https://github.com/jhd3197/Doblarr/issues"
+
 [tool.setuptools]
 packages = ["doblarr", "doblarr.clients", "doblarr.stages", "doblarr.routes"]
 

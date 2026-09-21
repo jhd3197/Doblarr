@@ -48,6 +48,22 @@ clips, then assembles a full-length video. See [episode recovery](docs/episode-r
 
 ## Running it
 
+### Install from PyPI
+
+```bash
+pip install doblarr
+python -c "from importlib.resources import files; from pathlib import Path; Path('config.yaml').write_bytes(files('doblarr').joinpath('config.example.yaml').read_bytes())"
+doblarr serve
+```
+
+Run the configuration-copy command in a new directory, then edit `config.yaml`
+before starting the server. The package includes the web UI. Real dubbing also
+requires FFmpeg/ffprobe on PATH, a running Voicebox service, and the optional
+ML dependencies (`pip install "doblarr[real]"`). Install a PyTorch build matching
+your platform/GPU before installing that extra. The default mode is dry-run.
+
+### Run from source
+
 ```bash
 pip install -r requirements.txt          # core + FastAPI/uvicorn
 cp config.example.yaml config.yaml        # set Radarr/Sonarr URLs + API keys

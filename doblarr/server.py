@@ -33,7 +33,9 @@ from .services import Services
 from .store import Database
 
 log = logging.getLogger("doblarr.server")
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+WEB_DIR = Path(__file__).resolve().parent / "web"
+if not WEB_DIR.is_dir():
+    WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for worker/scheduler threads
 SSE_HEARTBEAT = 15.0    # seconds between `: ping` comments
 
