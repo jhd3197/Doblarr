@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -12,6 +11,9 @@ from .artifacts import digest, media_work
 from .clients.translator import build_translator
 from .config import Config
 from .errors import JobCancelled
+from .knowledge import KnowledgeSelection
+from .languages import base_language, resolve_target_locale
+from .languages import parse as parse_language_tag
 from .models import DubJob
 from .presets import effective_config
 from .review import apply_edits, write_review
@@ -33,7 +35,7 @@ from .stages import (
 from .stages.common import load_script, save_script
 from .telemetry import RunReport
 from .versions import preserve_version
-from .voices import character_cast, ensure_cast, save_characters
+from .voices import cast_key, character_cast, ensure_cast, save_characters
 
 log = logging.getLogger("doblarr.pipeline")
 
@@ -70,12 +72,23 @@ def run_job(
     publishes a `cast` event); full dubs read the saved cast into synthesize.
     """
     config = effective_config(config)
-    if not re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?", job.target_lang):
+    canonical = parse_language_tag(job.target_lang)
+    if canonical is None:
         raise ValueError("target language must be a language code")
+    job.target_lang = canonical
+    if not job.target_locale:
+        job.target_locale = resolve_target_locale(config.as_dict(), job.target_lang)
+    elif parse_language_tag(job.target_locale) is None:
+        raise ValueError("target locale must be a language tag")
+    base = base_language(job.target_lang)
+    if base != job.target_lang:
+        # engines and media tags keep the base language; the locale holds the region
+        job.target_lang = base
     shared_work = media_work(config.work_dir, job)
-    work = shared_work / job.target_lang
+    locale_ns = job.target_locale or job.target_lang  # regional targets get their own namespace
+    work = shared_work / locale_ns
     job.artifacts_dir = work
-    out = config.output_dir / shared_work.name / job.target_lang
+    out = config.output_dir / shared_work.name / locale_ns
     job.translation_options = dict(config["translate"])
     edits = config["dub"].get("line_edits", {})
     if edits or job.kind == "audition":
@@ -85,12 +98,32 @@ def run_job(
     character_group = config["dub"].get("cast_group", "")
     character_map = config["dub"].get("character_map", {})
     vb = (services or Services(config)).voicebox
+    # Frozen knowledge for this run: pinned to the job's snapshot revisions, so
+    # edits made after queueing never change a resumed job. Without a db (CLI)
+    # the legacy pronunciation map alone applies, exactly as before.
+    knowledge = None
+    if db is not None:
+        knowledge = KnowledgeSelection.load(
+            db,
+            snapshot=job.knowledge_snapshot,
+            locale=job.target_locale or job.target_lang,
+            title_ref=cast_key(path=str(job.input_file)),
+            show_ref=character_group,
+            show_refs=(job.show_ref,),
+            legacy=dict(config["dub"].get("pronunciations", {})),
+        )
+    pronunciations = (
+        None if knowledge is not None else dict(config["dub"].get("pronunciations", {}))
+    )
+    direction = dict(config["translate"])
+    if base_language(job.target_locale) != job.target_locale:
+        direction["locale"] = job.target_locale  # regional target wins over translate.locale
     translator = build_translator(
         config["translate"]["provider"],
         config["translate"]["model"],
         voicebox_client=vb,
         endpoint=config["translate"].get("endpoint"),
-        direction=config["translate"],
+        direction=direction,
     )
     seg_limit = config["dub"].get("segment_limit")
     teaser_s = int(config["dub"].get("teaser_minutes", 10)) * 60 if job.kind == "tease" else None
@@ -135,7 +168,16 @@ def run_job(
             dry_run=dry_run,
             progress=_report("translate"),
             batch_size=config["translate"].get("batch_size", 12),
-            glossary=config["translate"].get("glossary", {}),
+            glossary={
+                # Resolved terminology relevant to these segments; the explicit
+                # translate.glossary config always wins on a conflict.
+                **(
+                    knowledge.glossary_terms([s.text_src for s in job.segments])
+                    if knowledge is not None
+                    else {}
+                ),
+                **config["translate"].get("glossary", {}),
+            },
             chars_per_second=config["translate"].get("chars_per_second", 14),
             checkpoint=lambda: save_script(job, translation_work),
             cancel=cancel_event,
@@ -175,7 +217,8 @@ def run_job(
             model_size=config["voicebox"].get("model_size"),
             seed=config["voicebox"].get("seed"),
             preset_voices=config["dub"].get("preset_voices", []),
-            pronunciations=config["dub"].get("pronunciations", {}),
+            pronunciations=pronunciations,
+            knowledge=knowledge,
             narrator_voice=config["dub"].get("narrator_voice", ""),
             narrator_delivery=config["dub"].get("narrator_delivery", ""),
             narrator_speakers={
@@ -203,7 +246,7 @@ def run_job(
             cancel=cancel_event,
             regenerate=lambda seg: _synthesize([seg]),
             checkpoint=lambda: save_script(job, effective_work),
-            pronunciations=config["dub"].get("pronunciations", {}),
+            pronunciations=pronunciations,
             **options,
         )
 

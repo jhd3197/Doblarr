@@ -12,6 +12,8 @@ from typing import Any
 import yaml
 
 from .config_schema import ConfigModel, validate_config
+from .languages import base_language, normalize
+from .languages import parse as parse_language_tag
 
 log = logging.getLogger("doblarr.config")
 
@@ -33,6 +35,37 @@ ENV_OVERRIDES = {
     "DOBLARR_SONARR_API_KEY": ("connect", "sonarr_api_key"),
     "DOBLARR_PLEX_TOKEN": ("connect", "plex_token"),
 }
+
+
+def _migrate_legacy_locale(data: dict) -> None:
+    """Fill dub.target_locale from a legacy Spanish translate.locale when compatible.
+
+    A concrete (non-auto) Spanish regional translate.locale becomes the target
+    locale only when the primary target language is Spanish; a Spanish-regional
+    setting next to a non-Spanish target is surfaced and never applied to
+    another language.
+    """
+    dub = data.setdefault("dub", {})
+    if dub.get("target_locale"):
+        return
+    legacy = str(data.get("translate", {}).get("locale") or "auto")
+    if legacy == "auto":
+        return
+    parsed = parse_language_tag(legacy)
+    if not parsed or base_language(parsed) != "es":
+        return
+    targets = data.get("general", {}).get("target_languages") or []
+    first = str(targets[0]) if targets else ""
+    base = base_language(normalize(first) or first) if first else ""
+    if base == "es":
+        dub["target_locale"] = parsed
+        log.info("config: migrated legacy translate.locale=%s to dub.target_locale", parsed)
+    elif first:
+        log.warning(
+            "config: translate.locale=%s is Spanish-specific but the target language "
+            "is %s; leaving dub.target_locale unset",
+            legacy, first,
+        )
 
 
 def _apply_env_overrides(data: dict) -> None:
@@ -146,6 +179,7 @@ class Config:
         save_user_data(self._path, merged_user)
         self._data = _deep_merge(DEFAULTS, merged_user)
         _apply_env_overrides(self._data)
+        _migrate_legacy_locale(self._data)
         validate_config(self._data)
         return merged_user
 
@@ -157,5 +191,6 @@ class Config:
         if candidate.exists():
             data = _deep_merge(data, load_user_data(candidate))
         _apply_env_overrides(data)
+        _migrate_legacy_locale(data)
         validate_config(data)
         return cls(data, path=candidate)

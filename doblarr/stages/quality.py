@@ -53,7 +53,9 @@ def spoken_form(text: str, pronunciations: dict) -> str:
 
 def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=None):
     source = Path(seg.audio_clip)
-    text = spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
+    # The exact spoken form synthesis resolved for this line (per its speaker's
+    # engine); the legacy flat pronunciation map remains the fallback.
+    text = seg.tts_text or spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
     request = {
         "source": stamp(source),
         "text": text,

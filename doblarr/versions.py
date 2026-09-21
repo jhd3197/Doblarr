@@ -27,6 +27,7 @@ def preserve_version(job, config, cast=None) -> dict:
     script = {
         "source_language": job.script_lang or job.source_lang,
         "target_language": job.target_lang,
+        "target_locale": job.target_locale or job.target_lang,
         "segments": [{"index": s.index, "start": s.start, "end": s.end,
                       "speaker": s.speaker, "text": s.text_translated}
                      for s in job.segments],
@@ -64,7 +65,10 @@ def preserve_version(job, config, cast=None) -> dict:
     name = config["dub"].get("version_name", "").strip() or "Dub"
     manifest = {**identity, "version_id": version_id, "name": name,
                 "created_at": datetime.now(UTC).isoformat(), "output": str(output),
-                "script": script}
+                "script": script,
+                # Knowledge provenance for this version; outside the identity digest
+                # so an unrelated rule edit never forks an identical render.
+                "knowledge": job.knowledge_snapshot}
     if destination.exists():
         saved = read_json(manifest_path)
         if (saved.get("version_id") != version_id or not output.is_file()

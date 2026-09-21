@@ -12,6 +12,7 @@ _root = Path(_temp.name)
 config = Config.load(_root / "config.yaml")
 config.apply_and_save({
     "paths": {"work_dir": str(_root / "work"), "output_dir": str(_root / "output")},
+    "knowledge": {"auto_install_starter": False},
 })
 app = create_app(config)
 app.state.services._cache["radarr"] = SimpleNamespace(list_movies=lambda: [{

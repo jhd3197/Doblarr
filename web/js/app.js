@@ -9,6 +9,8 @@ import { createReview } from './review.js';
 import { parseTitlePath, resolveTitleTab, titlePath } from './title-routing.js';
 import { TABS } from './settings-model.js';
 import { jobsFor } from './identity.js';
+import { loadLanguages } from './languages.js';
+import { createKnowledge } from './knowledge.js';
 
 const { statusTag, langChipsHtml, renderLibrary, fetchPlan, queueDub, loadLibrary } = createLibrary({ goTitle });
 const { jobStatusTag, updateDryRunTag, renderJobs, loadJobs, loadOverview, startEventStream } = createJobs({
@@ -25,6 +27,7 @@ const { loadConfig, saveSettings, renderSettings } = createSettings({
 
 
 const review = createReview({ onQueued: loadJobs });
+const { renderKnowledge } = createKnowledge();
 
 // ---- App state + rendering (vanilla, no framework) ----
 const app = document.getElementById("app");
@@ -38,8 +41,8 @@ function setTheme(theme) {
 
 // ---- History API routing (/library, /settings/<tab>) — the server serves
 // index.html for any extensionless non-api path, so refresh/deep-link works.
-const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/settings": "Settings", "/title": "Title" };
-const PAGE_TO_PATH = { Overview: "/", Library: "/library", Dubs: "/dubs", Voices: "/voices", Settings: "/settings" };
+const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/knowledge": "Knowledge", "/settings": "Settings", "/title": "Title" };
+const PAGE_TO_PATH = { Overview: "/", Library: "/library", Dubs: "/dubs", Voices: "/voices", Knowledge: "/knowledge", Settings: "/settings" };
 
 function routeFromPath() {
   const parts = location.pathname.split("/").filter(Boolean);
@@ -158,6 +161,7 @@ function applyRoute() {
     if (!library.loaded) loadLibrary().then(renderTitle); else renderTitle();
   }
   if (page === "Library" && !library.loaded) loadLibrary();
+  if (page === "Knowledge") renderKnowledge();
   if (page === "Overview") loadOverview();
   if (page === "Dubs") loadJobs();
 }
@@ -335,5 +339,5 @@ document.addEventListener("keydown", e => {
 // ---- Init ----
 const savedTheme = safeGet("doblarr.theme", "light");
 setTheme(savedTheme === "dark" ? "dark" : "light");
-applyRoute();  // open the view named by the URL path
+loadLanguages().finally(() => applyRoute());  // open the view named by the URL path
 startEventStream();

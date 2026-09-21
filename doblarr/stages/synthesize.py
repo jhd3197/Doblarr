@@ -150,6 +150,7 @@ def run(
     seed=None,
     preset_voices=None,
     pronunciations=None,
+    knowledge=None,
     narrator_voice="",
     narrator_delivery="",
     narrator_speakers=None,
@@ -229,7 +230,19 @@ def run(
         delivery = seg.delivery or cast.get(seg.speaker, {}).get("delivery", "")
         voice_engine = cast.get(seg.speaker, {}).get("engine") or engine
         dest = clips_dir / f"line_{seg.index:04d}.wav"
-        text = spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
+        applied: list[dict] = []
+        if knowledge is not None:
+            text, applied = knowledge.spoken(
+                seg.text_translated or seg.text_src,
+                engine=voice_engine or "",
+                model=model_size,
+                voice=seg.voice or spk.voicebox_profile_id,
+                line=knowledge.line_ref_for(seg.index),
+            )
+            seg.tts_text = text
+            seg.applied_rules = applied
+        else:
+            text = spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
         signature = {
             "text": text,
             "language": job.target_lang,
@@ -292,7 +305,11 @@ def run(
         temp = receipt.with_suffix(".partial.json")
         temp.write_text(
             json.dumps(
-                {"request": signature, "sha256": hashlib.sha256(dest.read_bytes()).hexdigest()}
+                {
+                    "request": signature,
+                    "sha256": hashlib.sha256(dest.read_bytes()).hexdigest(),
+                    "rules": applied,
+                }
             )
         )
         temp.replace(receipt)

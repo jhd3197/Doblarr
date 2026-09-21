@@ -66,6 +66,7 @@ def write_review(job, root):
         {
             "version": 1,
             "language": job.target_lang,
+            "locale": job.target_locale or job.target_lang,
             "segments": rows,
             "metrics": job.metrics,
             "flagged": sum(bool(s.issues) for s in job.segments),

@@ -16,6 +16,9 @@ from ..config import Config
 from ..errors import ForbiddenError, NotFoundError
 from ..events import EventBus
 from ..jobs import JobStore, Worker
+from ..knowledge import snapshot as knowledge_snapshot
+from ..languages import base_language, normalize
+from ..voices import cast_key
 
 
 class JobCreateIn(BaseModel):
@@ -44,6 +47,7 @@ class LineEditIn(BaseModel):
 class ReviewEditsIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     edits: list[LineEditIn] = Field(min_length=1, max_length=2000)
+    use_updated_knowledge: bool = False  # default: keep the run's frozen rule snapshot
 
 
 def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus) -> APIRouter:
@@ -154,15 +158,19 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 "Choose episode files from the show's Episodes tab; a folder is not a dub input",
             )
         default_target = config["general"]["target_languages"][0]
+        target = normalize(body.target_lang or default_target) or body.target_lang or default_target
+        base = base_language(target)
         job = store.add(
             title=body.title,
             source=body.source,
             source_lang=body.source_lang,
-            target_lang=body.target_lang or default_target,
+            target_lang=base,
+            target_locale=target if target != base else "",
             input_file=body.path,
             kind=body.kind,
             force=body.force,
             overrides=body.overrides,
+            knowledge_snapshot=knowledge_snapshot(store.db),
         )
         bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
         return {"ok": True, "job": asdict(job)}
@@ -219,7 +227,14 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             row["has_audio"] = bool(clip and clip.is_file())
             row.pop("audio_clip", None)
             row.pop("words", None)
-        return {**data, "title": job.title, "editable": job.status not in {"running", "queued"}}
+        effective = config.with_overrides(job.overrides or {})
+        return {
+            **data,
+            "title": job.title,
+            "editable": job.status not in {"running", "queued"},
+            "title_ref": cast_key(path=str(job.input_file)) if job.input_file else "",
+            "show_ref": effective["dub"].get("cast_group", ""),
+        }
 
     @api.get("/api/jobs/{job_id}/clips/{index}")
     def line_audio(job_id: str, index: int, request: Request):
@@ -274,7 +289,15 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             source=original.source,
             source_lang=original.source_lang,
             target_lang=original.target_lang,
+            target_locale=original.target_locale,
             input_file=original.input_file,
+            # Frozen rules are inherited unless the author explicitly asks for
+            # the updated knowledge (a saved correction only applies on request).
+            knowledge_snapshot=(
+                knowledge_snapshot(store.db)
+                if body.use_updated_knowledge
+                else original.knowledge_snapshot
+            ),
             kind=original.kind,
             overrides=overrides,
         )

@@ -23,6 +23,8 @@ from typing import Any
 
 from .clients.plex import PlexError
 from .errors import ConfigError, JobCancelled
+from .knowledge import snapshot as knowledge_snapshot
+from .languages import resolve_target_locale
 from .models import DubJob
 from .pipeline import run_job
 from .plex_labels import find_item
@@ -42,6 +44,7 @@ class Job:
     source: str
     source_lang: str
     target_lang: str
+    target_locale: str = ""    # canonical regional target (es-MX); "" derives at run time
     input_file: str | None = None
     status: str = "queued"     # queued | running | done | failed | cancelled
     stage: str = ""
@@ -50,6 +53,8 @@ class Job:
     kind: str = "full"           # full | tease (a dubbed first-minutes preview)
     force: bool = False        # re-run every stage, ignoring cached artifacts
     overrides: dict | None = None   # per-title config overrides (dub.*, transcribe.*, …)
+    knowledge_snapshot: dict | None = None   # frozen knowledge rule pins
+    show_ref: str = ""     # stable series id (series:<tvdb_id>) for show-scope rules
     output_file: str | None = None   # muxed result (planned path in dry-run)
     report_file: str | None = None
     review_file: str | None = None
@@ -63,9 +68,9 @@ class Job:
 
 
 # Job fields with a real column; anything else rides in the payload JSON.
-_COLS = ("id", "title", "source", "source_lang", "target_lang", "input_file",
-         "status", "stage", "progress", "message", "kind", "created_at",
-         "updated_at")
+_COLS = ("id", "title", "source", "source_lang", "target_lang", "target_locale",
+         "input_file", "status", "stage", "progress", "message", "kind",
+         "created_at", "updated_at")
 
 
 class JobStore:
@@ -290,11 +295,21 @@ class Worker(threading.Thread):
         self.store.update(job.id, status="running", stage="probe", progress=0)
         self._publish(job, "started")
         try:
+            target_locale = job.target_locale or resolve_target_locale(
+                config.as_dict(), job.target_lang)
+            # Legacy queued rows get their knowledge snapshot at first upgraded run.
+            snapshot = job.knowledge_snapshot
+            if snapshot is None:
+                snapshot = knowledge_snapshot(self.store.db)
+                self.store.update(job.id, knowledge_snapshot=snapshot)
             dj = DubJob(
                 input_file=Path(job.input_file) if job.input_file else Path(job.title),
                 source_lang=job.source_lang,
                 target_lang=job.target_lang,
+                target_locale=target_locale,
                 kind=job.kind,
+                knowledge_snapshot=snapshot,
+                show_ref=job.show_ref,
             )
             run_job(dj, config, dry_run=dry_run, on_stage=on_stage,
                     cancel_event=cancel_evt, services=self.services,

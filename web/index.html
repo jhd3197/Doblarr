@@ -29,6 +29,7 @@
       <button type="button" class="navitem" data-page="Library"><span class="dot9"></span>Library</button>
       <button type="button" class="navitem" data-page="Dubs"><span class="dot9"></span>Dubs</button>
       <button type="button" class="navitem" data-page="Voices"><span class="dot9"></span>Voices</button>
+      <button type="button" class="navitem" data-page="Knowledge"><span class="dot9"></span>Knowledge</button>
       <button type="button" class="navitem" data-page="Settings"><span class="dot9"></span>Settings</button>
     </nav>
     <div class="sidefoot panel" style="margin-top: auto; padding: 12px 14px;">
@@ -304,6 +305,11 @@
       </div>
     </section>
 
+    <!-- ===== Knowledge ===== -->
+    <section data-view="Knowledge" hidden>
+      <div style="padding: 30px 26px 44px;" id="knowledgeRoot"></div>
+    </section>
+
     <!-- ===== Settings ===== -->
     <section data-view="Settings" hidden>
       <div style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
@@ -362,6 +368,7 @@
     <div class="review-layout"><nav id="reviewLines" class="review-lines" aria-label="Dialogue lines"></nav>
       <section id="reviewEditor" class="review-editor" aria-label="Line editor"></section></div>
     <div class="review-footer"><p id="reviewStatus" role="status"></p>
+      <label class="hint" style="align-self:center;"><input type="checkbox" id="reviewUpdatedKnowledge"> Use updated language knowledge</label>
       <button type="button" id="reviewSubmit" class="btn btn-primary" disabled>Render changes</button></div>
   </dialog>
 

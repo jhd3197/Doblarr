@@ -5,6 +5,7 @@ import { castParams, jobsFor } from './identity.js';
 import { api } from './api.js';
 import { pickVoice } from './voice-picker.js';
 import { renderEpisodes } from './episodes.js';
+import { languageName, targetChoices } from './languages.js';
 import { getJobs } from './jobs-data.js';
 import { renderRecipes } from './recipes.js';
 
@@ -69,13 +70,14 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
       }));
     } else {
       const opts = el("div", { class: "opts" });
-      const options = f.t === "bool" ? ["On", "Off"] : (f.dyn ? (library.targets || ["en"]) : f.o);
+      const options = f.t === "bool" ? ["On", "Off"] : (f.dyn ? targetChoices(library.targets || ["en"], v) : f.o);
       options.forEach(o => {
         const on = f.t === "bool" ? ((v ? "On" : "Off") === o) : (String(v) === o);
+        const label = f.dyn ? languageName(o) : (o === "" && f.emptyLabel ? f.emptyLabel : o);
         opts.append(el("button", {
           type: "button", class: "opt", "aria-pressed": on ? "true" : "false",
           onclick: () => setPlanValue(f.k, f.t === "bool" ? o === "On" : o),
-        }, o));
+        }, label));
       });
       right.append(opts);
     }
@@ -168,7 +170,7 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
             ? "Choose episodes below. Each downloaded file gets its own job; missing episodes are never queued."
             : `Queueing processes this ${item.parent ? "episode" : "movie"} file and writes an output with an extra audio track.`}</p>
           <div style="display:flex;gap:26px;flex-wrap:wrap;padding-top:4px;">
-            <div><p style="${statHead}">Dub direction</p><p class="m" style="${statVal}">${escapeHtml(item.original)} → ${escapeHtml(target)}</p></div>
+            <div><p style="${statHead}">Dub direction</p><p class="m" style="${statVal}">${escapeHtml(item.original)} → ${escapeHtml(languageName(target))}</p></div>
             <div><p style="${statHead}">Audio tracks</p><p class="m" style="${statVal}">${escapeHtml(langs)}</p></div>
             <div><p style="${statHead}">Jobs</p><p class="m" id="tpStatJobs" style="${statVal}">—</p></div>
             <div><p style="${statHead}">Voices assigned</p><p class="m" id="tpStatVoices" style="${statVal}">—</p></div>

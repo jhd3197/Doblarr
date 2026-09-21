@@ -10,6 +10,8 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..errors import ArrClientError, ConfigError, DoblarrError
+from ..languages import base_language
+from ..languages import get as get_language
 
 log = logging.getLogger("doblarr.clients.translator")
 
@@ -308,13 +310,6 @@ def _build_translator(
 
 
 def translation_direction(options: dict, target_lang: str) -> str:
-    regions = {
-        "es-419": "Neutral Latin American Spanish for studio dubbing. Use ustedes, not vosotros; "
-        "avoid Spain-specific vocabulary and heavy regional slang.",
-        "es-MX": "Mexican Spanish for studio dubbing. Use natural Mexican vocabulary "
-        "without adding exaggerated slang or stereotypes.",
-        "es-ES": "Spanish from Spain with consistent regional vocabulary and forms of address.",
-    }
     styles = {
         "natural": "Use idiomatic spoken dialogue while preserving meaning and character intent.",
         "faithful": "Stay close to the source wording and cultural references "
@@ -323,8 +318,9 @@ def translation_direction(options: dict, target_lang: str) -> str:
         "relationships and plot; invent no new jokes or information.",
     }
     parts = [styles.get(options.get("adaptation", "natural"), styles["natural"])]
-    if target_lang.split("-")[0].lower() == "es":
-        parts.append(regions.get(options.get("locale") or "", ""))
+    locale = get_language(str(options.get("locale") or ""))
+    if locale and locale.direction and locale.base == base_language(target_lang):
+        parts.append(locale.direction)
     if options.get("direction"):
         parts.append("Dialogue direction: " + options["direction"])
     if options.get("character_notes"):

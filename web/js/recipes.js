@@ -19,6 +19,8 @@ export function renderRecipes(root, { item, target, onApplied }) {
       <label>Recipe version<input class="input" id="recipeRevision" value="1" maxlength="40"></label>
       <label>Expected runtime (seconds)<input class="input" id="recipeRuntime" type="number" min="1" max="86400" step="0.001" placeholder="Unknown"></label>
       <label class="narrator-direction">Release notes<textarea class="input" id="recipeNotes" maxlength="2000" rows="3" placeholder="Edition, delivery style, or casting notes"></textarea></label>
+      <label>Recipe format<select class="input" id="recipeSchema"><option value="1">v1 — settings only</option>
+        <option value="2">v2 — settings + knowledge overlay</option></select></label>
     </div>
     <p class="hint">Export uses saved settings and character assignments. Review the file before sharing; names and notes are included.</p>
     <div class="episode-actions"><button class="btn btn-secondary" id="recipeExport">Export recipe</button>
@@ -31,27 +33,53 @@ export function renderRecipes(root, { item, target, onApplied }) {
   const media = recipeMedia(item);
   let fileRequest = 0;
   const exportButton = root.querySelector('#recipeExport');
+  function download(recipe) {
+    const blob = new Blob([JSON.stringify(recipe, null, 2) + '\n'], { type:'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${(item.title || 'dub').replace(/[^a-z0-9-]/gi, '-').slice(0,100)}-${recipe.target_locale || recipe.target_language}.dobdub`;
+    link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function doExport(includePersonal) {
+    const runtime = root.querySelector('#recipeRuntime');
+    if (!runtime.checkValidity()) throw new Error('Enter a runtime between 1 and 86400 seconds, or leave it blank.');
+    return api('recipes/export', { method:'POST', json: {
+      identity, media: { ...media, runtime_seconds: runtime.value ? Number(runtime.value) : null },
+      parent: item.parent ? Object.fromEntries(castParams(item.parent)) : null,
+      source_language: item.original || '', target_language: target,
+      creator: root.querySelector('#recipeCreator').value,
+      revision: root.querySelector('#recipeRevision').value,
+      notes: root.querySelector('#recipeNotes').value,
+      schema_version: Number(root.querySelector('#recipeSchema').value),
+      include_personal: includePersonal,
+    } });
+  }
   exportButton.onclick = async () => {
     exportButton.disabled = true; status.textContent = 'Preparing recipe…';
     try {
-      const runtime = root.querySelector('#recipeRuntime');
-      if (!runtime.checkValidity()) throw new Error('Enter a runtime between 1 and 86400 seconds, or leave it blank.');
-      const data = await api('recipes/export', { method:'POST', json: {
-        identity, media: { ...media, runtime_seconds: runtime.value ? Number(runtime.value) : null },
-        parent: item.parent ? Object.fromEntries(castParams(item.parent)) : null,
-        source_language: item.original || '', target_language: target,
-        creator: root.querySelector('#recipeCreator').value,
-        revision: root.querySelector('#recipeRevision').value,
-        notes: root.querySelector('#recipeNotes').value,
-      } });
+      const data = await doExport([]);
       if (!root.isConnected) return;
-      const blob = new Blob([JSON.stringify(data.recipe, null, 2) + '\n'], { type:'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${(item.title || 'dub').replace(/[^a-z0-9-]/gi, '-').slice(0,100)}-${data.recipe.target_language}.dobdub`;
-      link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-      status.textContent = ['Recipe exported.', ...data.warnings].join(' ');
+      download(data.recipe);
+      status.textContent = ['Recipe exported.', ...data.warnings, ...(data.loss || [])].join(' ');
+      const pending = (data.personal_dependencies || []).filter(d => !d.included);
+      if (pending.length) {
+        previewRoot.innerHTML = `<hr><h3>Personal rules also affect this title</h3>
+          <p class="hint">They stay private unless you explicitly include them.</p>
+          ${pending.map(d => `<label style="display:block;"><input type="checkbox" class="recipe-promote" value="${escapeHtml(d.id)}"> ${escapeHtml(d.phrase)} <span class="hint">${escapeHtml(d.kind)} · ${escapeHtml(d.locale)} · ${escapeHtml(d.status)}</span></label>`).join('')}
+          <div class="episode-actions"><button class="btn btn-secondary" id="recipeReexport">Export again including the selected rules</button></div>`;
+        previewRoot.querySelector('#recipeReexport').onclick = async event => {
+          event.currentTarget.disabled = true;
+          try {
+            const ids = [...previewRoot.querySelectorAll('.recipe-promote')].filter(c => c.checked).map(c => c.value);
+            const again = await doExport(ids);
+            if (!root.isConnected) return;
+            download(again.recipe);
+            status.textContent = 'Recipe exported with the selected personal rules.';
+            previewRoot.replaceChildren();
+          } catch (e) { status.textContent = e.message; event.currentTarget.disabled = false; }
+        };
+      }
     } catch (e) { status.textContent = e.message; }
     finally { exportButton.disabled = false; }
   };
@@ -64,7 +92,7 @@ export function renderRecipes(root, { item, target, onApplied }) {
     try {
       if (file.size > 128 * 1024) throw new Error('Recipe files must be smaller than 128 KB. Audio and video are not supported.');
       const recipe = JSON.parse(await file.text());
-      const data = await api('recipes/preview', { method:'POST', json:{ identity, media, recipe } });
+      const data = await api('recipes/preview', { method:'POST', json:{ identity, media, recipe, target_locale: target } });
       if (!root.isConnected || request !== fileRequest) return;
       status.textContent = 'Recipe checked. Choose local voices before applying.';
       showPreview(data);
@@ -79,6 +107,7 @@ export function renderRecipes(root, { item, target, onApplied }) {
       <p class="hint">${r.creator ? `By ${escapeHtml(r.creator)}` : 'No creator specified'}</p>
       <p style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(r.notes)}</p>
       ${data.warnings.map(w => `<p class="hint">${escapeHtml(w)}</p>`).join('')}
+      ${data.knowledge ? `<p class="hint">Knowledge overlay: ${data.knowledge.entries.length} rule(s) — ${data.knowledge.entries.map(e => `${escapeHtml(e.phrase)} (${e.state})`).join(', ') || 'none'}</p>` : ''}
       <div class="narrator-fields">${slots.map((s,i) => `<label>${escapeHtml(s.label)} — ${escapeHtml(s.voice.engine)}
         <span class="hint">Requested: ${escapeHtml(s.voice.name || 'Local source audio')}${s.voice.delivery ? ` · ${escapeHtml(s.voice.delivery)}` : ''}</span>
         <select class="input" data-slot="${i}" aria-label="Local voice for ${escapeHtml(s.label)}">
@@ -107,7 +136,7 @@ export function renderRecipes(root, { item, target, onApplied }) {
       try {
         const voices = Object.fromEntries(slots.map((s,i) => [s.key, previewRoot.querySelector(`[data-slot="${i}"]`).value]));
         const engines = Object.fromEntries(slots.map((s,i) => [s.key, previewRoot.querySelector(`[data-engine="${i}"]`).value]));
-        const result = await api('recipes/import', {method:'POST', json:{identity, media, recipe:r, voices, engines}});
+        const result = await api('recipes/import', {method:'POST', json:{identity, media, recipe:r, voices, engines, target_locale: target}});
         if (!root.isConnected) return;
         onApplied(result.plan);
         status.textContent = 'Recipe applied. Review Speakers & voices, then queue a dub when ready. Nothing has been generated.';

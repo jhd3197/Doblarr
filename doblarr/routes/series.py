@@ -2,14 +2,17 @@
 
 import threading
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from ..artifacts import read_json
 from ..cache import TTLCache
 from ..discovery import _audio_iso2, _name_to_iso2
+from ..knowledge import snapshot as knowledge_snapshot
+from ..languages import base_language, normalize
+from ..languages import parse as parse_language_tag
 from ..voices import cast_key
 
 
@@ -17,9 +20,25 @@ def normalized(path):
     return str(path or "").replace("\\", "/").rstrip("/").casefold()
 
 
+def _language_tag(value: str) -> str:
+    parsed = parse_language_tag(value)
+    if parsed is None:
+        raise ValueError("must be a language tag such as es, es-MX or es-419")
+    return parsed
+
+
+LanguageTag = Annotated[str, AfterValidator(_language_tag)]
+LanguageQuery = Annotated[str, AfterValidator(_language_tag), Query()]
+
+
+def job_locale(job) -> str:
+    """Resolved target locale of a stored job row; legacy rows derive from target_lang."""
+    return normalize(job.get("target_locale") or job.get("target_lang") or "") or ""
+
+
 class EpisodeQueueIn(BaseModel):
     episode_ids: list[int] = Field(min_length=1, max_length=2000)
-    target_lang: str = Field(pattern=r"^[a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?$")
+    target_lang: LanguageTag
     kind: Literal["full", "tease", "audition"] = "full"
     missing_only: bool = True
 
@@ -58,6 +77,7 @@ def build_router(config, services, store, bus):
         show, episodes, files = inventory(tvdb_id, refresh)
         indexed = {f["id"]: f for f in files}
         original = _name_to_iso2((show.get("originalLanguage") or {}).get("name"))
+        base = base_language(target)  # media audio tags are base-language only
         jobs = store.list()
         rows = []
         for ep in sorted(
@@ -69,7 +89,7 @@ def build_router(config, services, store, bus):
                 _audio_iso2(
                     (media.get("mediaInfo") or {}).get("audioLanguages"),
                     original,
-                    {target},
+                    {base},
                     "unknown",
                 )
             )
@@ -78,13 +98,13 @@ def build_router(config, services, store, bus):
                 for j in jobs
                 if path
                 and normalized(j.get("input_file")) == normalized(path)
-                and j.get("target_lang", "").lower() == target
+                and job_locale(j) == target
             ]
             active = next((j for j in matched if j["status"] in {"queued", "running"}), None)
             completed = next((j for j in matched if output_exists(j)), None)
             status = (
                 "audio-present"
-                if target in audio
+                if base in audio
                 else "dub-ready"
                 if completed
                 else active["status"]
@@ -107,7 +127,7 @@ def build_router(config, services, store, bus):
                     "audio_langs": audio,
                     "status": status,
                     "downloaded": bool(path),
-                    "dubbed": target in audio or bool(completed),
+                    "dubbed": base in audio or bool(completed),
                     "job_id": active["id"] if active else None,
                     "output_job_id": completed["id"] if completed else None,
                 }
@@ -127,19 +147,21 @@ def build_router(config, services, store, bus):
     @api.get("/api/series/{tvdb_id}/episodes")
     def get_episodes(
         tvdb_id: int,
-        target_lang: str = Query(pattern=r"^[a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?$"),
+        target_lang: LanguageQuery,
         refresh: bool = False,
     ):
-        return detail(tvdb_id, target_lang.lower(), refresh)
+        return detail(tvdb_id, target_lang, refresh)
 
     @api.post("/api/series/{tvdb_id}/queue")
     def queue_episodes(tvdb_id: int, body: EpisodeQueueIn):
         with lock:
-            data = detail(tvdb_id, body.target_lang.lower(), refresh=True)
+            data = detail(tvdb_id, body.target_lang, refresh=True)
             rows = {r["id"]: r for r in data["episodes"]}
             if set(body.episode_ids) - set(rows):
                 raise HTTPException(422, "An episode is no longer in this show; refresh the list")
             plan = (store.db.load_plan(cast_key(path=data["path"])) or {}).get("plan", {})
+            base = base_language(body.target_lang)
+            locale = body.target_lang if body.target_lang != base else ""
             queued, skipped, paths = [], [], set()
             for eid in dict.fromkeys(body.episode_ids):
                 row = rows[eid]
@@ -170,10 +192,13 @@ def build_router(config, services, store, bus):
                     ),
                     source="Sonarr · Shows",
                     source_lang=data["original"] or "auto",
-                    target_lang=body.target_lang.lower(),
+                    target_lang=base,
+                    target_locale=locale,
                     input_file=path,
                     kind=body.kind,
                     overrides=overrides,
+                    knowledge_snapshot=knowledge_snapshot(store.db),
+                    show_ref=f"series:{tvdb_id}",
                 )
                 queued.append({"episode_id": eid, "job_id": job.id})
                 bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
