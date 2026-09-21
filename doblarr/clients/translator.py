@@ -324,7 +324,7 @@ def translation_direction(options: dict, target_lang: str) -> str:
     }
     parts = [styles.get(options.get("adaptation", "natural"), styles["natural"])]
     if target_lang.split("-")[0].lower() == "es":
-        parts.append(regions.get(options.get("locale"), ""))
+        parts.append(regions.get(options.get("locale") or "", ""))
     if options.get("direction"):
         parts.append("Dialogue direction: " + options["direction"])
     if options.get("character_notes"):
@@ -336,5 +336,6 @@ def translation_direction(options: dict, target_lang: str) -> str:
 def build_translator(provider: str, model: str, voicebox_client=None,
                      endpoint: str | None = None, direction: dict | None = None) -> Translator:
     translator = _build_translator(provider, model, voicebox_client, endpoint)
-    translator.direction = dict(direction or {})
+    if isinstance(translator, PromptureTranslator):
+        translator.direction = dict(direction or {})
     return translator

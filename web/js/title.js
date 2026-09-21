@@ -20,6 +20,7 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
   // Shows come from Sonarr with a series folder; films from Radarr with a file.
   function isShow(item) { return item.media_type === "show" || (!item.media_type && /^sonarr/i.test(item.source || "")); }
   let shownItem;
+  let recipeView;
 
   function titlePosterHtml(item) {
     return item.poster
@@ -216,9 +217,21 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
     const body = document.getElementById("titleTabBody");
     if (!body || !titleState.item) return;
     const item = titleState.item;
+    if (titleState.dtab !== "recipes" || recipeView?.item !== item) recipeView = null;
     if (titleState.dtab === "recipes") {
-      renderRecipes(body, { item, target: titleState.plan?.target_lang || library.targets?.[0] || 'en',
+      if (!titleState.plan) {
+        body.textContent = 'Loading saved recipe settings…';
+        return;
+      }
+      const target = titleState.plan.target_lang || library.targets?.[0] || 'en';
+      // Background config refreshes must not discard an import or unsaved notes.
+      if (recipeView?.target === target) {
+        body.replaceWith(recipeView.body);
+        return;
+      }
+      renderRecipes(body, { item, target,
         onApplied: plan => { if (titleState.item === item) { titleState.plan = plan; titleState.castItem = null; } } });
+      recipeView = { item, target, body };
       return;
     }
     if (titleState.dtab === "episodes" && isShow(item)) {

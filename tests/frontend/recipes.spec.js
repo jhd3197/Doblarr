@@ -5,6 +5,24 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/library', route => route.fulfill({json:{items:[{title:'Test Film',tmdb_id:42,original:'ko',source:'Radarr',path:'/local/film.mkv',media_type:'movie',label:'needs-dub',audio_langs:['ko']}],target_languages:['en','es'],counts:{}}}));
 });
 
+test('recipe import waits for the saved plan before accepting a file', async ({ page }) => {
+  let releasePlan;
+  const planReady = new Promise(resolve => { releasePlan = resolve; });
+  await page.route('**/api/plan?*', async route => {
+    await planReady;
+    await route.fulfill({ json: { plan: { target_lang: 'es' } } });
+  });
+  await page.goto('/title/tmdb-42/recipes');
+  await expect(page.locator('#titleTabBody')).toHaveText('Loading saved recipe settings…');
+  await expect(page.getByLabel('Import recipe file')).toHaveCount(0);
+  releasePlan();
+  await page.getByLabel('Import recipe file').setInputFiles({
+    name: 'bad.dobdub', mimeType: 'application/json', buffer: Buffer.from('{bad'),
+  });
+  await expect(page.locator('#recipeStatus')).toContainText('not a valid JSON');
+  await expect(page.locator('#recipeApply')).toHaveCount(0);
+});
+
 test('recipe export downloads settings only and import requires a preview before saving', async ({ page, request }) => {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
