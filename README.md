@@ -1,6 +1,14 @@
 <h1 align="center">Doblarr</h1>
 
 <p align="center">
+  <a href="https://github.com/jhd3197/Doblarr/pkgs/container/doblarr">
+    <img src="https://ghcr-badge.elias.eu.org/shield/jhd3197/Doblarr/doblarr" alt="Docker pulls (GitHub Container Registry)" />
+  </a>
+</p>
+
+<!-- The pulls badge requires the GHCR package to be published and publicly accessible. -->
+
+<p align="center">
   <strong>AI dubbing for your media library.</strong><br/>
   The missing link in your *arr stack — turn a foreign-language film into an added,
   translated audio track, voiced by cloned speaker voices.
