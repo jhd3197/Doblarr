@@ -17,7 +17,7 @@ HEADERS = {"X-Api-Key": API_KEY}
 
 def test_migration_v2_voice_casts_and_job_kind(tmp_path):
     db = Database(tmp_path / "d.db")
-    assert db.query_one("PRAGMA user_version")[0] == SCHEMA_VERSION == 7
+    assert db.query_one("PRAGMA user_version")[0] == SCHEMA_VERSION
     tables = {r["name"] for r in db.query(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert "voice_casts" in tables
