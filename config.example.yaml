@@ -89,6 +89,9 @@ separate:
 # Dubbing behaviour
 dub:
   preset: custom               # custom | preview | final
+  target_locale: ""            # regional dub target, e.g. es-MX, es-VE, es-419; blank
+                               #   follows the target language (a Spanish translate.locale
+                               #   still supplies it for Spanish targets)
   narrator_voice: ""           # saved Voicebox profile ID; blank uses original voice cloning
   narrator_delivery: ""        # Qwen only; e.g. warm, calm storytelling
   voice_mode: clone             # clone (per-speaker cloned voice) | preset

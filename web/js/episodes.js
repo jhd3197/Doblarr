@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { languageName, loadLanguages, targetChoices } from './languages.js';
 import { escapeHtml as esc } from './dom.js';
 
 const labels = { 'audio-present': 'Audio present', 'dub-ready': 'AI dub ready',
@@ -7,6 +8,7 @@ const labels = { 'audio-present': 'Audio present', 'dub-ready': 'AI dub ready',
 
 export async function renderEpisodes(root, { item, target, targets, onTarget, onCast, openWatch }) {
   root.innerHTML = '<p class="hint">Loading seasons and episodes from Sonarr…</p>';
+  await loadLanguages();   // locale display names; raw codes remain the fallback
   let data, filter = 'all', selected = new Set();
   const current = () => root.isConnected;
   async function load(refresh = false) {
@@ -34,8 +36,8 @@ export async function renderEpisodes(root, { item, target, targets, onTarget, on
     const rows = data.episodes.filter(e => filter === 'all' || (filter === 'downloaded' ? e.downloaded : e.downloaded && !e.dubbed));
     const seasons = [...new Set(rows.map(e => e.season))];
     root.innerHTML = `<div class="episode-toolbar"><div><h3>Episodes</h3>
-      <p class="hint">${data.downloaded} downloaded of ${data.total} episodes · ${data.dubbed} with ${esc(target.toUpperCase())} audio or a completed AI dub</p></div>
-      <label>Dub language<select class="input episode-target" aria-label="Dub language">${[...new Set([...targets, target])].map(t => `<option value="${esc(t)}" ${t === target ? 'selected' : ''}>${esc(t.toUpperCase())}</option>`).join('')}</select></label>
+      <p class="hint">${data.downloaded} downloaded of ${data.total} episodes · ${data.dubbed} with ${esc(languageName(target))} audio or a completed AI dub</p></div>
+      <label>Dub language<select class="input episode-target" aria-label="Dub language">${targetChoices(targets, target).map(t => `<option value="${esc(t)}" ${t === target ? 'selected' : ''}>${esc(languageName(t))}</option>`).join('')}</select></label>
       <label>Show<select class="input episode-filter" aria-label="Show episodes"><option value="all">All episodes</option><option value="downloaded">Downloaded</option><option value="missing">Missing dub</option></select></label></div>
       <div class="episode-actions"><button class="btn btn-primary episode-selected" ${selected.size ? '' : 'disabled'}>Queue selected (${selected.size})</button>
       <button class="btn btn-secondary episode-missing" ${data.episodes.some(e => e.downloaded && !e.dubbed && !e.job_id) ? '' : 'disabled'}>Queue missing dubs</button>

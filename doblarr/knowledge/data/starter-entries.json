@@ -1,0 +1,46 @@
+{
+  "notes": [
+    "Source of truth for the bundled starter pack. Run scripts/build_starter_pack.py",
+    "after editing. Every entry ships as PROPOSED (unverified): installation never",
+    "confers reviewed status. Scenario entries share authored concepts across",
+    "es-MX and es-VE; genuinely shared Spanish forms live at locale 'es' so one",
+    "rule serves both locales instead of forcing differences."
+  ],
+  "entries": [
+    {"id": "st-en-greeting-informal", "kind": "term", "locale": "en", "phrase": "Hi!", "source_form": "hello", "usage": "scenario: greeting, informal", "examples": ["Hi! Good to see you."]},
+    {"id": "st-es-greeting-informal", "kind": "term", "locale": "es", "phrase": "¡Hola!", "source_form": "hello", "usage": "scenario: greeting, informal (shared)", "examples": ["¡Hola! Qué bueno verte."]},
+    {"id": "st-en-greeting-morning", "kind": "term", "locale": "en", "phrase": "Good morning.", "source_form": "good morning", "usage": "scenario: greeting, morning", "examples": ["Good morning. Did you sleep well?"]},
+    {"id": "st-es-greeting-morning", "kind": "term", "locale": "es", "phrase": "Buenos días.", "source_form": "good morning", "usage": "scenario: greeting, morning (shared)", "examples": ["Buenos días. ¿Dormiste bien?"]},
+    {"id": "st-en-farewell", "kind": "term", "locale": "en", "phrase": "See you later.", "source_form": "see you later", "usage": "scenario: farewell, informal", "examples": ["See you later, okay?"]},
+    {"id": "st-es-farewell", "kind": "term", "locale": "es", "phrase": "Nos vemos.", "source_form": "see you later", "usage": "scenario: farewell, informal (shared)", "examples": ["Nos vemos, ¿sí?"]},
+    {"id": "st-en-thanks", "kind": "term", "locale": "en", "phrase": "Thank you.", "source_form": "thank you", "usage": "scenario: gratitude, neutral", "examples": ["Thank you for coming."]},
+    {"id": "st-es-thanks", "kind": "term", "locale": "es", "phrase": "Gracias.", "source_form": "thank you", "usage": "scenario: gratitude, neutral (shared)", "examples": ["Gracias por venir."]},
+    {"id": "st-en-address-friend", "kind": "term", "locale": "en", "phrase": "buddy", "source_form": "buddy", "usage": "scenario: form of address, friend, informal", "examples": ["Hey buddy, wait up."]},
+    {"id": "st-mx-address-friend", "kind": "term", "locale": "es-MX", "phrase": "compa", "source_form": "buddy", "usage": "scenario: form of address, friend, informal (Mexico)", "examples": ["Oye, compa, espérame."]},
+    {"id": "st-ve-address-friend", "kind": "term", "locale": "es-VE", "phrase": "pana", "source_form": "buddy", "usage": "scenario: form of address, friend, informal (Venezuela)", "examples": ["Oye, pana, espérame."]},
+    {"id": "st-en-object-computer", "kind": "term", "locale": "en", "phrase": "computer", "source_form": "computer", "usage": "scenario: everyday object", "examples": ["The computer is off."]},
+    {"id": "st-es-object-computer", "kind": "term", "locale": "es", "phrase": "computadora", "source_form": "computer", "usage": "scenario: everyday object (shared)", "examples": ["La computadora está apagada."]},
+    {"id": "st-en-object-car", "kind": "term", "locale": "en", "phrase": "car", "source_form": "car", "usage": "scenario: everyday object", "examples": ["The car won't start."]},
+    {"id": "st-es-object-car", "kind": "term", "locale": "es", "phrase": "carro", "source_form": "car", "usage": "scenario: everyday object (shared)", "examples": ["El carro no prende."]},
+    {"id": "st-en-multiword-hurry", "kind": "term", "locale": "en", "phrase": "Hurry up!", "source_form": "hurry up", "usage": "scenario: multiword expression, urgency", "examples": ["Hurry up! We're late."]},
+    {"id": "st-es-multiword-hurry", "kind": "term", "locale": "es", "phrase": "¡Date prisa!", "source_form": "hurry up", "usage": "scenario: multiword expression, urgency (shared)", "examples": ["¡Date prisa! Ya es tarde."]},
+    {"id": "st-en-phrase-im-fine", "kind": "term", "locale": "en", "phrase": "I'm fine.", "source_form": "I'm fine", "usage": "scenario: state answer, neutral", "examples": ["I'm fine, thanks for asking."]},
+    {"id": "st-es-phrase-im-fine", "kind": "term", "locale": "es", "phrase": "Estoy bien.", "source_form": "I'm fine", "usage": "scenario: state answer, neutral (shared)", "examples": ["Estoy bien, gracias por preguntar."]},
+    {"id": "st-en-question-howareyou", "kind": "term", "locale": "en", "phrase": "How are you?", "source_form": "how are you", "usage": "scenario: question, informal", "examples": ["How are you today?"]},
+    {"id": "st-es-question-howareyou", "kind": "term", "locale": "es", "phrase": "¿Cómo estás?", "source_form": "how are you", "usage": "scenario: question, informal (shared)", "examples": ["¿Cómo estás hoy?"]},
+    {"id": "st-en-abbrev-gps", "kind": "pronunciation", "locale": "en", "phrase": "GPS", "usage": "scenario: abbreviation, letter-by-letter", "examples": ["The GPS lost signal."]},
+    {"id": "st-en-abbrev-usb", "kind": "pronunciation", "locale": "en", "phrase": "USB", "usage": "scenario: abbreviation, letter-by-letter", "examples": ["Plug in the USB stick."]},
+    {"id": "st-es-abbrev-gps", "kind": "pronunciation", "locale": "es", "phrase": "GPS", "usage": "scenario: abbreviation, letter-by-letter (shared)", "examples": ["El GPS perdió la señal."]},
+    {"id": "st-es-abbrev-usb", "kind": "pronunciation", "locale": "es", "phrase": "USB", "usage": "scenario: abbreviation, letter-by-letter (shared)", "examples": ["Conecta la memoria USB."]},
+    {"id": "st-mx-brand-whatsapp", "kind": "pronunciation", "locale": "es-MX", "phrase": "WhatsApp", "usage": "scenario: brand name, everyday use (Mexico)", "examples": ["Mándame un WhatsApp."]},
+    {"id": "st-ve-brand-whatsapp", "kind": "pronunciation", "locale": "es-VE", "phrase": "WhatsApp", "usage": "scenario: brand name, everyday use (Venezuela)", "examples": ["Mándame un WhatsApp."]}
+  ],
+  "realizations": [
+    {"id": "st-en-gps-chatterbox", "entry_id": "st-en-abbrev-gps", "engine": "chatterbox", "replacement": "jee-pee-ess", "evidence": ""},
+    {"id": "st-en-usb-chatterbox", "entry_id": "st-en-abbrev-usb", "engine": "chatterbox", "replacement": "you-ess-bee", "evidence": ""},
+    {"id": "st-es-gps-chatterbox", "entry_id": "st-es-abbrev-gps", "engine": "chatterbox", "replacement": "ge-pe-ese", "evidence": ""},
+    {"id": "st-es-usb-chatterbox", "entry_id": "st-es-abbrev-usb", "engine": "chatterbox", "replacement": "u-ese-be", "evidence": ""},
+    {"id": "st-mx-whatsapp-chatterbox", "entry_id": "st-mx-brand-whatsapp", "engine": "chatterbox", "replacement": "guatsap", "evidence": ""},
+    {"id": "st-ve-whatsapp-chatterbox", "entry_id": "st-ve-brand-whatsapp", "engine": "chatterbox", "replacement": "guatsap", "evidence": ""}
+  ]
+}

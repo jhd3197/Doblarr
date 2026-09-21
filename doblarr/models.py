@@ -23,6 +23,10 @@ class Segment:
     voice: str | None = None
     revision: int = 0
     source_start: float | None = None
+    tts_text: str | None = None          # resolved spoken form (knowledge applied)
+    applied_rules: list[dict] = field(default_factory=list)  # rule ids/revisions used
+    translation_provenance: dict = field(default_factory=dict)
+    memory_context: dict = field(default_factory=dict)
 
     @property
     def duration(self) -> float:
@@ -45,6 +49,7 @@ class DubJob:
     input_file: Path
     source_lang: str                 # e.g. "ko"
     target_lang: str                 # e.g. "es"
+    target_locale: str = ""          # canonical regional target, e.g. "es-MX" ("" = base)
     subtitle_file: Path | None = None
     kind: str = "full"               # full | tease (first-minutes audition clip)
 
@@ -68,6 +73,8 @@ class DubJob:
     translation_id: str | None = None
     version_name: str = ""
     version_file: Path | None = None
+    knowledge_snapshot: dict | None = None   # frozen entry/revision pins for this run
+    show_ref: str = ""                     # stable series id for show-scope rules
 
     def summary(self) -> str:
         return (

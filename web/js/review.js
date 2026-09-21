@@ -1,5 +1,6 @@
 import { api, apiUrl } from './api.js';
 import { escapeHtml as esc, safeGet } from './dom.js';
+import { openCorrection } from './knowledge-correction.js';
 
 export function createReview({ onQueued }) {
   const $ = id => document.getElementById(id);
@@ -42,9 +43,79 @@ export function createReview({ onQueued }) {
       <label class="review-field">Delivery<input id="reviewDelivery" class="input" maxlength="500" value="${esc(edit.delivery ?? row.delivery ?? '')}" placeholder="For example: speak quietly"></label>
       <p class="hint">Delivery instructions require a Qwen voice engine.</p>
       <div class="review-options"><label><input id="reviewRegenerate" type="checkbox" ${edit.regenerate ? 'checked' : ''}> Generate a new take</label>
-      <label><input id="reviewExclude" type="checkbox" ${edit.exclude ? 'checked' : ''}> Exclude this line</label></div>`;
+      <label><input id="reviewExclude" type="checkbox" ${edit.exclude ? 'checked' : ''}> Exclude this line</label></div>
+      <div class="review-options"><button type="button" class="btn btn-ghost" id="reviewFixPron">Fix pronunciation</button>
+      <button type="button" class="btn btn-ghost" id="reviewFixTerm">Improve regional wording</button>
+      <button type="button" class="btn btn-ghost" id="reviewSaveMemory">Save translation for reuse</button></div>
+      <p class="hint">Translation: ${esc(row.translation_provenance?.method || 'legacy')} · ${esc(row.translation_provenance?.reason || 'No recorded provenance')}</p>
+      <div id="reviewCorrection" class="review-correction"></div>`;
     editor.querySelectorAll('input,textarea,select').forEach(f => { f.disabled = !data.editable; });
+    wireCorrection(row);
     renderList();
+  }
+
+  function wireCorrection(row) {
+    const box = editor.querySelector('#reviewCorrection');
+    const lineRef = data.title_ref ? `${data.title_ref}#${row.index}` : '';
+    const lineText = row.text_translated || row.text_src;
+    function open(kind) {
+      openCorrection({
+        kind, locale: data.locale || data.language || 'es',
+        text: lineText, voice: row.profile || row.voice || '',
+        titleRef: data.title_ref || '', showRef: data.show_ref || '', lineRef,
+        onSaved: entry => {
+          const affected = data.segments
+            .filter(s => entry.phrase && (s.text_translated || s.text_src).includes(entry.phrase))
+            .map(s => s.index);
+          box.innerHTML = `<p class="hint">Correction saved for ${esc(entry.locale)} (${esc(entry.scope)} scope).
+            ${affected.length} line${affected.length === 1 ? '' : 's'} use “${esc(entry.phrase)}” here.</p>
+            <button type="button" class="btn btn-secondary" id="reviewRerender" ${affected.length && data.editable ? '' : 'disabled'}>Re-render affected lines with the correction</button>`;
+          box.querySelector('#reviewRerender').onclick = async event => {
+            const button = event.currentTarget;
+            button.disabled = true;
+            try {
+              await api(`jobs/${jobId}/review`, { method: 'POST', json: {
+                edits: affected.map(index => ({ index, regenerate: true })),
+                use_updated_knowledge: true,
+              } });
+              data.editable = false;
+              box.innerHTML = '<p class="hint">Queued with the updated knowledge. Unchanged clips will be reused.</p>';
+              onQueued();
+            } catch (error) { box.querySelector('.hint').textContent = error.message; button.disabled = false; }
+          };
+        },
+      });
+    }
+    editor.querySelector('#reviewFixPron').onclick = () => open('pronunciation');
+    editor.querySelector('#reviewFixTerm').onclick = () => open('term');
+    editor.querySelector('#reviewSaveMemory').onclick = () => {
+      box.innerHTML = `<p class="hint">Private complete-line memory. Matching scene, speaker register, settings and timing are required. Record only reviews you have performed.</p>
+        <label class="review-field">Reviewer<input class="input memory-reviewer"></label>
+        <label><input type="checkbox" class="memory-meaning"> Source meaning verified</label>
+        <label><input type="checkbox" class="memory-natural"> Regional wording verified</label>
+        <label><input type="checkbox" class="memory-timing"> Timing verified by listening</label>
+        <button class="btn btn-secondary memory-save">Save privately</button><p class="memory-status hint" role="status"></p>`;
+      box.querySelector('.memory-save').onclick = async event => {
+        const button = event.currentTarget;
+        const meaning = box.querySelector('.memory-meaning').checked;
+        const natural = box.querySelector('.memory-natural').checked;
+        const timing = box.querySelector('.memory-timing').checked;
+        button.disabled = true;
+        try {
+          await api('memory', { method: 'POST', json: {
+            source_lang: data.source_language || 'und', target_locale: data.locale || data.language,
+            source_text: row.text_src, target_text: $('reviewText').value,
+            context: row.memory_context || {}, duration: Number($('reviewEnd').value) - Number($('reviewStart').value),
+            reviewer: box.querySelector('.memory-reviewer').value,
+            meaning_reviewed: meaning, naturalness_reviewed: natural, timing_reviewed: timing,
+            status: meaning && natural && timing ? 'reviewed' : 'proposed',
+          } });
+          box.querySelector('.memory-status').textContent = row.memory_context?.register
+            ? 'Saved privately. New jobs can reuse it when all conditions match and reuse is enabled.'
+            : 'Saved privately as guidance. This line has no recorded speaker register, so automatic reuse is unavailable.';
+        } catch (e) { box.querySelector('.memory-status').textContent = e.message; button.disabled = false; }
+      };
+    };
   }
 
   function collect() {
@@ -84,7 +155,9 @@ export function createReview({ onQueued }) {
     submit.disabled = true;
     status.textContent = 'Queuing changes…';
     try {
-      await api(`jobs/${jobId}/review`, { method: 'POST', json: { edits } });
+      await api(`jobs/${jobId}/review`, { method: 'POST', json: {
+        edits, use_updated_knowledge: $('reviewUpdatedKnowledge').checked,
+      } });
       pending.clear(); data.editable = false; select(selected);
       status.textContent = 'Queued. Unchanged clips will be reused. Close to follow progress.';
       onQueued();

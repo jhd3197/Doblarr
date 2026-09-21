@@ -1,0 +1,699 @@
+{
+ "app_versions": ">=0.1",
+ "attribution": {
+  "author": "Doblarr contributors",
+  "license": "CC0-1.0",
+  "note": "Authored scenario scaffolding; every entry is proposed pending review."
+ },
+ "content_sha256": "05b86b8e16fa89ae566eb74d124be0413ba8d1ce68bf2e715abda3a87cf85b06",
+ "coverage": {
+  "en": {
+   "entries": 12,
+   "proposed": 12,
+   "reviewed": 0
+  },
+  "es": {
+   "entries": 11,
+   "proposed": 11,
+   "reviewed": 0
+  },
+  "es-MX": {
+   "entries": 2,
+   "proposed": 2,
+   "reviewed": 0
+  },
+  "es-VE": {
+   "entries": 2,
+   "proposed": 2,
+   "reviewed": 0
+  }
+ },
+ "dependencies": {},
+ "entries": [
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Hi! Good to see you."
+   ],
+   "id": "st-en-greeting-informal",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "Hi!",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "hello",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: greeting, informal"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "¡Hola! Qué bueno verte."
+   ],
+   "id": "st-es-greeting-informal",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "¡Hola!",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "hello",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: greeting, informal (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Good morning. Did you sleep well?"
+   ],
+   "id": "st-en-greeting-morning",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "Good morning.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "good morning",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: greeting, morning"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Buenos días. ¿Dormiste bien?"
+   ],
+   "id": "st-es-greeting-morning",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "Buenos días.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "good morning",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: greeting, morning (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "See you later, okay?"
+   ],
+   "id": "st-en-farewell",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "See you later.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "see you later",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: farewell, informal"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Nos vemos, ¿sí?"
+   ],
+   "id": "st-es-farewell",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "Nos vemos.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "see you later",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: farewell, informal (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Thank you for coming."
+   ],
+   "id": "st-en-thanks",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "Thank you.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "thank you",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: gratitude, neutral"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Gracias por venir."
+   ],
+   "id": "st-es-thanks",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "Gracias.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "thank you",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: gratitude, neutral (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Hey buddy, wait up."
+   ],
+   "id": "st-en-address-friend",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "buddy",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "buddy",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: form of address, friend, informal"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Oye, compa, espérame."
+   ],
+   "id": "st-mx-address-friend",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es-MX",
+   "phrase": "compa",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "buddy",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: form of address, friend, informal (Mexico)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Oye, pana, espérame."
+   ],
+   "id": "st-ve-address-friend",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es-VE",
+   "phrase": "pana",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "buddy",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: form of address, friend, informal (Venezuela)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "The computer is off."
+   ],
+   "id": "st-en-object-computer",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "computer",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "computer",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: everyday object"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "La computadora está apagada."
+   ],
+   "id": "st-es-object-computer",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "computadora",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "computer",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: everyday object (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "The car won't start."
+   ],
+   "id": "st-en-object-car",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "car",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "car",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: everyday object"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "El carro no prende."
+   ],
+   "id": "st-es-object-car",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "carro",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "car",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: everyday object (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Hurry up! We're late."
+   ],
+   "id": "st-en-multiword-hurry",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "Hurry up!",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "hurry up",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: multiword expression, urgency"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "¡Date prisa! Ya es tarde."
+   ],
+   "id": "st-es-multiword-hurry",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "¡Date prisa!",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "hurry up",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: multiword expression, urgency (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "I'm fine, thanks for asking."
+   ],
+   "id": "st-en-phrase-im-fine",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "I'm fine.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "I'm fine",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: state answer, neutral"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Estoy bien, gracias por preguntar."
+   ],
+   "id": "st-es-phrase-im-fine",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "Estoy bien.",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "I'm fine",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: state answer, neutral (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "How are you today?"
+   ],
+   "id": "st-en-question-howareyou",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "How are you?",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "how are you",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: question, informal"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "¿Cómo estás hoy?"
+   ],
+   "id": "st-es-question-howareyou",
+   "ipa": null,
+   "kind": "term",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "¿Cómo estás?",
+   "pronunciation": "",
+   "realizations": [],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "how are you",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: question, informal (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "The GPS lost signal."
+   ],
+   "id": "st-en-abbrev-gps",
+   "ipa": null,
+   "kind": "pronunciation",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "GPS",
+   "pronunciation": "",
+   "realizations": [
+    {
+     "engine": "chatterbox",
+     "evidence": "",
+     "id": "st-en-gps-chatterbox",
+     "model": null,
+     "replacement": "jee-pee-ess",
+     "revision": 1,
+     "status": "proposed",
+     "voice": null
+    }
+   ],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: abbreviation, letter-by-letter"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Plug in the USB stick."
+   ],
+   "id": "st-en-abbrev-usb",
+   "ipa": null,
+   "kind": "pronunciation",
+   "license": "CC0-1.0",
+   "locale": "en",
+   "phrase": "USB",
+   "pronunciation": "",
+   "realizations": [
+    {
+     "engine": "chatterbox",
+     "evidence": "",
+     "id": "st-en-usb-chatterbox",
+     "model": null,
+     "replacement": "you-ess-bee",
+     "revision": 1,
+     "status": "proposed",
+     "voice": null
+    }
+   ],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: abbreviation, letter-by-letter"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "El GPS perdió la señal."
+   ],
+   "id": "st-es-abbrev-gps",
+   "ipa": null,
+   "kind": "pronunciation",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "GPS",
+   "pronunciation": "",
+   "realizations": [
+    {
+     "engine": "chatterbox",
+     "evidence": "",
+     "id": "st-es-gps-chatterbox",
+     "model": null,
+     "replacement": "ge-pe-ese",
+     "revision": 1,
+     "status": "proposed",
+     "voice": null
+    }
+   ],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: abbreviation, letter-by-letter (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Conecta la memoria USB."
+   ],
+   "id": "st-es-abbrev-usb",
+   "ipa": null,
+   "kind": "pronunciation",
+   "license": "CC0-1.0",
+   "locale": "es",
+   "phrase": "USB",
+   "pronunciation": "",
+   "realizations": [
+    {
+     "engine": "chatterbox",
+     "evidence": "",
+     "id": "st-es-usb-chatterbox",
+     "model": null,
+     "replacement": "u-ese-be",
+     "revision": 1,
+     "status": "proposed",
+     "voice": null
+    }
+   ],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: abbreviation, letter-by-letter (shared)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Mándame un WhatsApp."
+   ],
+   "id": "st-mx-brand-whatsapp",
+   "ipa": null,
+   "kind": "pronunciation",
+   "license": "CC0-1.0",
+   "locale": "es-MX",
+   "phrase": "WhatsApp",
+   "pronunciation": "",
+   "realizations": [
+    {
+     "engine": "chatterbox",
+     "evidence": "",
+     "id": "st-mx-whatsapp-chatterbox",
+     "model": null,
+     "replacement": "guatsap",
+     "revision": 1,
+     "status": "proposed",
+     "voice": null
+    }
+   ],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: brand name, everyday use (Mexico)"
+  },
+  {
+   "contributor": "Doblarr contributors",
+   "coverage": [],
+   "examples": [
+    "Mándame un WhatsApp."
+   ],
+   "id": "st-ve-brand-whatsapp",
+   "ipa": null,
+   "kind": "pronunciation",
+   "license": "CC0-1.0",
+   "locale": "es-VE",
+   "phrase": "WhatsApp",
+   "pronunciation": "",
+   "realizations": [
+    {
+     "engine": "chatterbox",
+     "evidence": "",
+     "id": "st-ve-whatsapp-chatterbox",
+     "model": null,
+     "replacement": "guatsap",
+     "revision": 1,
+     "status": "proposed",
+     "voice": null
+    }
+   ],
+   "revision": 1,
+   "scope": "episode",
+   "sense": "",
+   "source_form": "",
+   "source_lang": null,
+   "status": "proposed",
+   "usage": "scenario: brand name, everyday use (Venezuela)"
+  }
+ ],
+ "format": "doblarr-knowledge-pack",
+ "id": "doblarr-starter",
+ "name": "Doblarr starter scenarios (unverified)",
+ "release": "0.1.0",
+ "schema_version": 1
+}

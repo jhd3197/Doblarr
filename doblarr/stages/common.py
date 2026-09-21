@@ -102,6 +102,9 @@ def save_script(job, work_dir: Path) -> Path:
              "words": s.words, "issues": s.issues, "delivery": s.delivery,
              "voice": s.voice, "revision": s.revision,
              "source_start": s.source_start,
+             "tts_text": s.tts_text, "applied_rules": s.applied_rules,
+             "translation_provenance": s.translation_provenance,
+             "memory_context": s.memory_context,
              "text_translated": s.text_translated}
             for s in job.segments
         ],
@@ -139,6 +142,10 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
                             delivery=s.get("delivery", ""), voice=s.get("voice"),
                             revision=s.get("revision", 0),
                             source_start=s.get("source_start"),
+                            tts_text=s.get("tts_text"),
+                            applied_rules=s.get("applied_rules", []),
+                            translation_provenance=s.get("translation_provenance", {}),
+                            memory_context=s.get("memory_context", {}),
                             text_translated=s.get("text_translated"))
                     for s in payload["segments"]]
     job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}
@@ -146,8 +153,9 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     job.script_lang = payload.get("script_lang")
     if payload.get("translation_options", {}) != job.translation_options:
         for seg in job.segments:
-            if not job.script_is_target:
+            if not job.script_is_target or job.translation_options.get("adapt_region"):
                 seg.text_translated = None
+                seg.translation_provenance = {}
     return p
 
 

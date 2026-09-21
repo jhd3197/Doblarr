@@ -2,6 +2,7 @@ import { state, library, cfgGet } from './state.js';
 import { TABS, FIELD_BY_KEY, isBoolField } from './settings-model.js';
 import { el } from './dom.js';
 import { api } from './api.js';
+import { loadLanguages } from './languages.js';
 
 export function createSettings({ setPage, onConfigLoaded }) {
   function fieldDisplay(f) {
@@ -36,7 +37,7 @@ export function createSettings({ setPage, onConfigLoaded }) {
       f.o.forEach(o => opts.append(el("button", {
         type: "button", class: "opt", "aria-pressed": fieldDisplay(f) === o ? "true" : "false",
         onclick: () => { state.vals[f.k] = o; renderSettings(); },
-      }, o)));
+      }, o === "" && f.emptyLabel ? f.emptyLabel : o)));
       right.append(opts);
     }
     if (f.h) right.append(el("p", { class: "hint" }, f.h));
@@ -49,6 +50,7 @@ export function createSettings({ setPage, onConfigLoaded }) {
       state.config = await api("config");
       onConfigLoaded();
     } catch (e) { state.config = null; }
+    await loadLanguages();   // dynamic locale choices; defaults survive a failure
     renderSettings();
   }
 

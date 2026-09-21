@@ -24,7 +24,11 @@ from .library_service import LibraryService
 from .logging_setup import attach_log_stream
 from .routes import configuration as configuration_routes
 from .routes import jobs as job_routes
+from .routes import knowledge as knowledge_routes
+from .routes import languages as language_routes
 from .routes import library as library_routes
+from .routes import memory as memory_routes
+from .routes import packs as pack_routes
 from .routes import series as series_routes
 from .routes import titles as title_routes
 from .routes import voice_catalog as catalog_routes
@@ -33,7 +37,9 @@ from .services import Services
 from .store import Database
 
 log = logging.getLogger("doblarr.server")
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+WEB_DIR = Path(__file__).resolve().parent / "web"
+if not WEB_DIR.is_dir():
+    WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for worker/scheduler threads
 SSE_HEARTBEAT = 15.0    # seconds between `: ping` comments
 
@@ -44,6 +50,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     # Job queue + background worker; periodic rescan scheduler. Both start with
     # the app lifespan and are stopped (and joined) on shutdown.
     db = Database(config.db_path)
+    from .knowledge.packs import ensure_starter_pack
+
+    ensure_starter_pack(db, config.get("knowledge", {}))
     store = JobStore(db)
     import_legacy_json(store, config.work_dir / "jobs.json")
     bus = EventBus()
@@ -139,6 +148,10 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     api.include_router(configuration_routes.build_router(config, library, services))
     api.include_router(library_routes.build_router(config, library, services, worker))
+    api.include_router(language_routes.build_router())
+    api.include_router(knowledge_routes.build_router(config, services, db))
+    api.include_router(pack_routes.build_router(config, services, db))
+    api.include_router(memory_routes.build_router(db))
     api.include_router(job_routes.build_router(config, store, worker, bus))
     api.include_router(title_routes.build_router(config, db, bus, services))
     api.include_router(series_routes.build_router(config, services, store, bus))

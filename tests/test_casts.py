@@ -17,13 +17,14 @@ HEADERS = {"X-Api-Key": API_KEY}
 
 def test_migration_v2_voice_casts_and_job_kind(tmp_path):
     db = Database(tmp_path / "d.db")
-    assert db.query_one("PRAGMA user_version")[0] == SCHEMA_VERSION == 3
+    assert db.query_one("PRAGMA user_version")[0] == SCHEMA_VERSION == 7
     tables = {r["name"] for r in db.query(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert "voice_casts" in tables
     assert "title_plans" in tables
     job_cols = [r["name"] for r in db.query("PRAGMA table_info(jobs)")]
     assert "kind" in job_cols
+    assert "target_locale" in job_cols
     db.close()
 
 

@@ -109,13 +109,24 @@ def run(
                 current = s.text_translated or s.text_src
                 budget = max(1, int(len(current) * s.duration / actual * 0.95))
                 try:
+                    calls_before = getattr(translator, "provider_calls", None)
                     shorter = translator.shorten(current, job.target_lang, budget)
                 except TranslationError:
                     s.issues.append("timing_repair_failed")
                     break
+                finally:
+                    calls_after = getattr(translator, "provider_calls", None)
+                    if calls_before is not None and calls_after is not None:
+                        job.metrics["timing_provider_calls"] = (
+                            job.metrics.get("timing_provider_calls", 0) + calls_after - calls_before
+                        )
+                    job.metrics.setdefault("timing_translation_usage", []).extend(
+                        getattr(translator, "last_usage", []) or [None]
+                    )
                 if not shorter.strip() or len(shorter) >= len(current):
                     break
                 s.text_translated = shorter
+                s.translation_provenance = {**s.translation_provenance, "timing_rewritten": True}
                 if checkpoint:
                     checkpoint()
                 regenerate(s)

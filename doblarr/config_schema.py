@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from .languages import parse as parse_language_tag
+
 log = logging.getLogger("doblarr.config")
 
 
@@ -85,6 +87,8 @@ class TranslateModel(_Section):
     glossary: dict[str, str] = {}
     locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
     adaptation: Literal["natural", "faithful", "localized"] = "natural"
+    adapt_region: bool = False
+    reuse_memory: bool = False
     direction: str = ""
     character_notes: dict[str, str] = {}
 
@@ -111,6 +115,7 @@ class DubModel(_Section):
     narrator_voice: str = ""
     narrator_delivery: str = ""
     preset: str = "custom"
+    target_locale: str = ""  # canonical regional target (es-MX); "" derives from the language
     voice_mode: str = "clone"
     dry_run: bool = True
     duration_match: bool = True
@@ -134,6 +139,12 @@ class DubModel(_Section):
     segment_limit: int | None = None
 
 
+class KnowledgeModel(_Section):
+    pack_releases: dict[str, str] = {}
+    pack_distribution_url: str = ""   # official pack distribution endpoint; "" = unset
+    auto_install_starter: bool = True  # install the bundled starter pack on first run
+
+
 class QualityModel(_Section):
     enabled: bool = True
     normalize: bool = True
@@ -155,6 +166,7 @@ class ConfigModel(_Section):
     transcribe: TranscribeModel = TranscribeModel()
     separate: SeparateModel = SeparateModel()
     dub: DubModel = DubModel()
+    knowledge: KnowledgeModel = KnowledgeModel()
     quality: QualityModel = QualityModel()
 
 
@@ -166,3 +178,6 @@ def validate_config(data: dict) -> None:
         for err in exc.errors():
             loc = ".".join(str(p) for p in err["loc"])
             log.warning("config: invalid value at %s: %s", loc, err["msg"])
+    locale = str((data.get("dub") or {}).get("target_locale") or "")
+    if locale and not parse_language_tag(locale):
+        log.warning("config: dub.target_locale %r is not a valid language tag", locale)

@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 from .config_schema import ConfigModel
+from .languages import base_language
+from .languages import parse as parse_language_tag
 
 # Deliberately excludes paths, endpoints, credentials, dialogue, local voice IDs,
 # cast groups (cross-title local state), and machine/queue preferences.
@@ -27,6 +29,7 @@ SETTING_KEYS = (
     "translate.glossary",
     "translate.locale",
     "translate.adaptation",
+    "translate.adapt_region",
     "translate.direction",
     "translate.character_notes",
     "translate.chars_per_second",
@@ -94,9 +97,73 @@ class RecipeCharacter(StrictModel):
     voice: RecipeVoice
 
 
+KNOWLEDGE_STATUS = Literal["proposed", "reviewed", "needs-retest", "retired"]
+
+
+class RecipeRealization(StrictModel):
+    """A pronunciation realization pinned by id/revision (schema v2 overlay)."""
+
+    id: str = Field(min_length=1, max_length=100)
+    revision: int = Field(ge=1)
+    engine: str = Field(min_length=1, max_length=100)
+    model: str | None = Field(default=None, max_length=200)
+    voice: str | None = Field(default=None, max_length=300)
+    replacement: str = Field(min_length=1, max_length=300)
+    evidence: str = Field(default="", max_length=2000)
+    status: KNOWLEDGE_STATUS = "proposed"
+
+
+class RecipeEntry(StrictModel):
+    """One show/episode knowledge rule in a schema v2 overlay.
+
+    scope_ref is deliberately absent: episode/movie rules bind to the importing
+    install's title key and show rules to the recipe's stable series id.
+    """
+
+    id: str = Field(min_length=1, max_length=100)
+    revision: int = Field(ge=1)
+    kind: Literal["pronunciation", "term"]
+    locale: str = Field(min_length=2, max_length=20)
+    coverage: list[str] = Field(default_factory=list, max_length=20)
+    source_lang: str | None = None
+    source_form: str = Field(default="", max_length=300)
+    phrase: str = Field(min_length=1, max_length=300)
+    sense: str = Field(default="", max_length=300)
+    usage: str = Field(default="", max_length=2000)
+    examples: list[str] = Field(default_factory=list, max_length=20)
+    pronunciation: str = Field(default="", max_length=2000)
+    ipa: str | None = None
+    scope: Literal["episode", "movie", "show"]
+    status: KNOWLEDGE_STATUS = "proposed"
+    license: str = Field(default="", max_length=300)
+    contributor: str = Field(default="", max_length=300)
+    review_history: list[dict] = Field(default_factory=list, max_length=100)
+    realizations: list[RecipeRealization] = Field(default_factory=list, max_length=50)
+
+    @field_validator("locale")
+    @classmethod
+    def _canonical_locale(cls, value: str) -> str:
+        parsed = parse_language_tag(value)
+        if parsed is None:
+            raise ValueError("locale must be a language tag such as es, es-MX or es-419")
+        return parsed
+
+
+class RecipeKnowledge(StrictModel):
+    entries: list[RecipeEntry] = Field(default_factory=list, max_length=200)
+    pack_dependencies: dict[str, str | int] = Field(default_factory=dict, max_length=50)
+
+
+class RecipeShow(StrictModel):
+    """Show-level knowledge scope: a stable series id, never episode-local speaker ids."""
+
+    series_id: str = Field(min_length=1, max_length=300)
+    title: str = Field(default="", max_length=300)
+
+
 class DubRecipe(StrictModel):
     format: Literal["doblarr-recipe"]
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     mode: Literal["recipe-only"]
     creator: str = Field(default="", max_length=100)
     revision: str = Field(default="1", max_length=40)
@@ -107,6 +174,12 @@ class DubRecipe(StrictModel):
     settings: dict = Field(default_factory=dict, max_length=len(SETTING_KEYS))
     narrator: RecipeVoice
     characters: list[RecipeCharacter] = Field(default_factory=list, max_length=100)
+    # Schema v2 only (rejected on v1 documents, so a v1 reader never silently
+    # drops them): the regional target, the show overlay scope, and the
+    # portable knowledge overlay itself.
+    target_locale: str = Field(default="", max_length=20)
+    show: RecipeShow | None = None
+    knowledge: RecipeKnowledge | None = None
 
     @field_validator("settings")
     @classmethod
@@ -143,6 +216,19 @@ class DubRecipe(StrictModel):
             if key in ranges and not ranges[key][0] <= value <= ranges[key][1]:
                 raise ValueError(f"Recipe setting outside supported range: {key}")
         return settings
+
+    @model_validator(mode="after")
+    def versioned_fields(self):
+        if self.schema_version == 1:
+            if self.target_locale or self.show is not None or self.knowledge is not None:
+                raise ValueError("schema v1 recipes cannot carry target_locale, show or knowledge")
+        elif self.target_locale:
+            parsed = parse_language_tag(self.target_locale)
+            if parsed is None:
+                raise ValueError("target_locale must be a language tag")
+            if base_language(parsed) != self.target_language:
+                raise ValueError("target_locale must share the target_language base")
+        return self
 
     @model_validator(mode="after")
     def unique_speakers(self):

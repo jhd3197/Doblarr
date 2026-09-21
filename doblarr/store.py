@@ -67,8 +67,108 @@ def _v3_title_plans(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _v4_target_locale(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        ALTER TABLE jobs ADD COLUMN target_locale TEXT NOT NULL DEFAULT '';
+    """)
+
+
+def _v5_knowledge(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        CREATE TABLE knowledge_entries (
+            id           TEXT NOT NULL,
+            revision     INTEGER NOT NULL DEFAULT 1,
+            kind         TEXT NOT NULL,
+            locale       TEXT NOT NULL DEFAULT '',
+            coverage     TEXT NOT NULL DEFAULT '[]',  -- JSON list of declared locales
+            source_lang  TEXT,
+            source_form  TEXT NOT NULL DEFAULT '',
+            phrase       TEXT NOT NULL,
+            sense        TEXT NOT NULL DEFAULT '',
+            usage        TEXT NOT NULL DEFAULT '',
+            examples     TEXT NOT NULL DEFAULT '[]',  -- JSON list
+            pronunciation TEXT NOT NULL DEFAULT '',
+            ipa          TEXT,
+            scope        TEXT NOT NULL DEFAULT 'personal',
+            scope_ref    TEXT NOT NULL DEFAULT '',
+            suppresses   TEXT NOT NULL DEFAULT '',
+            status       TEXT NOT NULL DEFAULT 'proposed',
+            origin       TEXT NOT NULL DEFAULT 'local',  -- local | installed
+            license      TEXT NOT NULL DEFAULT '',
+            contributor  TEXT NOT NULL DEFAULT '',
+            review_history TEXT NOT NULL DEFAULT '[]',   -- JSON list
+            updated_at   TEXT NOT NULL,
+            PRIMARY KEY (id, revision)
+        );
+        CREATE TABLE knowledge_realizations (
+            id          TEXT NOT NULL,
+            entry_id    TEXT NOT NULL,
+            revision    INTEGER NOT NULL DEFAULT 1,
+            engine      TEXT NOT NULL,
+            model       TEXT,        -- NULL = deliberately broad, never "unknown"
+            voice       TEXT,        -- NULL = any voice
+            replacement TEXT NOT NULL,
+            evidence    TEXT NOT NULL DEFAULT '',
+            status      TEXT NOT NULL DEFAULT 'proposed',
+            origin      TEXT NOT NULL DEFAULT 'local',
+            updated_at  TEXT NOT NULL,
+            PRIMARY KEY (id, revision)
+        );
+        CREATE INDEX idx_knowledge_entries_lookup
+            ON knowledge_entries(kind, locale, scope, status);
+        CREATE INDEX idx_knowledge_realizations_lookup
+            ON knowledge_realizations(entry_id, engine, status);
+    """)
+
+
+def _v6_packs(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        CREATE TABLE knowledge_packs (
+            pack_id      TEXT NOT NULL,
+            release      TEXT NOT NULL,
+            name         TEXT NOT NULL DEFAULT '',
+            manifest     TEXT NOT NULL DEFAULT '{}',   -- JSON manifest as imported
+            content_hash TEXT NOT NULL DEFAULT '',
+            source       TEXT NOT NULL DEFAULT 'third-party',  -- official | third-party
+            distribution TEXT NOT NULL DEFAULT '',     -- URL/path the pack came from
+            active       INTEGER NOT NULL DEFAULT 0,
+            installed_at TEXT NOT NULL,
+            PRIMARY KEY (pack_id, release)
+        );
+        ALTER TABLE knowledge_entries ADD COLUMN pack_id TEXT;
+        ALTER TABLE knowledge_realizations ADD COLUMN pack_id TEXT;
+    """)
+
+
+def _v7_memory(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        CREATE TABLE translation_memory (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            source_lang TEXT NOT NULL,
+            target_locale TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            context_hash TEXT NOT NULL,
+            document TEXT NOT NULL,
+            UNIQUE(id, revision)
+        );
+        CREATE INDEX memory_exact ON translation_memory
+            (source_lang, target_locale, source_text, context_hash, seq);
+        CREATE INDEX memory_versions ON translation_memory(id, seq);
+    """)
+
+
 # Ordered migrations; MIGRATIONS[i] brings a db from version i to i+1.
-MIGRATIONS = [_v1_initial, _v2_teasers_and_casts, _v3_title_plans]
+MIGRATIONS = [
+    _v1_initial,
+    _v2_teasers_and_casts,
+    _v3_title_plans,
+    _v4_target_locale,
+    _v5_knowledge,
+    _v6_packs,
+    _v7_memory,
+]
 
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -79,7 +179,8 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        self._conn.create_function("casefold", 1, lambda s: s.casefold(), deterministic=True)
+        self._lock = threading.RLock()
         self._migrate()
 
     def _migrate(self) -> None:

@@ -22,6 +22,7 @@ def apply_edits(job, edits):
             if not str(edit["text"]).strip():
                 raise ValueError("edited dialogue must not be empty")
             seg.text_translated = edit["text"].strip()
+            seg.translation_provenance = {"method": "manual", "reason": "review-edit"}
         seg.start = float(edit.get("start", seg.start))
         seg.end = float(edit.get("end", seg.end))
         if (
@@ -66,6 +67,8 @@ def write_review(job, root):
         {
             "version": 1,
             "language": job.target_lang,
+            "source_language": job.script_lang or job.source_lang,
+            "locale": job.target_locale or job.target_lang,
             "segments": rows,
             "metrics": job.metrics,
             "flagged": sum(bool(s.issues) for s in job.segments),

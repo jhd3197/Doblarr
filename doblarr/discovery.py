@@ -9,39 +9,31 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
-# English language name (as Radarr reports originalLanguage.name) -> ISO 639-1
-NAME_TO_ISO2 = {
-    "english": "en", "spanish": "es", "korean": "ko", "japanese": "ja",
-    "chinese": "zh", "mandarin": "zh", "cantonese": "zh", "german": "de",
-    "french": "fr", "italian": "it", "portuguese": "pt", "russian": "ru",
-    "hindi": "hi", "arabic": "ar", "dutch": "nl", "swedish": "sv",
-    "norwegian": "no", "danish": "da", "finnish": "fi", "polish": "pl",
-    "turkish": "tr", "thai": "th", "vietnamese": "vi", "indonesian": "id",
-    "hebrew": "he", "greek": "el", "czech": "cs", "hungarian": "hu",
-    "romanian": "ro", "ukrainian": "uk", "tagalog": "tl", "malayalam": "ml",
-    "tamil": "ta", "telugu": "te", "persian": "fa", "flemish": "nl",
-}
+from . import languages as _languages
 
-# ISO 639-2/B (what mediaInfo.audioLanguages uses) -> ISO 639-1
-ISO3_TO_ISO2 = {
-    "eng": "en", "spa": "es", "kor": "ko", "jpn": "ja", "chi": "zh", "zho": "zh",
-    "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "ita": "it", "por": "pt",
-    "rus": "ru", "hin": "hi", "ara": "ar", "dut": "nl", "nld": "nl", "swe": "sv",
-    "nor": "no", "dan": "da", "fin": "fi", "pol": "pl", "tur": "tr", "tha": "th",
-    "vie": "vi", "ind": "id", "heb": "he", "gre": "el", "ell": "el", "cze": "cs",
-    "ces": "cs", "hun": "hu", "rum": "ro", "ron": "ro", "ukr": "uk", "tgl": "tl",
-    "mal": "ml", "tam": "ta", "tel": "te", "per": "fa", "fas": "fa",
-}
-
-# ISO 639-1 -> English language name (for display, e.g. the muxed track title).
-ISO2_TO_NAME = {"en": "English", "es": "Spanish", "ja": "Japanese", "fr": "French",
-                "de": "German", "it": "Italian", "pt": "Portuguese", "ko": "Korean",
-                "zh": "Chinese", "hi": "Hindi", "ru": "Russian", "ar": "Arabic"}
+# Derived from the canonical catalog (doblarr.languages): English language name
+# (as Radarr reports originalLanguage.name) -> ISO 639-1, ISO 639-2/B (what
+# mediaInfo.audioLanguages uses) -> ISO 639-1, and ISO 639-1 -> display name.
+NAME_TO_ISO2: dict[str, str] = {}
+ISO3_TO_ISO2: dict[str, str] = {}
+ISO2_TO_NAME: dict[str, str] = {}
+for _entry in _languages.catalog():
+    if _entry.id != _entry.base:
+        continue  # regional entries don't define base-language mappings
+    ISO2_TO_NAME[_entry.id] = _entry.name
+    NAME_TO_ISO2[_entry.name.lower()] = _entry.id
+    if _entry.iso3:
+        ISO3_TO_ISO2[_entry.iso3] = _entry.id
+    for _alias in _entry.aliases:
+        if len(_alias) == 3 and _alias.isalpha():
+            ISO3_TO_ISO2[_alias.lower()] = _entry.id
+        else:
+            NAME_TO_ISO2[_alias.lower()] = _entry.id
 
 
 def lang_name(code: str) -> str:
     """'es' -> 'Spanish'; unknown codes fall back to the uppercased code."""
-    return ISO2_TO_NAME.get(code.strip().lower(), code.strip().upper())
+    return _languages.display_name(code)
 
 
 @dataclass

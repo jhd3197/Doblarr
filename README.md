@@ -1,4 +1,16 @@
+<p align="center">
+  <img src="web/logo.png" alt="Doblarr logo" width="160" />
+</p>
+
 <h1 align="center">Doblarr</h1>
+
+<p align="center">
+  <a href="https://github.com/jhd3197/Doblarr/pkgs/container/doblarr">
+    <img src="https://ghcr-badge.elias.eu.org/shield/jhd3197/Doblarr/doblarr" alt="Docker pulls (GitHub Container Registry)" />
+  </a>
+</p>
+
+<!-- The pulls badge requires the GHCR package to be published and publicly accessible. -->
 
 <p align="center">
   <strong>AI dubbing for your media library.</strong><br/>
@@ -47,6 +59,22 @@ For an interrupted first episode with existing audio stems, the explicit
 clips, then assembles a full-length video. See [episode recovery](docs/episode-recovery.md).
 
 ## Running it
+
+### Install from PyPI
+
+```bash
+pip install doblarr
+python -c "from importlib.resources import files; from pathlib import Path; Path('config.yaml').write_bytes(files('doblarr').joinpath('config.example.yaml').read_bytes())"
+doblarr serve
+```
+
+Run the configuration-copy command in a new directory, then edit `config.yaml`
+before starting the server. The package includes the web UI. Real dubbing also
+requires FFmpeg/ffprobe on PATH, a running Voicebox service, and the optional
+ML dependencies (`pip install "doblarr[real]"`). Install a PyTorch build matching
+your platform/GPU before installing that extra. The default mode is dry-run.
+
+### Run from source
 
 ```bash
 pip install -r requirements.txt          # core + FastAPI/uvicorn

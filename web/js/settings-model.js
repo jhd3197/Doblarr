@@ -23,6 +23,7 @@ const TABS = [
     B("dub.dry_run", "Dry run", "Plan the job without generating audio."),
     N("dub.teaser_minutes", "Teaser length (minutes)"),
     C("dub.preset", "Generation preset", ["custom", "preview", "final"], "Preview uses preset voice IDs and faster separation. Final enables timing correction."),
+    { ...C("dub.target_locale", "Target locale", [""], "Regional variety of the dub target (identity, wording and track title); Auto follows the target language. Voice accent is set separately."), emptyLabel: "Auto (from language)" },
     N("dub.audition_lines", "Audition lines", "Short audio samples selected across speakers and scenes."),
   ])]),
   tab("discovery", "Discovery", [group("Scanning", [
@@ -51,6 +52,8 @@ const TABS = [
     T("translate.endpoint", "Translation endpoint"),
     C("translate.locale", "Spanish region", ["auto", "es-419", "es-MX", "es-ES"], "es-419: neutral Latin America. es-MX: Mexico. es-ES: Spain. Wording only; voice accent is set separately."),
     C("translate.adaptation", "Dialogue style", ["natural", "faithful", "localized"]),
+    B("translate.adapt_region", "Adapt wording to this region", "Also adapt subtitles already in the target language. Original dialogue stays available for comparison."),
+    B("translate.reuse_memory", "Reuse reviewed translations", "Opt-in pilot: exact lines with matching scene, register, settings and timing only."),
     T("translate.direction", "Dialogue direction", "For example: restrained anime dialogue; keep cultural terms; avoid added catchphrases."),
     J("translate.character_notes", "Character dialogue notes", 'By speaker ID, for example {"GINKO": "Calm, concise; never overly formal"}.'),
     N("translate.batch_size", "Lines per translation batch"),
@@ -107,12 +110,25 @@ function isBoolField(f) { return f.t === "choice" && Array.isArray(f.o) && f.o[0
 const PLAN_FIELDS = [
   { k: "target_lang", l: "Dub into", t: "choice", dyn: true,
     h: "Applied when a dub is queued for this title." },
-  ...["dub.preset", "dub.voice_mode", "voicebox.default_engine", "dub.cast_group", "dub.character_map", "transcribe.whisper_model", "transcribe.diarize",
+  ...["dub.target_locale", "dub.preset", "dub.voice_mode", "voicebox.default_engine", "dub.cast_group", "dub.character_map", "transcribe.whisper_model", "transcribe.diarize",
     "translate.locale", "translate.adaptation", "translate.direction", "translate.character_notes",
+    "translate.adapt_region", "translate.reuse_memory",
     "dub.version_name", "dub.preserve_versions",
     "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run"]
     .map(k => ({ ...FIELD_BY_KEY[k], t: isBoolField(FIELD_BY_KEY[k]) ? "bool" : FIELD_BY_KEY[k].t })),
 ];
 
 
-export { TABS, FIELD_BY_KEY, PLAN_FIELDS, isBoolField };
+// Fill language-driven choice fields from GET /api/languages. The hardcoded
+// fallbacks stay intact when the catalog is unavailable or adds nothing new.
+function applyLanguageOptions(langs) {
+  if (!langs || !langs.length) return;
+  const spanish = langs.filter(l => l.base === "es" && l.region && l.supported).map(l => l.id);
+  const localeField = FIELD_BY_KEY["translate.locale"];
+  if (spanish.length) localeField.o = ["auto", ...localeField.o.slice(1),
+    ...spanish.filter(id => !localeField.o.includes(id))];
+  const supported = langs.filter(l => l.supported).map(l => l.id);
+  if (supported.length) FIELD_BY_KEY["dub.target_locale"].o = ["", ...supported];
+}
+
+export { TABS, FIELD_BY_KEY, PLAN_FIELDS, isBoolField, applyLanguageOptions };

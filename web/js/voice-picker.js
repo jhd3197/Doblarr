@@ -1,7 +1,14 @@
 import { api, apiUrl } from './api.js';
 import { escapeHtml as esc, safeGet } from './dom.js';
 
+// Voices are tagged with base languages (es); a regional target (es-MX) matches them.
+export function baseLanguage(code) { return String(code || '').split('-')[0].toLowerCase(); }
+export function languageMatches(voiceLang, target) {
+  return baseLanguage(voiceLang) === baseLanguage(target);
+}
+
 export async function pickVoice({ language, category = 'speaker', onSelect }) {
+  const base = baseLanguage(language);
   const dialog = document.createElement('dialog');
   dialog.className = 'voice-picker';
   document.getElementById('app').append(dialog);
@@ -16,7 +23,7 @@ export async function pickVoice({ language, category = 'speaker', onSelect }) {
     <label>Voice gender<select class="input picker-gender" aria-label="Voice gender">${['unknown','male','female','neutral'].map(a => `<option value="${a}">${a === 'unknown' ? 'Any voice' : a}</option>`).join('')}</select></label>
     <label>Catalog<select class="input picker-source" aria-label="Catalog"><option value="all">All voices</option><option value="profile">Saved voices</option><option value="kokoro">Kokoro</option><option value="qwen_custom_voice">Qwen CustomVoice</option></select></label>
     <label><input class="picker-language" type="checkbox"> ${esc(language.toUpperCase())} native voices and clones only</label></div>
-    <div class="voice-preview"><label>Audition text<input class="input picker-text" maxlength="300" value="${esc(language === 'es' ? 'Al caer la noche, el anciano comenzó a contar su historia.' : 'As night fell, the old man began to tell his story.')}"></label>
+    <div class="voice-preview"><label>Audition text<input class="input picker-text" maxlength="300" value="${esc(base === 'es' ? 'Al caer la noche, el anciano comenzó a contar su historia.' : 'As night fell, the old man began to tell his story.')}"></label>
     <label>Delivery direction (Qwen)<input class="input picker-direction" maxlength="500" placeholder="For example: a low, weathered older voice; calm and thoughtful"></label><audio controls class="picker-audio" hidden></audio>
     <p class="picker-status" role="status">Loading catalog…</p></div><div class="voice-results"></div><button class="btn btn-secondary picker-more" hidden>Show more voices</button>`;
   dialog.showModal();
@@ -24,13 +31,13 @@ export async function pickVoice({ language, category = 'speaker', onSelect }) {
   dialog.addEventListener('close', () => { clearTimeout(timer); previewVersion++; dialog.querySelector('audio').pause(); dialog.remove(); opener?.focus(); });
   const status = dialog.querySelector('.picker-status');
   function rank(v) {
-    return (v.language === language ? 8 : 0) + (desiredGender !== 'unknown' && v.gender === desiredGender ? 4 : 0)
+    return (languageMatches(v.language, language) ? 8 : 0) + (desiredGender !== 'unknown' && v.gender === desiredGender ? 4 : 0)
       + (desiredAge !== 'unknown' && v.age === desiredAge ? 8 : 0);
   }
   function render() {
     const rows = voices.filter(v => (!query || `${v.name} ${v.description} ${v.engine}`.toLowerCase().includes(query))
       && (source === 'all' || (source === 'profile' ? v.key.startsWith('profile:') : v.engine === source))
-      && (!onlyLanguage || v.language === language || v.kind === 'cloned')
+      && (!onlyLanguage || languageMatches(v.language, language) || v.kind === 'cloned')
       && (desiredGender === 'unknown' || v.gender === desiredGender || v.gender === 'unknown')
       && (desiredAge === 'unknown' || v.age === desiredAge || v.age === 'unknown'))
       .sort((a,b) => rank(b)-rank(a) || a.name.localeCompare(b.name));
@@ -38,8 +45,8 @@ export async function pickVoice({ language, category = 'speaker', onSelect }) {
       + rows.slice(0, limit).map(v => `<article class="voice-card" data-key="${esc(v.key)}"><div><h3>${esc(v.name)}</h3><p class="hint">${esc(v.engine)} · ${esc(v.language.toUpperCase())} · ${esc(v.gender)} · ${v.age === 'unknown' ? 'Age not tagged' : esc(v.age)}</p><p>${esc(v.description)}</p></div>
       <label>Age after listening<select class="input voice-age" aria-label="Age tag for ${esc(v.name)}">${['unknown','child','young','adult','older'].map(a => `<option value="${a}" ${v.age === a ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
       <label>Voice gender tag<select class="input voice-gender" aria-label="Gender tag for ${esc(v.name)}">${['unknown','male','female','neutral'].map(g=>`<option value="${g}" ${g===v.gender?'selected':''}>${g}</option>`).join('')}</select></label>
-      ${v.engine==='kokoro' && v.language!==language ? `<p class="hint">This Kokoro preset is for ${esc(v.language.toUpperCase())}; choose a ${esc(language.toUpperCase())} preset for this dub.</p>` : ''}
-      <div class="episode-actions"><button class="btn btn-secondary voice-listen" ${v.engine==='kokoro' && v.language!==language?'disabled':''}>Generate sample</button><button class="btn btn-primary voice-use" ${v.engine==='kokoro' && v.language!==language?'disabled':''}>Use this voice</button></div></article>`).join('');
+      ${v.engine==='kokoro' && !languageMatches(v.language, language) ? `<p class="hint">This Kokoro preset is for ${esc(v.language.toUpperCase())}; choose a ${esc(language.toUpperCase())} preset for this dub.</p>` : ''}
+      <div class="episode-actions"><button class="btn btn-secondary voice-listen" ${v.engine==='kokoro' && !languageMatches(v.language, language)?'disabled':''}>Generate sample</button><button class="btn btn-primary voice-use" ${v.engine==='kokoro' && !languageMatches(v.language, language)?'disabled':''}>Use this voice</button></div></article>`).join('');
     dialog.querySelector('.picker-more').hidden = rows.length <= limit;
     dialog.querySelectorAll('.voice-card').forEach(card => {
       const voice = voices.find(v => v.key === card.dataset.key);
@@ -64,7 +71,7 @@ export async function pickVoice({ language, category = 'speaker', onSelect }) {
     const audio = dialog.querySelector('audio'); audio.pause(); audio.hidden=true;
     status.textContent='Generating a short sample…';
     try {
-      const response = await api('voice-catalog/preview', {method:'POST',json:{key:voice.key,language,
+      const response = await api('voice-catalog/preview', {method:'POST',json:{key:voice.key,language:base,
         text:dialog.querySelector('.picker-text').value,
         direction:['qwen','qwen_custom_voice'].includes(voice.engine) ? dialog.querySelector('.picker-direction').value : ''}});
       const deadline=Date.now()+180000;

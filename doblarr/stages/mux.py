@@ -12,26 +12,15 @@ import threading
 from pathlib import Path
 
 from ..artifacts import matches, record, stamp
-from ..discovery import lang_name
 from ..ffmpeg import run_ffmpeg, run_ffprobe
+from ..languages import catalog, display_name, iso3_for
 from ..models import DubJob
 from .common import Plan, cached, dry, stage
 
 log = logging.getLogger("doblarr.mux")
 
 # ISO-639-2/B codes ffmpeg wants for the language metadata tag.
-_LANG3 = {
-    "en": "eng",
-    "es": "spa",
-    "ko": "kor",
-    "ja": "jpn",
-    "fr": "fre",
-    "de": "ger",
-    "zh": "chi",
-    "pt": "por",
-    "it": "ita",
-    "ru": "rus",
-}
+_LANG3 = {e.id: e.iso3 for e in catalog() if e.id == e.base and e.iso3}
 
 
 @stage("mux")
@@ -71,12 +60,13 @@ def run(
     if out.resolve() == job.input_file.resolve():
         raise ValueError("output must not overwrite the original video")
     # e.g. "English AI", teases "Spanish AI (tease)"; {language} stays the code.
+    locale = job.target_locale or job.target_lang
     title = track_name_template.format(
-        language=job.target_lang.upper(), language_name=lang_name(job.target_lang)
+        language=job.target_lang.upper(), language_name=display_name(locale)
     )
     if job.kind == "tease":
         title += " (tease)"
-    lang3 = _LANG3.get(job.target_lang, job.target_lang)
+    lang3 = iso3_for(locale)
     request = {
         "input": stamp(job.input_file),
         "dub": stamp(job.dubbed_track),

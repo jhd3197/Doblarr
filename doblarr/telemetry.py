@@ -26,6 +26,7 @@ class RunReport:
         self.path = work / "reports" / f"{uuid.uuid4().hex}.json"
         self.data = {"version": 1, "started_at": datetime.now(UTC).isoformat(),
                      "input": str(job.input_file), "language": job.target_lang,
+                     "locale": getattr(job, "target_locale", "") or job.target_lang,
                      "kind": job.kind, "dry_run": dry_run, "status": "running", "stages": []}
         job.report_file = self.path
         self.flush()
