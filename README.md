@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/logo.png" alt="Doblarr logo" width="160" />
+</p>
+
 <h1 align="center">Doblarr</h1>
 
 <p align="center">
