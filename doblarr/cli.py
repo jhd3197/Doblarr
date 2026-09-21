@@ -56,7 +56,23 @@ def _cmd_dub(args: argparse.Namespace, config: Config) -> int:
     )
     # --dry-run forces a plan; otherwise dub.dry_run from config decides.
     dry_run = args.dry_run if args.dry_run is not None else config["dub"].get("dry_run", True)
-    run_job(job, config, dry_run=dry_run)
+    from .artifacts import media_work, read_json
+    from .knowledge import snapshot
+    from .knowledge.packs import ensure_starter_pack
+    from .languages import resolve_target_locale
+    from .store import Database
+    from .telemetry import write_json
+
+    db = Database(config.db_path)
+    try:
+        ensure_starter_pack(db, config.get("knowledge", {}))
+        job.target_locale = resolve_target_locale(config.as_dict(), job.target_lang)
+        pin_file = media_work(config.work_dir, job) / job.target_locale / "knowledge.json"
+        job.knowledge_snapshot = read_json(pin_file) if pin_file.is_file() else snapshot(db)
+        write_json(pin_file, job.knowledge_snapshot)
+        run_job(job, config, dry_run=dry_run, db=db)
+    finally:
+        db.close()
     return 0
 
 

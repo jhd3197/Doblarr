@@ -65,3 +65,16 @@ def test_download_rejects_path_traversal(tmp_path):
     db = Database(tmp_path / "test.db")
     with pytest.raises(packs.PackError, match="invalid pack id"):
         packs.download_pack(db, {}, "../config", tmp_path)
+
+
+def test_recipe_pack_pin_survives_new_active_release(tmp_path):
+    from doblarr.jobs import JobStore
+
+    db = Database(tmp_path / "test.db")
+    install(db, release())
+    install(db, release("2", 2))
+    queue = JobStore(db)
+    job = queue.add(title="test", source="manual", source_lang="en", target_lang="es",
+                    overrides={"knowledge.pack_releases": {"test": "1"}})
+    assert job.knowledge_snapshot["entries"]["test-term"] == 1
+    assert ks.active_installed_pins(db)["entries"]["test-term"] == 2

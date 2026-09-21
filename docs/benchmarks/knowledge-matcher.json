@@ -1,0 +1,22 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+  "python": "3.12.0",
+  "note": "Synthetic mixed-locale pronunciation records. Cold time includes in-memory record construction and first compile, excludes SQLite loading. Warm samples use distinct line IDs without line overrides.",
+  "runs": [
+    {
+      "entries": 10000,
+      "cold_construct_compile_seconds": 0.3356637000106275,
+      "python_peak_bytes": 11519580,
+      "warm_p50_ms": 0.013199998647905886,
+      "warm_p95_ms": 0.022599997464567423
+    },
+    {
+      "entries": 100000,
+      "cold_construct_compile_seconds": 5.145800800004508,
+      "python_peak_bytes": 120847668,
+      "warm_p50_ms": 0.06920000305399299,
+      "warm_p95_ms": 0.09580000187270343
+    }
+  ]
+}

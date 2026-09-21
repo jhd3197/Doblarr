@@ -105,6 +105,7 @@ class KnowledgeSelection:
         self._conflict_keys: set[tuple] = set()
         self._boundary = boundary_policy(self.base)
         self._matchers: dict[tuple, tuple] = {}
+        self._line_refs = {e.scope_ref for e in entries if e.scope == "line"}
 
     @classmethod
     def load(
@@ -222,7 +223,7 @@ class KnowledgeSelection:
         Returns (spoken text, applied rule refs). Lines keep their own resolved
         payload, so an unrelated rule edit never changes another line's audio.
         """
-        key = (engine, model, voice, line)
+        key = (engine, model, voice, line if line in self._line_refs else "")
         matcher = self._matchers.get(key)
         if matcher is None:
             winners = self._winners("pronunciation", line or None)
@@ -252,7 +253,7 @@ class KnowledgeSelection:
         applied = [refs.get(term) or {"legacy": term} for term in dict.fromkeys(matched)]
         return spoken_text, applied
 
-    def glossary_terms(self, texts: list[str]) -> dict[str, str]:
+    def glossary_terms(self, texts: list[str], source_lang: str | None = None) -> dict[str, str]:
         """Resolved terminology relevant to these segments: source_form -> phrase.
 
         Only entries whose source wording appears in the segments are offered;
@@ -262,6 +263,8 @@ class KnowledgeSelection:
         haystack = "\n".join(texts)
         by_source: dict[str, set[str]] = {}
         for entry in winners.values():
+            if entry.source_lang and entry.source_lang != source_lang:
+                continue
             if entry.source_form and entry.source_form in haystack:
                 by_source.setdefault(entry.source_form, set()).add(entry.phrase)
         terms = {}

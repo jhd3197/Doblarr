@@ -98,6 +98,13 @@ class JobStore:
         return len(rows)
 
     def add(self, **kwargs) -> Job:
+        from .knowledge.store import with_pack_releases
+
+        releases = (kwargs.get("overrides") or {}).get("knowledge.pack_releases", {})
+        if releases:
+            kwargs["knowledge_snapshot"] = with_pack_releases(
+                self.db, kwargs.get("knowledge_snapshot") or knowledge_snapshot(self.db), releases,
+            )
         job = Job(id=kwargs.pop("id", uuid.uuid4().hex[:12]), **kwargs)
         extra = {k: v for k, v in asdict(job).items() if k not in _COLS}
         self.db.execute(

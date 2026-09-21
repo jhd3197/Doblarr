@@ -12,6 +12,7 @@ from .clients.translator import build_translator
 from .config import Config
 from .errors import JobCancelled
 from .knowledge import KnowledgeSelection
+from .knowledge import snapshot as freeze_knowledge
 from .languages import base_language, resolve_target_locale
 from .languages import parse as parse_language_tag
 from .models import DubJob
@@ -90,6 +91,7 @@ def run_job(
     job.artifacts_dir = work
     out = config.output_dir / shared_work.name / locale_ns
     job.translation_options = dict(config["translate"])
+    job.translation_options["target_locale"] = job.target_locale
     edits = config["dub"].get("line_edits", {})
     if edits or job.kind == "audition":
         effective_work = work / "effective" / digest([edits, config["translate"], job.kind])[:16]
@@ -103,6 +105,8 @@ def run_job(
     # the legacy pronunciation map alone applies, exactly as before.
     knowledge = None
     if db is not None:
+        if job.knowledge_snapshot is None:
+            job.knowledge_snapshot = freeze_knowledge(db)
         knowledge = KnowledgeSelection.load(
             db,
             snapshot=job.knowledge_snapshot,
@@ -172,7 +176,8 @@ def run_job(
                 # Resolved terminology relevant to these segments; the explicit
                 # translate.glossary config always wins on a conflict.
                 **(
-                    knowledge.glossary_terms([s.text_src for s in job.segments])
+                    knowledge.glossary_terms([s.text_src for s in job.segments],
+                                             job.script_lang or job.source_lang)
                     if knowledge is not None
                     else {}
                 ),
@@ -181,6 +186,7 @@ def run_job(
             chars_per_second=config["translate"].get("chars_per_second", 14),
             checkpoint=lambda: save_script(job, translation_work),
             cancel=cancel_event,
+            memory_db=db,
         )
         if not dry_run and job.segments:
             save_script(job, translation_work)  # + translations

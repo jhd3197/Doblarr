@@ -267,12 +267,53 @@ def snapshot(db: Database) -> dict:
     Installed pack content is pinned at the active release, so a later pack
     update or rollback never changes a job that was already queued.
     """
+    from .memory import watermark
+
     pins = active_installed_pins(db)
     return {
         "version": 1,
+        "memory_cutoff": watermark(db),
         "entries": {e.id: e.revision for e in latest_entries(db, pins)},
         "realizations": {r.id: r.revision for r in latest_realizations(db, pins)},
     }
+
+
+def with_pack_releases(db: Database, frozen: dict, releases: dict[str, str]) -> dict:
+    """Replace only requested packs with exact installed recipe releases."""
+    releases = dict(releases)
+    pending = list(releases)
+    checked = set()
+    while pending:
+        pack_id = pending.pop()
+        if pack_id in checked:
+            continue
+        checked.add(pack_id)
+        row = db.query_one("SELECT manifest FROM knowledge_packs WHERE pack_id=? AND release=?",
+                           (pack_id, releases[pack_id]))
+        if row is None:
+            raise ValueError(f"missing required pack {pack_id}@{releases[pack_id]}")
+        for dependency, revision in json.loads(row["manifest"]).get("dependencies", {}).items():
+            if dependency in releases and releases[dependency] != revision:
+                raise ValueError(f"conflicting pinned releases for {dependency}")
+            releases[dependency] = revision
+            pending.append(dependency)
+    frozen = {**frozen, "entries": dict(frozen.get("entries", {})),
+              "realizations": dict(frozen.get("realizations", {}))}
+    for pack_id, release in releases.items():
+        row = db.query_one("SELECT manifest FROM knowledge_packs WHERE pack_id=? AND release=?",
+                           (pack_id, release))
+        if row is None:
+            raise ValueError(f"missing required pack {pack_id}@{release}")
+        for table, key in (("knowledge_entries", "entries"),
+                           ("knowledge_realizations", "realizations")):
+            for record in db.query(f"SELECT DISTINCT id FROM {table} WHERE pack_id=?", (pack_id,)):
+                frozen[key].pop(record["id"], None)
+        for entry in json.loads(row["manifest"]).get("entries", []):
+            frozen["entries"][entry["id"]] = entry["revision"]
+            for realization in entry.get("realizations", []):
+                frozen["realizations"][realization["id"]] = realization["revision"]
+    frozen["pack_releases"] = dict(releases)
+    return frozen
 
 
 def get_entry(db: Database, entry_id: str) -> Entry | None:
@@ -318,43 +359,54 @@ def search_entries(
     page_size: int = 25,
 ) -> tuple[list[Entry], int]:
     """Latest revisions matching the filters, paginated (1-based pages)."""
-    entries = latest_entries(db, active_installed_pins(db))
-    if locale:
-        entries = [e for e in entries if e.locale == locale]
-    if kind:
-        entries = [e for e in entries if e.kind == kind]
-    if scope:
-        entries = [e for e in entries if e.scope == scope]
-    if status:
-        entries = [e for e in entries if e.status == status]
+    filters = []
+    params = []
+    for column, value in (("locale", locale), ("kind", kind), ("scope", scope), ("status", status)):
+        if value:
+            filters.append(f"{column} = ?")
+            params.append(value)
     if q:
-        needle = q.casefold()
-        entries = [
-            e
-            for e in entries
-            if needle in e.phrase.casefold()
-            or needle in e.source_form.casefold()
-            or needle in e.usage.casefold()
-            or needle in e.sense.casefold()
-        ]
-    entries.sort(key=lambda e: (e.phrase.casefold(), e.id))
-    total = len(entries)
-    start = (max(1, page) - 1) * page_size
-    return entries[start : start + page_size], total
+        filters.append("(instr(casefold(phrase), ?) OR instr(casefold(source_form), ?)"
+                       " OR instr(casefold(usage), ?) OR instr(casefold(sense), ?))")
+        params.extend([q.casefold()] * 4)
+    where = " WHERE " + " AND ".join(filters) if filters else ""
+    count_row = db.query_one(
+        _VISIBLE + " SELECT COUNT(*) AS n FROM visible" + where, tuple(params),
+    )
+    assert count_row is not None
+    total = count_row["n"]
+    rows = db.query(_VISIBLE + " SELECT * FROM visible" + where
+                    + " ORDER BY casefold(phrase), id LIMIT ? OFFSET ?",
+                    (*params, page_size, (max(1, page) - 1) * page_size))
+    return [_entry_from_row(row) for row in rows], total
+
+
+_VISIBLE = """
+    WITH active_pins AS (
+        SELECT json_extract(e.value, '$.id') AS id,
+               json_extract(e.value, '$.revision') AS revision
+        FROM knowledge_packs p, json_each(p.manifest, '$.entries') e WHERE p.active=1
+    ), visible AS (
+        SELECT k.* FROM knowledge_entries k
+        WHERE (k.origin='local' AND NOT EXISTS (
+            SELECT 1 FROM knowledge_entries n WHERE n.id=k.id AND n.revision>k.revision
+        )) OR (k.origin='installed' AND (k.id,k.revision) IN (SELECT id,revision FROM active_pins))
+    )
+"""
 
 
 def coverage_counts(db: Database) -> dict[str, dict[str, int]]:
-    """Actual per-locale status counts of latest entries — never invented numbers."""
+    """Aggregate actual active-release counts in SQLite without loading the corpus."""
     counts: dict[str, dict[str, int]] = {}
-    for entry in latest_entries(db, active_installed_pins(db)):
-        if entry.suppresses:
-            continue
+    rows = db.query(_VISIBLE + " SELECT locale,status,COUNT(*) AS n FROM visible"
+                    " WHERE suppresses='' GROUP BY locale,status")
+    for row in rows:
         bucket = counts.setdefault(
-            entry.locale, {"entries": 0, "reviewed": 0, "proposed": 0, "needs-retest": 0}
+            row["locale"], {"entries": 0, "reviewed": 0, "proposed": 0, "needs-retest": 0}
         )
-        bucket["entries"] += 1
-        if entry.status in ("reviewed", "proposed", "needs-retest"):
-            bucket[entry.status] += 1
+        bucket["entries"] += row["n"]
+        if row["status"] in ("reviewed", "proposed", "needs-retest"):
+            bucket[row["status"]] += row["n"]
     return counts
 
 

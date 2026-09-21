@@ -87,6 +87,8 @@ class TranslateModel(_Section):
     glossary: dict[str, str] = {}
     locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
     adaptation: Literal["natural", "faithful", "localized"] = "natural"
+    adapt_region: bool = False
+    reuse_memory: bool = False
     direction: str = ""
     character_notes: dict[str, str] = {}
 
@@ -138,6 +140,7 @@ class DubModel(_Section):
 
 
 class KnowledgeModel(_Section):
+    pack_releases: dict[str, str] = {}
     pack_distribution_url: str = ""   # official pack distribution endpoint; "" = unset
     auto_install_starter: bool = True  # install the bundled starter pack on first run
 

@@ -140,6 +140,25 @@ def _v6_packs(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _v7_memory(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        CREATE TABLE translation_memory (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            source_lang TEXT NOT NULL,
+            target_locale TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            context_hash TEXT NOT NULL,
+            document TEXT NOT NULL,
+            UNIQUE(id, revision)
+        );
+        CREATE INDEX memory_exact ON translation_memory
+            (source_lang, target_locale, source_text, context_hash, seq);
+        CREATE INDEX memory_versions ON translation_memory(id, seq);
+    """)
+
+
 # Ordered migrations; MIGRATIONS[i] brings a db from version i to i+1.
 MIGRATIONS = [
     _v1_initial,
@@ -148,6 +167,7 @@ MIGRATIONS = [
     _v4_target_locale,
     _v5_knowledge,
     _v6_packs,
+    _v7_memory,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
@@ -159,6 +179,7 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.create_function("casefold", 1, lambda s: s.casefold(), deterministic=True)
         self._lock = threading.RLock()
         self._migrate()
 

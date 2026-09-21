@@ -68,7 +68,12 @@ def preserve_version(job, config, cast=None) -> dict:
                 "script": script,
                 # Knowledge provenance for this version; outside the identity digest
                 # so an unrelated rule edit never forks an identical render.
-                "knowledge": job.knowledge_snapshot}
+                "knowledge": job.knowledge_snapshot,
+                "line_provenance": [{"index": s.index, "source": s.text_src,
+                                     "translated": s.text_translated, "tts_text": s.tts_text,
+                                     "rules": s.applied_rules,
+                                     "translation": s.translation_provenance}
+                                    for s in job.segments]}
     if destination.exists():
         saved = read_json(manifest_path)
         if (saved.get("version_id") != version_id or not output.is_file()

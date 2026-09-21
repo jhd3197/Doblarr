@@ -64,7 +64,22 @@ export function createKnowledge() {
     });
     const body = root.querySelector('.knowledge-body');
     if (view.tab === 'memory') {
-      body.innerHTML = '<div class="panel" style="padding:20px 24px;"><p class="hint">Translation memory arrives in a later phase. Reviewed lines you correct are kept per dub version for now.</p></div>';
+      try {
+        const data = await api(`memory?page=${view.page}`);
+        body.innerHTML = `<div class="panel" style="padding:20px 24px;">
+          <p class="hint">Private complete lines saved from dialogue review. Enable reuse in Translation settings. Unknown context and unreviewed lines cannot bypass translation.</p>
+          ${data.entries.map(e => `<p><strong>${esc(e.source_text)}</strong> → ${esc(e.target_text)} <span class="hint">${esc(e.source_lang)} → ${esc(e.target_locale)} · ${esc(e.status)} · revision ${e.revision}</span>
+            <button class="btn btn-ghost memory-retire" data-id="${esc(e.id)}" ${e.status === 'retired' ? 'disabled' : ''}>Retire</button></p>`).join('') || '<p>No translations saved yet.</p>'}
+          <button class="btn btn-ghost memory-prev" ${view.page <= 1 ? 'disabled' : ''}>Previous</button>
+          <span>${view.page} / ${pageCount(data.total, 25)}</span>
+          <button class="btn btn-ghost memory-next" ${view.page * 25 >= data.total ? 'disabled' : ''}>Next</button></div>`;
+        body.querySelector('.memory-prev').onclick = () => { view.page--; renderKnowledge(); };
+        body.querySelector('.memory-next').onclick = () => { view.page++; renderKnowledge(); };
+        body.querySelectorAll('.memory-retire').forEach(b => { b.onclick = async () => {
+          try { await api(`memory/${encodeURIComponent(b.dataset.id)}/retire`, { method: 'POST' }); renderKnowledge(); }
+          catch (e) { b.textContent = e.message; }
+        }; });
+      } catch (e) { body.textContent = e.message; }
       return;
     }
     if (view.tab === 'packs') {

@@ -119,6 +119,8 @@ def load_pack_file(path: str | Path) -> dict:
 
 def validate_pack(db: Database, data: dict) -> PreparedPack:
     """Full pre-activation validation; raises PackError, touches nothing."""
+    if len(json.dumps(data, ensure_ascii=False).encode()) > MAX_PACK_BYTES:
+        raise PackError("pack exceeds the size limit")
     try:
         manifest = PackManifest.model_validate(data)
     except ValidationError as exc:

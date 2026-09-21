@@ -1,0 +1,28 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+  "python": "3.12.0",
+  "note": "Synthetic exact-memory lookup only; no provider calls or quality claims. Python peak excludes SQLite native allocations and OS cache.",
+  "runs": [
+    {
+      "entries": 10000,
+      "build_seconds": 0.20364120000158437,
+      "cold_open_seconds": 0.001957500004209578,
+      "warm_p50_ms": 0.054100004490464926,
+      "warm_p95_ms": 0.08950001210905612,
+      "python_peak_bytes": 162057,
+      "database_bytes": 6606848,
+      "lookups": 1000
+    },
+    {
+      "entries": 100000,
+      "build_seconds": 1.7945373999973526,
+      "cold_open_seconds": 0.001832999987527728,
+      "warm_p50_ms": 0.05665000207955018,
+      "warm_p95_ms": 0.10550000297371298,
+      "python_peak_bytes": 151508,
+      "database_bytes": 65957888,
+      "lookups": 1000
+    }
+  ]
+}

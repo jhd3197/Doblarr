@@ -365,10 +365,12 @@ def build_router(config: Config, db: Database, bus: EventBus, services: Services
             for pack_id, revision in (
                 body.recipe.knowledge.pack_dependencies.items() if body.recipe.knowledge else []
             ):
-                knowledge_info["missing_packs"].append(
-                    f"Pack '{pack_id}' (pinned revision {revision}) is not installed;"
-                    " its rules will be missing"
-                )
+                if not any(r["release"] == str(revision)
+                           for r in knowledge_store.pack_releases(db, pack_id)):
+                    knowledge_info["missing_packs"].append(
+                        f"Pack '{pack_id}' (pinned release {revision}) is not installed;"
+                        " install that release before importing"
+                    )
             warnings += knowledge_info["missing_packs"] + knowledge_info["engine_mismatches"]
         try:
             voices = services.voicebox.list_voices()
@@ -391,6 +393,8 @@ def build_router(config: Config, db: Database, bus: EventBus, services: Services
     @api.post("/api/recipes/import")
     def import_recipe(body: RecipeImportIn):
         preview = recipe_preview(body)
+        if preview.get("knowledge") and preview["knowledge"]["missing_packs"]:
+            raise HTTPException(422, "Install the recipe's exact pack releases before importing.")
         slots = {"narrator", *("character:" + c.speaker_id for c in body.recipe.characters)}
         if set(body.voices) != slots:
             raise HTTPException(422, "Choose a local voice or source audio for every role.")
@@ -418,6 +422,12 @@ def build_router(config: Config, db: Database, bus: EventBus, services: Services
         key = body.identity.resolve()
         plan = dict((db.load_plan(key) or {}).get("plan", {}))
         plan.update(body.recipe.settings)
+        if body.recipe.schema_version == 2:
+            plan["dub.target_locale"] = body.recipe.target_locale or body.recipe.target_language
+            plan["knowledge.pack_releases"] = {
+                k: str(v) for k, v in (body.recipe.knowledge.pack_dependencies.items()
+                                      if body.recipe.knowledge else [])
+            }
         plan.update(
             {
                 "target_lang": body.recipe.target_language,

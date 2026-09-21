@@ -25,6 +25,8 @@ class Segment:
     source_start: float | None = None
     tts_text: str | None = None          # resolved spoken form (knowledge applied)
     applied_rules: list[dict] = field(default_factory=list)  # rule ids/revisions used
+    translation_provenance: dict = field(default_factory=dict)
+    memory_context: dict = field(default_factory=dict)
 
     @property
     def duration(self) -> float:

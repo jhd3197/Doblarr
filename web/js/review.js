@@ -45,7 +45,9 @@ export function createReview({ onQueued }) {
       <div class="review-options"><label><input id="reviewRegenerate" type="checkbox" ${edit.regenerate ? 'checked' : ''}> Generate a new take</label>
       <label><input id="reviewExclude" type="checkbox" ${edit.exclude ? 'checked' : ''}> Exclude this line</label></div>
       <div class="review-options"><button type="button" class="btn btn-ghost" id="reviewFixPron">Fix pronunciation</button>
-      <button type="button" class="btn btn-ghost" id="reviewFixTerm">Improve regional wording</button></div>
+      <button type="button" class="btn btn-ghost" id="reviewFixTerm">Improve regional wording</button>
+      <button type="button" class="btn btn-ghost" id="reviewSaveMemory">Save translation for reuse</button></div>
+      <p class="hint">Translation: ${esc(row.translation_provenance?.method || 'legacy')} · ${esc(row.translation_provenance?.reason || 'No recorded provenance')}</p>
       <div id="reviewCorrection" class="review-correction"></div>`;
     editor.querySelectorAll('input,textarea,select').forEach(f => { f.disabled = !data.editable; });
     wireCorrection(row);
@@ -86,6 +88,34 @@ export function createReview({ onQueued }) {
     }
     editor.querySelector('#reviewFixPron').onclick = () => open('pronunciation');
     editor.querySelector('#reviewFixTerm').onclick = () => open('term');
+    editor.querySelector('#reviewSaveMemory').onclick = () => {
+      box.innerHTML = `<p class="hint">Private complete-line memory. Matching scene, speaker register, settings and timing are required. Record only reviews you have performed.</p>
+        <label class="review-field">Reviewer<input class="input memory-reviewer"></label>
+        <label><input type="checkbox" class="memory-meaning"> Source meaning verified</label>
+        <label><input type="checkbox" class="memory-natural"> Regional wording verified</label>
+        <label><input type="checkbox" class="memory-timing"> Timing verified by listening</label>
+        <button class="btn btn-secondary memory-save">Save privately</button><p class="memory-status hint" role="status"></p>`;
+      box.querySelector('.memory-save').onclick = async event => {
+        const button = event.currentTarget;
+        const meaning = box.querySelector('.memory-meaning').checked;
+        const natural = box.querySelector('.memory-natural').checked;
+        const timing = box.querySelector('.memory-timing').checked;
+        button.disabled = true;
+        try {
+          await api('memory', { method: 'POST', json: {
+            source_lang: data.source_language || 'und', target_locale: data.locale || data.language,
+            source_text: row.text_src, target_text: $('reviewText').value,
+            context: row.memory_context || {}, duration: Number($('reviewEnd').value) - Number($('reviewStart').value),
+            reviewer: box.querySelector('.memory-reviewer').value,
+            meaning_reviewed: meaning, naturalness_reviewed: natural, timing_reviewed: timing,
+            status: meaning && natural && timing ? 'reviewed' : 'proposed',
+          } });
+          box.querySelector('.memory-status').textContent = row.memory_context?.register
+            ? 'Saved privately. New jobs can reuse it when all conditions match and reuse is enabled.'
+            : 'Saved privately as guidance. This line has no recorded speaker register, so automatic reuse is unavailable.';
+        } catch (e) { box.querySelector('.memory-status').textContent = e.message; button.disabled = false; }
+      };
+    };
   }
 
   function collect() {

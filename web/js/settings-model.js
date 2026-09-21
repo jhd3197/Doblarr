@@ -52,6 +52,8 @@ const TABS = [
     T("translate.endpoint", "Translation endpoint"),
     C("translate.locale", "Spanish region", ["auto", "es-419", "es-MX", "es-ES"], "es-419: neutral Latin America. es-MX: Mexico. es-ES: Spain. Wording only; voice accent is set separately."),
     C("translate.adaptation", "Dialogue style", ["natural", "faithful", "localized"]),
+    B("translate.adapt_region", "Adapt wording to this region", "Also adapt subtitles already in the target language. Original dialogue stays available for comparison."),
+    B("translate.reuse_memory", "Reuse reviewed translations", "Opt-in pilot: exact lines with matching scene, register, settings and timing only."),
     T("translate.direction", "Dialogue direction", "For example: restrained anime dialogue; keep cultural terms; avoid added catchphrases."),
     J("translate.character_notes", "Character dialogue notes", 'By speaker ID, for example {"GINKO": "Calm, concise; never overly formal"}.'),
     N("translate.batch_size", "Lines per translation batch"),
@@ -110,6 +112,7 @@ const PLAN_FIELDS = [
     h: "Applied when a dub is queued for this title." },
   ...["dub.target_locale", "dub.preset", "dub.voice_mode", "voicebox.default_engine", "dub.cast_group", "dub.character_map", "transcribe.whisper_model", "transcribe.diarize",
     "translate.locale", "translate.adaptation", "translate.direction", "translate.character_notes",
+    "translate.adapt_region", "translate.reuse_memory",
     "dub.version_name", "dub.preserve_versions",
     "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run"]
     .map(k => ({ ...FIELD_BY_KEY[k], t: isBoolField(FIELD_BY_KEY[k]) ? "bool" : FIELD_BY_KEY[k].t })),

@@ -38,3 +38,69 @@ declared dependency. Content hashes detect corruption; they are not signatures.
 Release gates still requiring human evidence: target-language listening and
 wording review, held-out meaning/timing comparisons, and an additional language
 maintainer. No coverage, accent or savings claims follow from automated tests.
+
+## Private reuse pilot
+
+In dialogue review, choose **Save translation for reuse**. Record the reviewer
+and only the meaning, regional wording and timing assessments actually performed.
+Unreviewed entries remain suggestions. Translation settings include an opt-in
+**Reuse reviewed translations** switch, off by default. Set character dialogue
+notes to capture speaker register: missing register never permits automatic reuse.
+Complete source text, directed language pair, exact target locale, surrounding
+three lines on either side, speaker, translation settings, relevant glossary and
+duration (within 50 ms) must match. The target must also fit the character budget.
+Conflicting reviewed translations fall back to translation. No fuzzy matching or
+automatic pivot through another language is implemented.
+
+The memory list supports pagination and retirement. Each save creates an immutable
+revision. Jobs freeze a sequence watermark, so edits and retirement cannot alter
+an already queued run. Recipes omit private memory and pin exact pack releases.
+CLI runs persist their knowledge selection in the target work directory.
+
+**Adapt wording to this region** explicitly translates already-target-language
+subtitles; leaving it off preserves the existing shortcut. Original text remains
+in review and version provenance. Timing shortening retains regional direction
+and terminology and records that the original translation was rewritten.
+
+Run reports include checked/reused lines, retrieval time, translation latency,
+instrumented provider calls and raw provider usage for translation and timing
+repair. Missing usage is unknown; Voicebox does not supply tokens. These metrics
+do not establish cost savings. A resumed job may reuse script checkpoints without
+making any translation calls, so compare cold new-title runs separately.
+
+For the held-out scenes, compare baseline (no knowledge), guidance only and
+guidance plus reuse with identical source, models, voices, settings and seed
+where supported. Record source-meaning accuracy, naturalness, pronunciation,
+timing and human corrections alongside report counters. Do not promote a reuse
+condition to the default until these comparisons pass human review.
+
+## Expansion tooling
+
+`python scripts/import_knowledge_candidates.py INPUT.jsonl OUTPUT --license LICENSE
+--provenance SOURCE` writes bounded proposed pack shards. Each JSONL row contains
+`source_lang`, `locale`, `source_form`, `phrase` and optional `usage`. Duplicate
+pairs are removed. The tool never downloads, activates or publishes a corpus.
+The supplied license is a declaration that maintainers must verify, not a legal
+assessment. A French Canadian fixture demonstrates adding another locale through
+data without a new translation branch.
+
+Appoint a maintainer for each new locale and directed source pair through the
+repository review process. Record their identity, language competence and reviewed
+dimensions in entry review history. No maintainers have been appointed or external
+corpora selected by this implementation. Pack releases can contain any catalog
+locale; source-pair terminology stays isolated.
+
+Reproduce synthetic benchmarks with `scripts/benchmark_translation_memory.py
+--output docs/benchmarks/translation-memory.json` and
+`scripts/benchmark_knowledge_matcher.py`. Reports identify hardware, Python,
+10,000/100,000 mixed-language records, cold time, Python allocation peak and warm
+p50/p95. Matcher construction excludes database loading; Python allocation peaks
+exclude SQLite native allocations. These are engineering baselines, not held-out
+dubbing quality results. Knowledge browsing filters and paginates in SQLite, and coverage is aggregated
+against active pack releases without loading every entry into the UI.
+
+Implementation status: phases 1–3 are present; phase 4 pack/review tooling is
+implemented with unverified starter content; phase 5 is an opt-in local pilot;
+phase 6 has candidate import and synthetic benchmark tooling. Reviewed starter
+publication, real held-out quality/savings validation, additional maintainers and
+reviewed language-pair releases remain open human release gates.

@@ -27,6 +27,7 @@ from .routes import jobs as job_routes
 from .routes import knowledge as knowledge_routes
 from .routes import languages as language_routes
 from .routes import library as library_routes
+from .routes import memory as memory_routes
 from .routes import packs as pack_routes
 from .routes import series as series_routes
 from .routes import titles as title_routes
@@ -150,6 +151,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(language_routes.build_router())
     api.include_router(knowledge_routes.build_router(config, services, db))
     api.include_router(pack_routes.build_router(config, services, db))
+    api.include_router(memory_routes.build_router(db))
     api.include_router(job_routes.build_router(config, store, worker, bus))
     api.include_router(title_routes.build_router(config, db, bus, services))
     api.include_router(series_routes.build_router(config, services, store, bus))

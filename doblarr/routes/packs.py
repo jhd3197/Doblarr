@@ -42,6 +42,13 @@ def build_router(config, services, db) -> APIRouter:
         grouped: dict[str, dict] = {}
         for row in releases:
             manifest = json.loads(row["manifest"])
+            coverage: dict = {}
+            for entry in manifest.get("entries", []):
+                bucket = coverage.setdefault(entry["locale"], {"entries": 0, "reviewed": 0,
+                                                                "proposed": 0})
+                bucket["entries"] += 1
+                status = entry.get("status", "proposed")
+                bucket[status] = bucket.get(status, 0) + 1
             pack = grouped.setdefault(
                 row["pack_id"],
                 {
@@ -59,7 +66,7 @@ def build_router(config, services, db) -> APIRouter:
                     "active": bool(row["active"]),
                     "installed_at": row["installed_at"],
                     "content_hash": row["content_hash"][:12],
-                    "coverage": manifest.get("coverage", {}),
+                    "coverage": coverage,
                 }
             )
         return {"packs": sorted(grouped.values(), key=lambda p: p["pack_id"])}

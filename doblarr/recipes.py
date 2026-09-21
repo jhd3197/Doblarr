@@ -29,6 +29,7 @@ SETTING_KEYS = (
     "translate.glossary",
     "translate.locale",
     "translate.adaptation",
+    "translate.adapt_region",
     "translate.direction",
     "translate.character_notes",
     "translate.chars_per_second",
@@ -150,7 +151,7 @@ class RecipeEntry(StrictModel):
 
 class RecipeKnowledge(StrictModel):
     entries: list[RecipeEntry] = Field(default_factory=list, max_length=200)
-    pack_dependencies: dict[str, int] = Field(default_factory=dict, max_length=50)
+    pack_dependencies: dict[str, str | int] = Field(default_factory=dict, max_length=50)
 
 
 class RecipeShow(StrictModel):

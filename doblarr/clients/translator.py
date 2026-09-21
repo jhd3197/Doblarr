@@ -85,6 +85,8 @@ class PromptureTranslator:
         # responses rejected by domain validation. Not a billing ledger.
         self.last_usage: list[dict[str, Any]] = []
         self.direction: dict = {}
+        self.provider_calls = 0
+        self.repair_glossary: dict = {}
 
     def _get_driver(self):
         if self._driver is None:
@@ -151,6 +153,7 @@ class PromptureTranslator:
         feedback = ""
         for attempt in range(2):
             try:
+                self.provider_calls += 1
                 result = prompture.ask_for_json(
                     driver=driver,
                     content_prompt=content + feedback,
@@ -215,12 +218,14 @@ class PromptureTranslator:
                 raise TranslationError("Invalid translation after batch and line retries") from exc
 
     def shorten(self, text: str, language: str, target_chars: int) -> str:
+        self.last_usage = []
         try:
             return self._translate_lines(
                 [text],
                 language,
                 language,
                 target_chars,
+                glossary=self.repair_glossary,
                 instruction="Rewrite more briefly in the SAME language. "
                 "Preserve meaning, names and tone; remove no key facts.",
             )[0]
@@ -318,6 +323,9 @@ def translation_direction(options: dict, target_lang: str) -> str:
         "relationships and plot; invent no new jokes or information.",
     }
     parts = [styles.get(options.get("adaptation", "natural"), styles["natural"])]
+    if options.get("adapt_region"):
+        parts.append("Adapt existing target-language dialogue to the requested region while "
+                     "preserving meaning. Keep shared wording; do not force regional slang.")
     locale = get_language(str(options.get("locale") or ""))
     if locale and locale.direction and locale.base == base_language(target_lang):
         parts.append(locale.direction)
