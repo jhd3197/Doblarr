@@ -8,13 +8,14 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from . import background, conversation, levels, phrases, reactions
+from . import background, conversation, delivery, levels, phrases, reactions, treatments
 from .artifacts import digest, media_work
 from .budget import RequestBudget
 from .clients.translator import build_translator
 from .config import Config
 from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
+from .ffmpeg import FFmpegError
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
 from .languages import base_language, display_name, resolve_target_locale
@@ -38,6 +39,7 @@ from .stages import (
     synthesize,
     transcribe,
     translate,
+    treatment,
 )
 from .stages.common import load_script, save_script
 from .telemetry import RunReport
@@ -298,6 +300,8 @@ def run_job(
     timing_options = dict(config.get("timing", {}))
     owns_phrases = phrases.owns_timing(timing_options)
     coverage_options = dict(config.get("coverage", {}))
+    treatment_options = dict(config.get("treatments", {}))
+    delivery_options = dict(config.get("delivery", {}))
 
     def _quality(segments=None, retry=True):
         target = job if segments is None else replace(job, segments=segments)
@@ -440,6 +444,41 @@ def run_job(
         background.check(job, coverage_options, cancel=cancel_event, work_dir=work,
                          vb=vb, budget=budget, dry_run=dry_run)
 
+    def _treatments():
+        # A reviewer's per-line preset is merged over the configured map here,
+        # exactly as the manual gains and timing anchors are, so a decision
+        # made in review survives a resume without becoming a config edit.
+        options = {**treatment_options,
+                   "lines": {**dict(treatment_options.get("lines") or {}),
+                             **job.treatment_edits}}
+        treatment.run(job, options=options, cancel=cancel_event, dry_run=dry_run,
+                      work_dir=work, program_seconds=_program_seconds())
+        if not dry_run and job.segments:
+            save_script(job, effective_work)
+
+    program = {"seconds": None}
+
+    def _program_seconds():
+        """How long the delivered programme is, so a tail can be told it ran past it."""
+        if program["seconds"] is None:
+            track = job.source_audio or job.background
+            try:
+                program["seconds"] = (fit_timing._duration(track, cancel=cancel_event)
+                                      if track else 0.0)
+            except (OSError, ValueError, FFmpegError):
+                program["seconds"] = 0.0
+        return program["seconds"] or None
+
+    def _validate():
+        if job.kind == "audition":
+            # An audition is a montage for casting, not a delivery. Checking it
+            # against a programme's expectations would report a truth about a
+            # file nobody is delivering.
+            job.delivery = {"state": "skipped", "reason":
+                            "an audition montage is not a delivered programme"}
+            return
+        delivery.validate(job, delivery_options, cancel=cancel_event, work_dir=work)
+
     def _fit():
         if owns_phrases:
             # Two timing owners for one line would compound into a warble; the
@@ -517,6 +556,7 @@ def run_job(
                 dry_run=dry_run,
             ),
         ),
+        ("treatments", _treatments),
         ("conversation", _conversation),
         ("coverage", _coverage),
         (
@@ -555,6 +595,7 @@ def run_job(
                 bitrate=config["dub"].get("output_bitrate", "192k"),
             ),
         ),
+        ("validate", _validate),
     ]
     if job.kind == "audition":
         separation = next(step for step in steps if step[0] == "separate")
@@ -586,7 +627,17 @@ def run_job(
                 fn()
         if not dry_run and config["dub"].get("preserve_versions", True):
             with report.stage("save_version"):
-                preserve_version(job, config, cast=cast_holder["cast"])
+                # A candidate the export check rejected is kept on disk for
+                # diagnosis, but it is not saved as a version: a saved version
+                # is what "this render is a deliverable" means here, and a
+                # truncated or mis-tagged track has not earned that word.
+                if job.delivery.get("publishable", True):
+                    preserve_version(job, config, cast=cast_holder["cast"])
+                else:
+                    log.warning(
+                        "not saving a version: export validation failed (%s). The "
+                        "rendered file is left in place for diagnosis.",
+                        job.delivery.get("summary") or "see the delivery report")
     except JobCancelled:
         job.metrics["request_budget"] = budget.snapshot()
         report.finish("cancelled")
@@ -618,6 +669,16 @@ def run_job(
                     ("fade_ms", 25), ("max_seconds", 4.0),
                     ("leakage_check", False), ("generate", False))},
                 "background": background.kind(job),
+                # Plan 05. Which acoustic space this run put around the lines,
+                # and what the delivered file was graded against. Frozen the
+                # same way: an old review shows the profile that produced it.
+                "treatments": {
+                    **{k: treatment_options.get(k, default) for k, default in (
+                        ("mode", "off"), ("default", "dry"), ("intensity", 1.0))},
+                    "scenes": treatments.settings(treatment_options)["scenes"],
+                    "catalogue": treatments.catalogue(),
+                },
+                "delivery": delivery.describe(delivery.settings(delivery_options)),
             })
     report.finish()
 

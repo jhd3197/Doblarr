@@ -18,6 +18,7 @@ from .cues import (
     SourceSpans,
     SpeechPreparation,
     TimingPlan,
+    Treatment,
     Verification,
 )
 
@@ -81,6 +82,11 @@ class Segment:
     # asked to land on and what the rendered output actually measured. Its
     # empty state means whole-clip fitting owned the run.
     phrasing: TimingPlan = field(default_factory=TimingPlan)
+
+    # Plan 05. Which acoustic space or device this line was played through,
+    # how much ring-out it added past the dry speech, and whether this FFmpeg
+    # build could actually do it. Its empty state means dry dialogue.
+    treatment: Treatment = field(default_factory=Treatment)
 
     @property
     def duration(self) -> float:
@@ -165,6 +171,17 @@ class DubJob:
     # (like `manual_gains`) so a resume honours it without it becoming a
     # config edit, and merged over the configured `timing.phrases`.
     timing_edits: dict[str, dict] = field(default_factory=dict)
+
+    # Per-cue acoustic treatment a reviewer chose by hand: a preset, an
+    # intensity, or an explicit bypass. Kept with the job for the same reason
+    # the manual gains and timing edits are — a resume must honour a decision
+    # a person made about this run without it becoming a config edit.
+    treatment_edits: dict[str, dict] = field(default_factory=dict)
+
+    # What the exported track was measured to be, bound to the output hash and
+    # the delivery profile revision that produced it. Written by the export
+    # validation stage; empty until a real file has been probed.
+    delivery: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         return (

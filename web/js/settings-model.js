@@ -123,6 +123,24 @@ const TABS = [
     N("coverage.max_seconds", "Longest sound to place (seconds)", "A longer window is a scene, not a reaction."),
     B("coverage.leakage_check", "Screen for source-language words", "Listens to retained sounds and to dialogue-free windows of the bed. Music vocals and reverberation cause false positives, so a hit is a suspicion to listen to."),
     B("coverage.generate", "Ask the engine for a reaction where it supports one", "An engine that cannot is recorded as unsupported, never as applied."),
+  ]), group("Scene space and devices", [
+    C("treatments.mode", "Acoustic treatment", ["off", "on"], "Off places every line dry, exactly as earlier releases did. On lets a scene rule or a line put a room, a distance or a device around the voice. It never changes the acting or the level: the effect's own effect on loudness is measured and corrected."),
+    C("treatments.default", "Default space", ["dry", "room", "distant", "phone", "radio"], "Used where no scene rule and no line override applies. Dry means no treatment at all."),
+    N("treatments.intensity", "Intensity", "Between 0 and 1. Changes how strong the preset is, not how long its tail is."),
+    N("treatments.max_tail", "Longest effect tail (seconds)", "A hard bound on ring-out past the words."),
+    J("treatments.scenes", "Scene rules", 'A list, for example [{"start": 120, "end": 186.5, "preset": "phone"}]. A line belongs to the scene its start is in.'),
+  ]), group("Export checks", [
+    C("delivery.mode", "Check the exported track", ["off", "measure", "enforce"], "Measure reports everything and blocks nothing. Enforce lets a structural failure withhold the saved version and the library refresh, leaving the rendered file in place for diagnosis."),
+    T("delivery.profile", "Delivery profile name", "Recorded on every report this profile grades."),
+    N("delivery.sample_rate", "Expected sample rate", "0 accepts whatever the encoder produced."),
+    N("delivery.channels", "Expected channels", "0 accepts any layout."),
+    N("delivery.duration_tolerance", "Duration tolerance (seconds)", "How far the decoded dub may differ from the container before it counts as truncated."),
+    N("delivery.start_tolerance", "Start-time tolerance (seconds)", "Encoder delay allowance on the added stream."),
+    N("delivery.target_lufs", "Loudness target (LUFS)", "Leave blank to measure only. A number with no target is evidence; it is never reported as a pass against an unspecified standard."),
+    N("delivery.lufs_tolerance", "Loudness tolerance (LU)"),
+    N("delivery.true_peak_db", "True-peak ceiling (dBFS)", "Leave blank to measure only. Measured with ffmpeg's ebur128 meter; no broadcast or platform compliance is claimed."),
+    N("delivery.placement_samples", "Cue windows to decode", "Head, middle and tail lines are decoded out of the finished file and checked for content."),
+    B("delivery.check_original_streams", "Check nothing was dropped", "The dub is added; every track the source went in with must still be there."),
   ]), group("Clip boundaries", [
     B("boundaries.trim", "Trim generator padding", "Removes dead air outside the detected speech before timing correction. Internal pauses are never removed and the raw take is kept."),
     N("boundaries.handle_ms", "Protective margin (ms)", "Kept on each side of the detected speech."),
@@ -166,7 +184,10 @@ const PLAN_FIELDS = [
     "boundaries.trim", "boundaries.edge_fade_ms",
     // Which timing owner and whether coverage may place a sound are per-title
     // choices; the thresholds behind them stay global.
-    "timing.mode", "coverage.mode"]
+    "timing.mode", "coverage.mode",
+    // Which space a show is played in, and how hard its exports are checked,
+    // are per-title choices; the thresholds behind them stay global.
+    "treatments.mode", "treatments.default", "delivery.mode"]
     .map(k => ({ ...FIELD_BY_KEY[k], t: isBoolField(FIELD_BY_KEY[k]) ? "bool" : FIELD_BY_KEY[k].t })),
 ];
 

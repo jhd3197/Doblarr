@@ -27,7 +27,7 @@ import logging
 from pathlib import Path
 
 from .artifacts import digest, matches, record, stamp
-from .cues import RAW
+from .cues import RAW, TREATED
 from .ffmpeg import FFmpegError, run_ffmpeg
 
 log = logging.getLogger("doblarr.preview")
@@ -41,7 +41,12 @@ MAX_WINDOW_SECONDS = 90.0
 PAD_SECONDS = 0.6
 # Plan 04 adds the three the coverage review needs: the separated dialogue
 # stem on its own, the bed the dub sits over, and one reaction's own audio.
-KINDS = ("source", "dub", "line", "take", "reference", "vocals", "bed", "event")
+# Plan 05 adds the two halves of a treatment decision: the finished *dry*
+# line, and the same line with the space around it. Together with `source`
+# and `dub` that is the four-way audition D09 asks for — original, dry,
+# treated, final — and it is four playable files rather than a description.
+KINDS = ("source", "dub", "line", "take", "reference", "vocals", "bed", "event",
+         "dry", "treated")
 
 
 class PreviewError(RuntimeError):
@@ -184,6 +189,30 @@ def resolve(job, segments, kind: str, index: int, *, context: int = 2,
         return {**frame, "kind": kind, "path": Path(current.path),
                 "role": current.role, "label": f"processed line ({current.role})",
                 "whole_file": True}
+    if kind == "dry":
+        # The finished dialogue line *before* the space was put around it. When
+        # no treatment ran this is the same file `line` serves, and it says so,
+        # because two controls that silently play one file is how a reviewer
+        # concludes a feature does nothing.
+        dry = seg.audio.upstream_of(TREATED)
+        if dry is None or not dry.exists():
+            raise PreviewError("this line has no rendered audio yet")
+        treated = seg.audio.render(TREATED)
+        return {**frame, "kind": kind, "path": Path(dry.path), "role": dry.role,
+                "label": (f"dry line ({dry.role})" if treated is not None
+                          else f"dry line ({dry.role}) — no treatment ran, so this "
+                               f"is also the final line"),
+                "treated": treated is not None, "whole_file": True}
+    if kind == "treated":
+        treated = seg.audio.render(TREATED)
+        if treated is None or not treated.exists():
+            raise PreviewError(
+                f"no acoustic treatment was applied to this line: "
+                f"{seg.treatment.reason or 'none was selected'}")
+        return {**frame, "kind": kind, "path": Path(treated.path), "role": treated.role,
+                "label": f"{seg.treatment.preset} treatment "
+                         f"(tail {seg.treatment.tail:.2f}s)",
+                "preset": seg.treatment.preset, "whole_file": True}
     if kind == "take":
         chosen = seg.audio.take(take) if take else seg.audio.selected()
         if chosen is None or chosen.raw is None or not chosen.raw.exists():

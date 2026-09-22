@@ -43,7 +43,11 @@ from .errors import DoblarrError
 # typed nonverbal events. Older payloads load unchanged: their timing plan is
 # empty (that run fitted whole clips) and their nonverbal rows are migrated
 # from the plain dictionaries Plan 01 wrote.
-CUE_SCHEMA_VERSION = 3
+#
+# 4 (Plan 05): the `treated` artifact role and the acoustic treatment record.
+# Older payloads load unchanged and their treatment stays empty, which is the
+# honest state: that run placed dry dialogue and no preset was ever chosen.
+CUE_SCHEMA_VERSION = 4
 
 # Time domains. Never mix them in one number.
 SOURCE = "source"    # the original media timeline
@@ -61,8 +65,10 @@ PHRASED = "phrased"        # per-phrase timing recipe (timing.mode="phrase", Pla
 FITTED = "fitted"          # whole-clip timing (timing.mode="whole")
 LEVELED = "leveled"        # post-fit baseline level + performance gain (Plan 03)
 EDGED = "edged"            # protected final edges (Plan 02)
+TREATED = "treated"        # reviewed acoustic/device treatment (Plan 05)
 UNKNOWN = "unknown"
-ROLES = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED, UNKNOWN)
+ROLES = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED, TREATED,
+         UNKNOWN)
 # Later plans append their own role here; order defines "most processed last".
 # `normalized` stays where Plan 02 put it so a legacy run keeps reproducing
 # exactly what it rendered before; Plan 03's level owner sits after fitting,
@@ -74,7 +80,13 @@ ROLES = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED, UNKNOWN)
 # and stretches only where it has to, and exactly one of them owns a run. The
 # phrase role sits first so that, in phrase mode, everything downstream reads
 # it through `upstream_of` without knowing which owner produced the timing.
-RENDER_ORDER = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED)
+RENDER_ORDER = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED,
+                TREATED)
+# `treated` is deliberately last, and deliberately after `edged`. A time-based
+# effect applied before the joins were protected would ring out of a click
+# nobody wanted; an edge fade applied after it would cut the tail off at the
+# subtitle end, which is exactly the artifact the treatment work exists to
+# avoid. So the dry line is finished first and the space is put around it.
 
 ORIGINS = ("import", "legacy", "split", "merge", "manual")
 DISPOSITIONS = ("open", "accepted", "fixed", "obsolete")
@@ -131,6 +143,18 @@ EVENT_COVERAGE = ("unresolved", "retained", "replaced", "omitted", "covered",
                   "unavailable", "unsupported")
 # Where the evidence for an event came from.
 EVENT_EVIDENCE = ("subtitle", "manual", "detector", "unknown")
+
+
+# Acoustic treatment (Plan 05). A preset is a *place or a device*, never a
+# performance: none of these change who is speaking or how they act.
+TREATMENT_PRESETS = ("dry", "room", "distant", "phone", "radio")
+# Where the choice came from. `default` is the run-wide preset, `scene` a time
+# range, `line` a per-cue override, and `none` means nothing selected one.
+TREATMENT_ORIGINS = ("none", "default", "scene", "line", "manual")
+# What actually happened. `unsupported` means this FFmpeg build cannot do what
+# the preset asks for — recorded as asked-for, never as applied.
+TREATMENT_OUTCOMES = ("applied", "bypassed", "unsupported", "unavailable",
+                      "failed", "unknown")
 
 
 class SchemaError(DoblarrError):
@@ -1242,6 +1266,105 @@ class NonverbalEvent:
 
 
 @dataclass
+class Treatment:
+    """The acoustic space or device this line was played through, if any.
+
+    Deliberately separate from `PerformanceIntent` and from `LevelDecision`.
+    A phone is not an emotion and a room is not a gain: putting them in one
+    record would make "make this line sound like a phone call" indistinguishable
+    from "make this line angrier", and the two are reviewed by different people
+    for different reasons.
+
+    `tail` is the seconds of ring-out the effect added past the dry speech. It
+    is recorded rather than inferred because every consumer downstream needs
+    it and none of them should have to re-derive it: the mix has to leave room
+    for it, and the conversation check has to *exclude* it, since a reverb tail
+    over the next speaker is not two people talking at once.
+    """
+
+    preset: str = "dry"
+    intensity: float = 1.0        # 0..1; scales the preset's wet portion only
+    origin: str = "none"          # none | default | scene | line | manual
+    outcome: str = "unknown"
+    reason: str = ""
+    version: str = ""             # preset catalogue revision that produced this
+    filters: list[str] = field(default_factory=list)   # the chain actually run
+    missing: list[str] = field(default_factory=list)   # filters this build lacks
+    capability: str = "unknown"   # supported | unsupported | unknown
+    tail: float = 0.0             # seconds of effect ring-out past the dry end
+    latency: float = 0.0          # seconds of filter latency compensated for
+    makeup: float = 0.0           # dB applied so the effect did not change the level
+    offset: float = 0.0           # dB the preset *intends* the line to move by
+    dry_role: str = ""            # role of the dry artifact this was made from
+    dry_duration: float | None = None  # the dry length, before any tail
+    inputs: str = ""              # processing fingerprint of this decision
+    scene: str = ""               # which scene rule matched, when one did
+
+    def __post_init__(self) -> None:
+        if self.preset not in TREATMENT_PRESETS:
+            raise SchemaError(f"unknown treatment preset {self.preset!r}")
+        if self.origin not in TREATMENT_ORIGINS:
+            raise SchemaError(f"unknown treatment origin {self.origin!r}")
+        if self.outcome not in TREATMENT_OUTCOMES:
+            raise SchemaError(f"unknown treatment outcome {self.outcome!r}")
+        self.intensity = max(0.0, min(1.0, _finite(self.intensity, "treatment intensity")))
+        self.tail = max(0.0, _finite(self.tail, "treatment tail"))
+        self.latency = max(0.0, _finite(self.latency, "treatment latency"))
+        self.makeup = _finite(self.makeup, "treatment makeup")
+        self.offset = _finite(self.offset, "treatment offset")
+
+    @property
+    def applied(self) -> bool:
+        """True only when audio was actually processed — asked-for is not applied."""
+        return self.outcome == "applied"
+
+    def as_dict(self) -> dict:
+        return {
+            "preset": self.preset,
+            "intensity": round(self.intensity, 4),
+            "origin": self.origin,
+            "outcome": self.outcome,
+            "reason": self.reason,
+            "version": self.version,
+            "filters": list(self.filters),
+            "missing": list(self.missing),
+            "capability": self.capability,
+            "tail": round(self.tail, 4),
+            "latency": round(self.latency, 5),
+            "makeup": round(self.makeup, 3),
+            "offset": round(self.offset, 3),
+            "dry_role": self.dry_role,
+            "dry_duration": self.dry_duration,
+            "inputs": self.inputs,
+            "scene": self.scene,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Treatment:
+        data = _mapping(data, "treatment")
+        return cls(
+            preset=_text(data.get("preset")) or "dry",
+            intensity=(1.0 if data.get("intensity") is None
+                       else _finite(data.get("intensity"), "treatment intensity")),
+            origin=_text(data.get("origin")) or "none",
+            outcome=_text(data.get("outcome")) or "unknown",
+            reason=_text(data.get("reason")),
+            version=_text(data.get("version")),
+            filters=[_text(f) for f in _sequence(data.get("filters"), "treatment filters")],
+            missing=[_text(f) for f in _sequence(data.get("missing"), "treatment missing")],
+            capability=_text(data.get("capability")) or "unknown",
+            tail=_finite(data.get("tail") or 0.0, "treatment tail"),
+            latency=_finite(data.get("latency") or 0.0, "treatment latency"),
+            makeup=_finite(data.get("makeup") or 0.0, "treatment makeup"),
+            offset=_finite(data.get("offset") or 0.0, "treatment offset"),
+            dry_role=_text(data.get("dry_role")),
+            dry_duration=_opt_float(data.get("dry_duration"), "treatment dry duration"),
+            inputs=_text(data.get("inputs")),
+            scene=_text(data.get("scene")),
+        )
+
+
+@dataclass
 class Take:
     """One generation of a cue. Raw audio is never overwritten by processing."""
 
@@ -1689,6 +1812,7 @@ def cue_payload(seg) -> dict:
         "level": seg.level.as_dict(),
         "verification": seg.verification.as_dict(),
         "phrasing": seg.phrasing.as_dict(),
+        "treatment": seg.treatment.as_dict(),
         "findings": [f.as_dict() for f in seg.findings],
     }
 
@@ -1716,6 +1840,10 @@ def apply_cue_payload(seg, data: Any) -> None:
     # run fitted whole clips, and inventing phrases for it would claim evidence
     # nobody gathered.
     seg.phrasing = TimingPlan.from_dict(data.get("phrasing"))
+    # A payload older than version 4 has no treatment. Empty is honest: that
+    # run placed dry dialogue, and giving it `preset="dry", outcome="bypassed"`
+    # would claim a decision nobody made.
+    seg.treatment = Treatment.from_dict(data.get("treatment"))
     seg.findings = [Finding.from_dict(f) for f in _sequence(data.get("findings"), "findings")]
 
 
@@ -1856,6 +1984,13 @@ def validate_cues(segments, lineage: dict | None = None) -> None:
             # the other then reprocessed. Exactly one owns a run.
             raise SchemaError(
                 f"cue {seg.cue_id} has both a phrase-fitted and a whole-fitted render")
+        if seg.audio.render(TREATED) is not None and not seg.treatment.applied:
+            # Treated audio whose record says it was bypassed or unsupported is
+            # the one combination nobody could explain afterwards: the mix
+            # would place an effect the review says is not there.
+            raise SchemaError(
+                f"cue {seg.cue_id} has a treated render but its treatment says "
+                f"{seg.treatment.outcome!r}")
         validate_plan(seg.phrasing, f"cue {seg.cue_id}")
     for retired, successors in (lineage or {}).items():
         if retired in seen:

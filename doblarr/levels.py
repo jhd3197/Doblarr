@@ -177,7 +177,7 @@ def analyze(path: Path, min_separation_db: float = MIN_SEPARATION_DB) -> dict:
     }
 
 
-def _layout(path: Path) -> tuple[int, int]:
+def layout(path: Path) -> tuple[int, int]:
     """Channel count and sample rate of a PCM file, for a format-preserving render.
 
     The level pass must not change the channel layout. FFmpeg's mono-to-stereo
@@ -522,7 +522,7 @@ def process(job, options: dict | None = None, cancel=None, dry_run: bool = False
             "input": upstream.fingerprint, "gain": total, "mode": config["mode"],
             "processor": PROCESSOR})
         seg.level = decision
-        channels, rate = _layout(source)
+        channels, rate = layout(source)
         request = {"source": stamp(source), "gain": total, "processor": PROCESSOR,
                    "channels": channels, "rate": rate, "version": 1}
         dest = source.parent / "levels" / f"{source.stem}.{digest(request)[:12]}.wav"

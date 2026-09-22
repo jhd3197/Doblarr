@@ -253,6 +253,46 @@ class CoverageModel(_Section):
     extra: list[dict] = []          # events a person added by hand
 
 
+class TreatmentsModel(_Section):
+    """Scene space and device voice treatments (Plan 05).
+
+    `mode` defaults to `off`, which renders dry dialogue exactly as earlier
+    releases did. A treatment is a place or a device, never a performance: it
+    never changes the acting direction and its effect on the level is measured
+    and corrected rather than left to accumulate.
+    """
+
+    mode: Literal["off", "on"] = "off"
+    default: Literal["dry", "room", "distant", "phone", "radio"] = "dry"
+    intensity: float = 1.0          # 0..1, interpolates the preset's parameters
+    max_tail: float = 1.5           # hard bound on effect ring-out, seconds
+    scenes: list[dict] = []         # [{start, end, preset, intensity, note}]
+    lines: dict[str, dict] = {}     # per-cue {preset, intensity, bypass}
+
+
+class DeliveryModel(_Section):
+    """Checks run on the actual exported track (Plan 05).
+
+    `measure` reports everything and blocks nothing. `enforce` lets a
+    structural failure withhold the saved version and the library refresh.
+    A loudness or true-peak target left unset yields a measurement, never a
+    fabricated pass against an unspecified standard.
+    """
+
+    mode: Literal["off", "measure", "enforce"] = "measure"
+    profile: str = "local"
+    sample_rate: int = 0            # 0 accepts whatever the encoder produced
+    channels: int = 0               # 0 accepts any layout
+    duration_tolerance: float = 1.0
+    start_tolerance: float = 0.10   # encoder-delay allowance on stream start
+    target_lufs: float | None = None
+    lufs_tolerance: float = 2.0
+    true_peak_db: float | None = None
+    placement_samples: int = 3      # head/middle/tail cue windows to decode
+    silence_db: float = -50.0
+    check_original_streams: bool = True
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -272,6 +312,8 @@ class ConfigModel(_Section):
     levels: LevelsModel = LevelsModel()
     timing: TimingModel = TimingModel()
     coverage: CoverageModel = CoverageModel()
+    treatments: TreatmentsModel = TreatmentsModel()
+    delivery: DeliveryModel = DeliveryModel()
 
 
 def validate_config(data: dict) -> None:

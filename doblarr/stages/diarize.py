@@ -120,6 +120,14 @@ def _assign_speakers(job: DubJob, diarization) -> None:
 @stage("diarize")
 def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan | None:
     if not enabled:
+        if job.speakers:
+            # Turning diarization off means "do not run the model", not "throw
+            # away the cast". A restored script, an imported run or a saved
+            # review already knows who speaks each line, and flattening that to
+            # one voice would silently recast the episode on a resume.
+            log.info("diarize disabled -> keeping the %d speaker(s) already assigned",
+                     len(job.speakers))
+            return None
         # Single-speaker fallback: everyone is SPEAKER_00.
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
         for seg in job.segments:

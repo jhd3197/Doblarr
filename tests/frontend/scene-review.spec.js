@@ -22,6 +22,27 @@ const REVIEW = {
   verification_policy: 'all',
   previews: { source: true, dub: true, note: '' },
   levels: { mode: 'follow_source', target_db: -20, strength: 0.7 },
+  treatments: {
+    mode: 'on', default: 'room', intensity: 0.8,
+    scenes: [{ start: 190, end: 200, preset: 'room', intensity: 0.8, id: '190-200:room' }],
+    catalogue: [
+      { preset: 'dry', capability: 'supported', missing: [], tail: 0,
+        summary: 'No acoustic treatment.' },
+      { preset: 'room', capability: 'supported', missing: [], tail: 0.072,
+        summary: 'A few early reflections.' },
+      { preset: 'distant', capability: 'supported', missing: [], tail: 0.136,
+        summary: 'Duller, wetter and quieter.' },
+      { preset: 'phone', capability: 'unsupported', missing: ['acompressor'], tail: 0,
+        summary: 'A handset.' },
+    ],
+  },
+  delivery: {
+    state: 'warned', publishable: true, output_name: 'episode.mkv', available: true,
+    profile: { id: 'local:abc', meter: 'ffmpeg-ebur128/bs1770-4', target_lufs: null },
+    loudness: { lufs: -18.2, true_peak_db: -4.9, meter: 'ffmpeg-ebur128/bs1770-4' },
+    findings: [{ code: 'start_offset', severity: 'warning',
+      detail: 'the dub stream starts at +0.300s', evidence: {} }],
+  },
   segments: [
     {
       index: 0, start: 192.1, end: 194.7, speaker: 'Ginko', text_src: 'Someone is coming.',
@@ -66,7 +87,7 @@ const SCENE = {
     + 'not a detected scene cut',
   revision: 'rev-7',
   available: { source: true, dub: true, line: true, take: true, note: '',
-    vocals: true, bed: true, event: true,
+    vocals: true, bed: true, event: true, dry: true, treated: true,
     bed_note: 'estimated background (separated)' },
   phrasing: {
     mode: 'phrase', state: 'applied', planner: 'phrase-timing/1',
@@ -97,6 +118,14 @@ const SCENE = {
       note: 'a subtitle tag is not proof the sound is missing, and not proof it is there',
     } }] }],
   timing_edit: {},
+  treatment: {
+    preset: 'room', intensity: 0.8, origin: 'scene', outcome: 'applied',
+    capability: 'supported', missing: [], tail: 0.072, makeup: -0.9,
+    scene: '190-200:room', dry_role: 'edged',
+    reason: 'scene rule 190-200:room; -0.9 dB of makeup kept the level',
+  },
+  treatment_edit: {},
+  treatment_findings: [],
   takes: [
     { take_id: 't1', origin: 'auto', state: 'generated', attempt: 0, direction: '',
       checks: { state: 'usable', duration: 2.4, rms_db: -18.2 }, selected: true,
@@ -108,7 +137,7 @@ const SCENE = {
 };
 
 async function openReview(page,
-  { onDecision, onQueue, previews, versions, phrasing } = {}) {
+  { onDecision, onQueue, previews, versions, phrasing, scene, review } = {}) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/api/library', route => route.fulfill({ json: { items: [], counts: {} } }));
@@ -127,12 +156,13 @@ async function openReview(page,
         note: 'Lines not listed here reuse their existing audio.',
       } } });
     }
-    return route.fulfill({ json: REVIEW });
+    return route.fulfill({ json: review ? { ...REVIEW, ...review } : REVIEW });
   });
   const scenes = [];
   await page.route('**/api/jobs/review-1/scene/**', route => {
     scenes.push(new URL(route.request().url()).searchParams.get('context'));
-    return route.fulfill({ json: phrasing ? { ...SCENE, phrasing } : SCENE });
+    const body = { ...SCENE, ...(phrasing ? { phrasing } : {}), ...(scene || {}) };
+    return route.fulfill({ json: body });
   });
   await page.route('**/api/jobs/review-1/versions', route => route.fulfill({ json: {
     current: 'v-new', versions: versions ?? [
@@ -463,3 +493,139 @@ test('whole-clip fitting says so instead of showing an empty phrase list',
     await expect(page.locator('.scene-phrases')).toHaveCount(0);
     expect(errors).toEqual([]);
   });
+
+
+// --- scene space and device treatments (Plan 05) ---------------------------
+
+test('the space panel says which preset played, where the choice came from, and '
+  + 'what it cost in level', async ({ page }) => {
+  await openReview(page);
+  const panel = page.locator('.scene-space');
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText('Playing through room');
+  await expect(panel).toContainText('chosen by a scene rule');
+  await expect(panel).toContainText('ringing out for 0.07s past the words');
+  await expect(panel).toContainText('corrected by -0.9 dB');
+  await expect(panel.getByLabel('Preset')).toHaveValue('room');
+});
+
+test('a preset this build cannot render is offered as unavailable, not silently refused',
+  async ({ page }) => {
+    await openReview(page);
+    const option = page.locator('.scene-space option[value="phone"]');
+    await expect(option).toHaveAttribute('disabled', '');
+    await expect(option).toContainText('unavailable (needs acompressor)');
+    // and the ones this build can do are selectable
+    await expect(page.locator('.scene-space option[value="distant"]'))
+      .not.toHaveAttribute('disabled', '');
+  });
+
+test('an unsupported treatment is reported as asked-for rather than applied',
+  async ({ page }) => {
+    await openReview(page, { scene: { treatment: {
+      preset: 'phone', intensity: 1, origin: 'scene', outcome: 'unsupported',
+      capability: 'unsupported', missing: ['acompressor'], tail: 0, makeup: 0,
+      reason: 'this FFmpeg build has no acompressor filter' },
+      available: { ...SCENE.available, treated: false } } });
+    const panel = page.locator('.scene-space');
+    await expect(panel).toContainText('phone was asked for');
+    await expect(panel).toContainText('cannot render it');
+    await expect(panel).toContainText('the line is dry');
+    // and there is no "with the space" audio pretending otherwise
+    await expect(page.locator('.scene-tab[data-kind="treated"]')).toBeDisabled();
+  });
+
+test('the dry line and the treated line are two separate things to play',
+  async ({ page }) => {
+    const { served } = await openReview(page);
+    await page.locator('.scene-tab[data-kind="dry"]').click();
+    await expect(page.locator('.scene-tab[data-kind="dry"]'))
+      .toHaveAttribute('aria-selected', 'true');
+    await page.locator('.scene-tab[data-kind="treated"]').click();
+    await expect(page.locator('.scene-tab[data-kind="treated"]'))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(served.some(p => p.includes('/preview/dry/0'))).toBe(true);
+    expect(served.some(p => p.includes('/preview/treated/0'))).toBe(true);
+  });
+
+test('changing the space is queued as a re-render, never as a new performance',
+  async ({ page }) => {
+    let sent = null;
+    await openReview(page, { onQueue: body => { sent = body; } });
+    await page.locator('#sceneTreatment').selectOption('distant');
+    await page.locator('#sceneIntensity').fill('0.4');
+    await page.getByRole('button', { name: /^Render/ }).click();
+    await expect.poll(() => sent).not.toBeNull();
+    expect(sent.edits[0].treatment).toEqual({ preset: 'distant', intensity: 0.4 });
+    expect(sent.edits[0].regenerate).toBeFalsy();
+  });
+
+test('a line can be left dry whatever the scene rule says', async ({ page }) => {
+  let sent = null;
+  await openReview(page, { onQueue: body => { sent = body; } });
+  await page.locator('#sceneNoSpace').check();
+  await page.getByRole('button', { name: /^Render/ }).click();
+  await expect.poll(() => sent).not.toBeNull();
+  expect(sent.edits[0].treatment).toEqual({ bypass: true });
+});
+
+test('an unchanged space is not submitted as an edit', async ({ page }) => {
+  let sent = null;
+  await openReview(page, { onQueue: body => { sent = body; } });
+  // touch the timing control instead, so there is something to queue
+  await page.locator('#sceneBypass').check();
+  await page.getByRole('button', { name: /^Render/ }).click();
+  await expect.poll(() => sent).not.toBeNull();
+  expect(sent.edits[0].treatment).toBeUndefined();
+});
+
+test('with treatments off the panel says so instead of offering a dead control',
+  async ({ page }) => {
+    await openReview(page, {
+      review: { treatments: { mode: 'off', default: 'dry', catalogue: [] } },
+      scene: { treatment: { preset: 'dry', origin: 'none', outcome: 'bypassed',
+        capability: 'supported', tail: 0, makeup: 0,
+        reason: 'acoustic treatment is off for this run' } },
+    });
+    const panel = page.locator('.scene-space');
+    await expect(panel).toContainText('Acoustic treatment is off for this run');
+    await expect(page.locator('#sceneTreatment')).toHaveCount(0);
+  });
+
+test('a treatment finding is offered for listening rather than corrected away',
+  async ({ page }) => {
+    await openReview(page, { scene: { treatment_findings: [
+      { code: 'treatment_transition', severity: 'info',
+        note: 'the space changes between these two lines; the earlier tail is kept' }] } });
+    await expect(page.locator('.scene-space')).toContainText('treatment transition');
+    await expect(page.locator('.scene-space')).toContainText('the earlier tail is kept');
+  });
+
+// --- the exported file (Plan 05) -------------------------------------------
+
+test('the export measurement is shown beside the review counts and never as approval',
+  async ({ page }) => {
+    await openReview(page);
+    const summary = page.locator('#reviewSummary');
+    await expect(summary).toContainText('export checks passed with warnings');
+    await expect(summary).toContainText('-18.2 LUFS');
+    await expect(summary).toContainText('measured, no target set');
+    await expect(summary).toContainText('Technical checks are not a listening pass');
+  });
+
+test('a failed export says so plainly in the summary', async ({ page }) => {
+  await openReview(page, { review: { delivery: {
+    state: 'failed', publishable: false, output_name: 'episode.mkv',
+    profile: { target_lufs: null }, loudness: {},
+    findings: [{ code: 'duration_mismatch', severity: 'failure', detail: '', evidence: {} }],
+  } } });
+  await expect(page.locator('#reviewSummary')).toContainText('export checks FAILED');
+});
+
+test('a run with no export report simply says nothing about one', async ({ page }) => {
+  await openReview(page, { review: { delivery: {} } });
+  const summary = await page.locator('#reviewSummary').textContent();
+  expect(summary).not.toContain('export checks');
+  expect(summary).toContain('flagged for review');
+});
+

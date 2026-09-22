@@ -275,6 +275,29 @@ export function createReview({ onQueued }) {
     return `${parts.join(', ')}. ${plan.note || ''}`.trim();
   }
 
+  // What the *exported file* was measured to be, kept in its own sentence and
+  // deliberately not merged with the review counts. A passing export says the
+  // delivered container is structurally what was asked for; it says nothing
+  // about whether the dub sounds right, and a summary that blurred the two
+  // would be the most misleading line on the screen.
+  function deliveryNote(report) {
+    if (!report || !report.state) return '';
+    const state = {
+      passed: 'export checks passed',
+      warned: 'export checks passed with warnings',
+      failed: 'export checks FAILED',
+      unavailable: 'no exported file to check',
+      skipped: 'export checks were off',
+    }[report.state] || report.state;
+    const loudness = report.loudness?.lufs != null
+      ? ` · ${report.loudness.lufs.toFixed(1)} LUFS`
+        + (report.loudness.true_peak_db != null
+          ? `, true peak ${report.loudness.true_peak_db.toFixed(1)} dBFS` : '')
+        + (report.profile?.target_lufs == null ? ' (measured, no target set)' : '')
+      : '';
+    return ` · ${state}${loudness}. Technical checks are not a listening pass.`;
+  }
+
   async function open(id) {
     const version = ++epoch;
     data = null;
@@ -289,7 +312,8 @@ export function createReview({ onQueued }) {
       if (version !== epoch) return;
       data = result;
       $('reviewTitle').textContent = data.title;
-      $('reviewSummary').textContent = `${data.segments.length} lines · ${data.flagged} flagged for review`;
+      $('reviewSummary').textContent = `${data.segments.length} lines · `
+        + `${data.flagged} flagged for review${deliveryNote(data.delivery)}`;
       $('reviewFlagged').checked = data.flagged > 0;
       const chooser = $('reviewFilter');
       if (chooser) {

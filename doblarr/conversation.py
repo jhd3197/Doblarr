@@ -25,6 +25,7 @@ import logging
 import wave
 from pathlib import Path
 
+from . import treatments
 from .cues import TARGET, Span
 from .stages import boundaries
 from .stages.quality import apply_findings
@@ -44,7 +45,10 @@ def _rendered_span(seg, threshold_db: float, cancel=None) -> tuple[Span | None, 
     requested stretch is not a delivered one, and the neighbouring line is
     overlapped by what came out, not by what was planned.
     """
-    current = seg.audio.current()
+    # The *dry* render when a treatment added a tail: the ring-out past the
+    # words is not the line still talking, and measuring the treated file
+    # would turn every reverb into an introduced collision.
+    current = treatments.spoken_render(seg)
     if current is None or not current.exists():
         return None, "no rendered audio"
     try:

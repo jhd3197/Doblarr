@@ -117,6 +117,10 @@ def save_script(job, work_dir: Path) -> Path:
         # same reason the manual gains are: a resume must honour a decision a
         # person made about this run without it becoming a config edit.
         "timing_edits": job.timing_edits,
+        # A reviewer's per-line acoustic treatment, frozen with the script for
+        # the same reason: a resume must honour a decision a person made about
+        # this run without it becoming a config edit.
+        "treatment_edits": job.treatment_edits,
         "source_track": str(job.source_track) if job.source_track else None,
         "transcription_options": job.transcription_options,
         "translation_options": job.translation_options,
@@ -223,6 +227,9 @@ def _restore_cues(job, payload: dict) -> None:
     job.timing_edits = {str(k): dict(v)
                         for k, v in (payload.get("timing_edits") or {}).items()
                         if isinstance(v, dict)}
+    job.treatment_edits = {str(k): dict(v)
+                           for k, v in (payload.get("treatment_edits") or {}).items()
+                           if isinstance(v, dict)}
     track = payload.get("source_track")
     if track and job.source_track is None:
         job.source_track = Path(track)

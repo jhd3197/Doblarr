@@ -29,6 +29,7 @@ from .cues import (
     PHRASED,
     RAW,
     SOURCE,
+    TREATED,
     Artifact,
     Placement,
     Selection,
@@ -116,7 +117,19 @@ PHRASE_SCENE: tuple[Cue, ...] = (
     Cue(9.0, 10.5, "[laughter]", "SPEAKER_00", level=0.20, spoken=1.0),
 )
 
-SCENES = {"default": SCENE, "boundaries": BOUNDARY_SCENE, "phrases": PHRASE_SCENE}
+# A scene for acoustic treatments and export checks (Plan 05). The cues are
+# spread out, so an effect tail rings into a real gap instead of straight into
+# the next line, and two of them sit close enough together to exercise the
+# transition finding when a scene rule changes the space between them.
+TREATMENT_SCENE: tuple[Cue, ...] = (
+    Cue(1.0, 3.0, "Primera linea", "SPEAKER_00", level=0.30, spoken=1.5),
+    Cue(4.0, 5.6, "Segunda linea", "SPEAKER_01", level=0.20, spoken=1.3),
+    Cue(6.0, 7.6, "Tercera linea", "SPEAKER_00", level=0.35, spoken=1.3),
+    Cue(9.0, 10.5, "[laughter]", "SPEAKER_00", level=0.20, spoken=1.0),
+)
+
+SCENES = {"default": SCENE, "boundaries": BOUNDARY_SCENE, "phrases": PHRASE_SCENE,
+          "treatments": TREATMENT_SCENE}
 
 
 def example_script(root: Path) -> DubJob:
@@ -335,6 +348,17 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
             "protected_pauses": sum(1 for p in seg.phrasing.pauses if p.protected),
             "anchors": sorted((a.kind, a.origin) for a in seg.phrasing.anchors),
             "timing_conflicts": sorted(c["code"] for c in seg.phrasing.conflicts),
+            # Plan 05 records. The decision and its capability, never the
+            # measured makeup in dB: two FFmpeg builds resolve the same echo
+            # to very slightly different energy, and a comparison carrying
+            # that number would report a build difference as a behaviour
+            # change. The *tail*, by contrast, is arithmetic on the preset and
+            # is identical everywhere, so it is compared.
+            "treatment": seg.treatment.preset,
+            "treatment_origin": seg.treatment.origin,
+            "treatment_outcome": seg.treatment.outcome,
+            "treatment_capability": seg.treatment.capability,
+            "treatment_tail": seg.treatment.tail,
         })
     # `current` is read in the loop above; recompute the role roll-up here.
     roles: set[str] = set()
@@ -364,10 +388,38 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
         "phrase_infeasible": job.metrics.get("phrase_infeasible", 0),
         "coverage": job.metrics.get("coverage", {}),
         "conversation": job.metrics.get("conversation", {}),
+        "treatments": job.metrics.get("treatments", {}),
+        # What the exported file was measured to be. The findings and the
+        # state travel; the absolute loudness does not, because it describes
+        # this fixture's tone and not the pipeline's behaviour.
+        "delivery": _delivery_observation(job),
         "verification_checked": sum(1 for line in lines if line["verification_checked"]),
         "dialogue_baseline": {k: v for k, v in (job.dialogue_baseline or {}).items()
                               if k in ("scope", "samples", "method", "units")},
         "lines": lines,
+    }
+
+
+def _delivery_observation(job: DubJob) -> dict:
+    """The export report, reduced to what is comparable between two machines."""
+    report = job.delivery or {}
+    if not report:
+        return {}
+    loudness = report.get("loudness") or {}
+    return {
+        "state": report.get("state"),
+        "publishable": report.get("publishable"),
+        "identification": report.get("identification"),
+        "findings": sorted((f["code"], f["severity"])
+                           for f in report.get("findings") or []),
+        "placement": sorted((row.get("cue") or "", row.get("state") or "")
+                            for row in report.get("placement") or []),
+        "meter": loudness.get("meter"),
+        "measured": loudness.get("state"),
+        "stream": {k: (report.get("stream") or {}).get(k)
+                   for k in ("audio_index", "codec", "channels", "sample_rate",
+                             "language", "title")},
+        "profile": (report.get("profile") or {}).get("id"),
     }
 
 
@@ -455,4 +507,4 @@ def roles_present(job: DubJob) -> set[str]:
         if seg.audio.raw():
             found.add(RAW)
         found.update(a.role for a in seg.audio.renders)
-    return found & {RAW, NORMALIZED, PHRASED, FITTED, LEVELED}
+    return found & {RAW, NORMALIZED, PHRASED, FITTED, LEVELED, TREATED}

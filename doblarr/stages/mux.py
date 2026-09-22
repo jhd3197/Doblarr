@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 from ..artifacts import matches, record, stamp
-from ..ffmpeg import run_ffmpeg, run_ffprobe
+from ..ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
 from ..languages import catalog, display_name, iso3_for
 from ..models import DubJob
 from .common import Plan, cached, dry, stage
@@ -79,25 +79,18 @@ def run(
 
     if not dry_run:
         hit = cached(out, job.input_file, force)
+        original = _original_streams(job.input_file, cancel)
+        audio_index = original.get("audio", 0)
+        # Which stream the dub *is*, recorded before it is written. Export
+        # validation identifies the added track by this rather than measuring
+        # whichever audio stream happens to come first, and the original
+        # stream counts are what proves nothing was dropped to make room.
+        job.metrics["mux"] = {"audio_index": audio_index, "language": lang3,
+                              "title": title, "codec": audio_codec,
+                              "bitrate": bitrate if audio_codec == "aac" else None,
+                              "original_streams": original}
         if hit and matches([out], request, force):
             return hit
-        probe = json.loads(
-            run_ffprobe(
-                [
-                    "-v",
-                    "error",
-                    "-select_streams",
-                    "a",
-                    "-show_entries",
-                    "stream=index",
-                    "-of",
-                    "json",
-                    str(job.input_file),
-                ],
-                cancel=cancel,
-            )
-        )
-        audio_index = len(probe.get("streams", []))
     else:
         audio_index = 1
     temp = out.with_name(out.stem + ".partial" + out.suffix)
@@ -142,3 +135,23 @@ def run(
     temp.replace(out)
     record([out], request)
     return None
+
+
+def _original_streams(path: Path, cancel=None) -> dict:
+    """How many streams of each kind the source already has.
+
+    Counted before muxing so the export check can assert the dub was *added*
+    rather than swapped in: a container that comes out with one fewer subtitle
+    track than it went in with has lost something nobody asked it to drop.
+    """
+    counts: dict = {}
+    try:
+        probe = json.loads(run_ffprobe(
+            ["-v", "error", "-show_entries", "stream=index,codec_type",
+             "-of", "json", str(path)], cancel=cancel))
+    except (FFmpegError, ValueError):
+        return counts
+    for stream in probe.get("streams", []):
+        kind = stream.get("codec_type") or "unknown"
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts

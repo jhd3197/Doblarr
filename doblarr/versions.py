@@ -87,6 +87,10 @@ def preserve_version(job, config, cast=None) -> dict:
         "timing": dict(config.get("timing", {})),
         "coverage": {k: v for k, v in dict(config.get("coverage", {})).items()
                      if k != "assets"},
+        # Which acoustic space each line was played through is part of what
+        # makes this version this version: two renders differing only by a
+        # preset are different dubs and must not share an identity.
+        "treatments": dict(config.get("treatments", {})),
     }
     voices = [{"index": s.index, "speaker": s.speaker,
                "profile": s.voice or (job.speakers[s.speaker].voicebox_profile_id
@@ -128,6 +132,12 @@ def preserve_version(job, config, cast=None) -> dict:
                 # what makes it this version.
                 "dialogue_baseline": job.dialogue_baseline,
                 "manual_gains": job.manual_gains,
+                "treatment_edits": job.treatment_edits,
+                # What the exported track was measured to be. Outside the
+                # identity digest on purpose: it is evidence *about* this
+                # version, produced after the bytes that define it, and
+                # folding it in would fork a version on a re-check.
+                "delivery": job.delivery,
                 # Knowledge provenance for this version; outside the identity digest
                 # so an unrelated rule edit never forks an identical render.
                 "knowledge": job.knowledge_snapshot,

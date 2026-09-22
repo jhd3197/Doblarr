@@ -38,6 +38,7 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
   // drop one a reviewer already made.
   const pendingTiming = new Map();
   const pendingEvents = new Map();
+  const pendingSpace = new Map();
 
   player.on((event, detail) => {
     const status = container.querySelector('#sceneStatus');
@@ -112,6 +113,7 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
       ${takes(cue)}
       ${direction(row, cue)}
       ${timing(row, cue)}
+      ${space(row)}
       ${coverage()}
       ${findings(row, cue)}`;
     wire(row);
@@ -324,6 +326,86 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
       timing_overlap_intended: 'Original overlap kept',
       timing_overlap_accepted: 'Accepted as deliberate',
     }[code] || code.replaceAll('_', ' ');
+  }
+
+  // --- scene space and device treatments ----------------------------------
+  //
+  // A reviewer's unit of work here is "where does this line sound like it is",
+  // not a filter graph. The panel shows the preset that was chosen and where
+  // the choice came from, offers the small supported set, and offers a bypass
+  // for the line where none of it is wanted. A preset this FFmpeg build cannot
+  // render is shown as unavailable rather than offered and then refused.
+
+  function space(row) {
+    const treatment = scene?.treatment;
+    if (!treatment) return '';
+    const policy = getData()?.treatments || {};
+    if (policy.mode !== 'on' && treatment.outcome !== 'applied') {
+      return `<fieldset class="scene-space"><legend>Space</legend>
+        <p class="hint">Acoustic treatment is off for this run, so every line is
+          placed dry. Turn it on in settings to put a room, a distance or a
+          device around a line.</p></fieldset>`;
+    }
+    const catalogue = policy.catalogue || [];
+    const edit = pendingSpace.get(row.index) || scene?.treatment_edit || {};
+    const chosen = edit.bypass ? 'dry' : (edit.preset || treatment.preset || 'dry');
+    const intensity = edit.intensity ?? treatment.intensity ?? policy.intensity ?? 1;
+    return `<fieldset class="scene-space"><legend>Space</legend>
+      <p class="hint">${esc(spaceNote(treatment))}</p>
+      <div class="review-options">
+        <label class="review-field">Preset<select id="sceneTreatment" class="input">
+          ${(catalogue.length ? catalogue : [{ preset: chosen, capability: 'unknown' }])
+            .map(p => `<option value="${esc(p.preset)}"
+              ${p.preset === chosen ? 'selected' : ''}
+              ${p.capability === 'unsupported' ? 'disabled' : ''}>${esc(p.preset)}${
+                p.capability === 'unsupported'
+                  ? ` — unavailable (needs ${esc((p.missing || []).join(', '))})` : ''
+              }</option>`).join('')}
+        </select></label>
+        <label class="review-field">Intensity
+          <input id="sceneIntensity" class="input m" type="number" step="0.1"
+            min="0" max="1" value="${Number(intensity).toFixed(1)}"></label>
+      </div>
+      <label><input type="checkbox" id="sceneNoSpace" ${edit.bypass ? 'checked' : ''}>
+        Leave this line dry whatever the scene says</label>
+      ${(scene?.treatment_findings || []).length
+        ? `<ul class="scene-conflicts">${scene.treatment_findings.map(f =>
+            `<li>${esc(f.code.replaceAll('_', ' '))}: ${esc(f.note || '')}</li>`).join('')}</ul>`
+        : ''}
+      ${catalogue.length ? `<details><summary>What each preset does</summary>
+        <ul class="hint">${catalogue.map(p =>
+          `<li><strong>${esc(p.preset)}</strong> — ${esc(p.summary || '')}</li>`).join('')}
+        </ul></details>` : ''}
+      <p class="hint">Changing the space re-renders this line from the take it already
+        has. No new speech is generated, and the dry line is kept so the choice is
+        reversible.</p></fieldset>`;
+  }
+
+  function spaceNote(treatment) {
+    const origin = { default: 'the run default', scene: 'a scene rule',
+      line: 'a choice made for this line', manual: 'a manual choice',
+      none: 'nothing' }[treatment.origin] || treatment.origin;
+    if (treatment.outcome === 'applied') {
+      const tail = treatment.tail
+        ? `, ringing out for ${treatment.tail.toFixed(2)}s past the words` : '';
+      const makeup = treatment.makeup
+        ? ` The level was corrected by ${treatment.makeup > 0 ? '+' : ''}`
+          + `${treatment.makeup.toFixed(1)} dB so the effect did not change it.` : '';
+      return `Playing through ${treatment.preset}, chosen by ${origin}${tail}.${makeup}`;
+    }
+    if (treatment.outcome === 'unsupported') {
+      return `${treatment.preset} was asked for by ${origin} and this FFmpeg build `
+        + `cannot render it (missing ${(treatment.missing || []).join(', ')}), so the `
+        + `line is dry.`;
+    }
+    if (treatment.outcome === 'bypassed') {
+      return treatment.reason || 'No treatment was selected; the line is dry.';
+    }
+    if (treatment.outcome === 'unavailable' || treatment.outcome === 'failed') {
+      return `Asked for ${treatment.preset} and it could not be rendered: `
+        + `${treatment.reason || 'no reason recorded'}.`;
+    }
+    return 'No acoustic treatment has been recorded for this line.';
   }
 
   // --- reaction and background coverage -----------------------------------
@@ -565,6 +647,37 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
     return patch;
   }
 
+  // What the space controls are asking for, or nothing when this line's space
+  // is already what the run decided. A bypass is kept as a bypass rather than
+  // rewritten as "dry": it says *this line* is to be left alone, and it has to
+  // survive a change to the scene rule above it.
+  function collectSpace(row) {
+    const select = container.querySelector('#sceneTreatment');
+    if (!select || !scene?.treatment) return {};
+    const before = scene?.treatment_edit || {};
+    const bypass = container.querySelector('#sceneNoSpace')?.checked || false;
+    const preset = select.value;
+    const intensity = Number(container.querySelector('#sceneIntensity')?.value);
+    if (bypass) {
+      if (before.bypass) { pendingSpace.delete(row.index); return {}; }
+      pendingSpace.set(row.index, { bypass: true });
+      return { treatment: { bypass: true } };
+    }
+    const wasPreset = before.bypass ? 'dry' : (before.preset || scene.treatment.preset);
+    const wasIntensity = before.intensity ?? scene.treatment.intensity;
+    const movedPreset = preset !== wasPreset;
+    const movedIntensity = Number.isFinite(intensity)
+      && Math.abs(intensity - Number(wasIntensity ?? 1)) > 1e-6;
+    if (!movedPreset && !movedIntensity && !before.bypass) {
+      pendingSpace.delete(row.index);
+      return {};
+    }
+    const patch = { preset };
+    if (Number.isFinite(intensity)) patch.intensity = intensity;
+    pendingSpace.set(row.index, patch);
+    return { treatment: patch };
+  }
+
   // Coverage decisions belong to the run, not to the line on screen: an event
   // very often has no surviving cue at all. They are collected into their own
   // map and submitted alongside the line edits.
@@ -632,7 +745,8 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
     if (gain !== '') patch.gain_db = Number(gain);
     if (candidates) patch.candidates = candidates;
     if (chosen && chosen.value !== scene?.selection?.take_id) patch.take = chosen.value;
-    return { ...patch, ...collectTiming(getRow() || { index: -1 }) };
+    const line = getRow() || { index: -1 };
+    return { ...patch, ...collectTiming(line), ...collectSpace(line) };
   }
 
   return {
@@ -642,7 +756,7 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
     stop() { player.stop(); },
     reset() {
       epoch += 1; scene = null; versions = []; context = 2;
-      pendingTiming.clear(); pendingEvents.clear();
+      pendingTiming.clear(); pendingEvents.clear(); pendingSpace.clear();
       player.stop(); container.innerHTML = '';
     },
   };

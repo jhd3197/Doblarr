@@ -88,6 +88,29 @@ SETTING_KEYS = (
     "coverage.max_seconds",
     "coverage.leakage_check",
     "coverage.generate",
+    # Treatment policy travels — the preset catalogue and how hard to apply it
+    # are choices about a show. `treatments.scenes` and `treatments.lines` do
+    # not: a scene range in seconds and a per-cue override are facts about one
+    # episode's timeline, and carrying them to the next one would put a phone
+    # call in the middle of an unrelated conversation.
+    "treatments.mode",
+    "treatments.default",
+    "treatments.intensity",
+    "treatments.max_tail",
+    # Delivery expectations travel; they are a statement about what this
+    # library wants out of an export, not about one file.
+    "delivery.mode",
+    "delivery.profile",
+    "delivery.sample_rate",
+    "delivery.channels",
+    "delivery.duration_tolerance",
+    "delivery.start_tolerance",
+    "delivery.target_lufs",
+    "delivery.lufs_tolerance",
+    "delivery.true_peak_db",
+    "delivery.placement_samples",
+    "delivery.silence_db",
+    "delivery.check_original_streams",
 )
 ENGINE = Literal[
     "chatterbox", "chatterbox_turbo", "qwen", "qwen_custom_voice", "kokoro", "luxtts", "tada"

@@ -25,6 +25,12 @@ export const SOURCES = [
   { kind: 'vocals', label: 'Original voices', window: 'target' },
   { kind: 'bed', label: 'Background bed', window: 'target' },
   { kind: 'line', label: 'Processed line' },
+  // The two halves of an acoustic treatment. `dry` is the finished line before
+  // the space was put around it, `treated` the same line with it — so the
+  // effect can be heard on its own rather than only inside the mix. When no
+  // treatment ran, `dry` is the final line and the preview label says so.
+  { kind: 'dry', label: 'Dry line' },
+  { kind: 'treated', label: 'With the space' },
   { kind: 'take', label: 'Dry take' },
   { kind: 'event', label: 'Reaction' },
   { kind: 'reference', label: 'Voice reference' },

@@ -11,13 +11,17 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .. import delivery as export_delivery
 from .. import preview as scene_preview
+from .. import treatments
 from ..artifacts import read_json
 from ..config import Config
 from ..cues import (
     DISPOSITIONS,
     EVENT_DECISIONS,
     SPEECH_MODES,
+    TREATED,
+    TREATMENT_PRESETS,
     NonverbalEvent,
     adopt_legacy,
     apply_cue_payload,
@@ -71,6 +75,33 @@ class PauseIn(BaseModel):
     kind: Literal["padding", "pause", "hesitation", "breath", "response"] = "pause"
 
 
+class TreatmentIn(BaseModel):
+    """The acoustic space or device a reviewer chose for one line.
+
+    `bypass` is a first-class answer and is not the same as `preset="dry"`
+    from a scene rule's point of view: it says *this line specifically* is to
+    be left alone, and it survives a change to the scene rule above it.
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    preset: str | None = Field(default=None, max_length=32)
+    intensity: float | None = Field(default=None, ge=0, le=1)
+    bypass: bool = False
+
+    @field_validator("preset")
+    @classmethod
+    def known(cls, value):
+        if value is not None and value not in TREATMENT_PRESETS:
+            raise ValueError(f"preset must be one of {', '.join(TREATMENT_PRESETS)}")
+        return value
+
+    @model_validator(mode="after")
+    def says_something(self):
+        if self.preset is None and self.intensity is None and not self.bypass:
+            raise ValueError("a treatment edit must name a preset, an intensity or a bypass")
+        return self
+
+
 class LineEditIn(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     index: int = Field(ge=0)
@@ -97,6 +128,10 @@ class LineEditIn(BaseModel):
     pauses: list[PauseIn] | None = Field(default=None, max_length=32)
     bypass_timing: bool | None = None
     overlap: bool | None = None
+    # Plan 05: which space or device this line is played through. Like the
+    # timing edits it generates no speech — it re-renders the dry line that
+    # already exists.
+    treatment: TreatmentIn | None = None
 
     @field_validator("mode")
     @classmethod
@@ -196,7 +231,7 @@ class ReviewEditsIn(BaseModel):
 # exists.
 _REGENERATES = ("text", "voice", "delivery", "mode", "traits", "direction")
 _REPROCESSES = ("start", "end", "gain_db", "take", "anchors", "pauses",
-                "bypass_timing")
+                "bypass_timing", "treatment")
 
 
 def _versions_root(output: Path) -> Path:
@@ -460,6 +495,17 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             rows.append(row)
         return rows
 
+    def _redact_delivery(report: dict) -> dict:
+        """The export report for the browser: findings yes, local paths no."""
+        if not report:
+            return {}
+        row = copy.deepcopy(report)
+        output = row.pop("output", None)
+        row["output_name"] = Path(output).name if output else ""
+        row["available"] = bool(output and _allowed_path(output)
+                                and Path(output).is_file())
+        return row
+
     def _media(data: dict) -> dict:
         """Which scene previews this snapshot can actually produce, and why not.
 
@@ -534,6 +580,17 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "nonverbal": _redact_events(data),
             "coverage_summary": (data.get("metrics") or {}).get("coverage") or {},
             "conversation": (data.get("metrics") or {}).get("conversation") or {},
+            # Plan 05. Which acoustic space this run used and what it could
+            # render here, plus what the exported file was measured to be.
+            "treatments": frozen.get("treatments") or {
+                **{k: effective["treatments"].get(k)
+                   for k in ("mode", "default", "intensity")},
+                "scenes": treatments.settings(dict(effective["treatments"]))["scenes"],
+                "catalogue": treatments.catalogue(),
+            },
+            "treatment_summary": (data.get("metrics") or {}).get("treatments") or {},
+            "treatment_edits": dict(data.get("treatment_edits") or {}),
+            "delivery": _redact_delivery(data.get("delivery") or {}),
         }
         return merge_decisions(payload, load_decisions(config.work_dir, job_id))
 
@@ -573,6 +630,9 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         rebuilt.timing_edits = {str(k): dict(v) for k, v
                                 in (data.get("timing_edits") or {}).items()
                                 if isinstance(v, dict)}
+        rebuilt.treatment_edits = {str(k): dict(v) for k, v
+                                   in (data.get("treatment_edits") or {}).items()
+                                   if isinstance(v, dict)}
         work = _allowed_path(media["work"]) if media.get("work") else None
         rebuilt.artifacts_dir = work or config.work_dir / "previews"
         segments = []
@@ -659,6 +719,13 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 "line": bool(seg.audio.current() and seg.audio.current().exists()),
                 "take": bool(seg.audio.selected() and seg.audio.selected().raw
                              and seg.audio.selected().raw.exists()),
+                # The two halves of a treatment decision. `dry` is available
+                # whenever a line is, because the finished line before any
+                # effect always exists; `treated` only when one was applied.
+                "dry": bool(seg.audio.upstream_of(TREATED)
+                            and seg.audio.upstream_of(TREATED).exists()),
+                "treated": bool(seg.audio.render(TREATED)
+                                and seg.audio.render(TREATED).exists()),
             },
             # Ordered by what the technical checks can actually establish —
             # a take with a defect goes last, with the defect named. This is
@@ -688,6 +755,14 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "events": [_event_row(event, rebuilt)
                        for event in scene_preview.events_in(rebuilt, frame)],
             "timing_edit": rebuilt.timing_edits.get(seg.cue_id) or {},
+            # Plan 05: the space this line was played through, what it could
+            # not do here, and the findings a reviewer should listen for.
+            "treatment": seg.treatment.as_dict(),
+            "treatment_edit": rebuilt.treatment_edits.get(seg.cue_id) or {},
+            "treatment_findings": [
+                {"code": f.code, "severity": f.severity, **dict(f.evidence)}
+                for f in seg.findings
+                if f.code.startswith("treatment_") and f.disposition != "obsolete"],
         }
 
     @api.get("/api/jobs/{job_id}/preview/{kind}/{index}")
@@ -744,6 +819,88 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             })
         rows.sort(key=lambda row: row.get("created_at") or "", reverse=True)
         return {"versions": rows, "current": job.version_id}
+
+    @api.get("/api/jobs/{job_id}/delivery")
+    def job_delivery(job_id: str):
+        """What the exported track was measured to be, and what that means.
+
+        Three states are kept apart on purpose: the render finished, the
+        export passed its configured structural checks, and a person has
+        listened. Only the middle one is decided here.
+        """
+        job, data = artifact(job_id, "review_file")
+        check_schema(data.get("cue_schema"), "review snapshot")
+        report = _redact_delivery(data.get("delivery") or {})
+        return {
+            "job_id": job_id,
+            "revision": data.get("revision"),
+            "render": {"status": job.status, "message": job.message},
+            "delivery": report,
+            "version_id": job.version_id,
+            "version_saved": bool(job.version_id),
+            "human_review": _review_state(config.work_dir, job_id, data),
+            "note": ("A passing export check says the delivered container is "
+                     "structurally what was asked for. It says nothing about "
+                     "whether the dub sounds right; that needs a listener."),
+        }
+
+    def _review_state(work_dir, job_id: str, data: dict) -> dict:
+        """How much of this snapshot a person has actually signed off.
+
+        Deliberately counted from the decisions sidecar and not from playback:
+        reaching the end of a file is not a verdict, and a render completing is
+        not an approval.
+        """
+        decisions = load_decisions(work_dir, job_id)
+        cues = decisions.get("cues", {})
+        current = data.get("revision")
+        reviewed = [cue for cue, entry in cues.items()
+                    if entry.get("reviewed") and entry.get("revision") == current]
+        stale = [cue for cue, entry in cues.items()
+                 if entry.get("reviewed") and entry.get("revision") != current]
+        total = len(data.get("segments") or [])
+        return {
+            "reviewed": len(reviewed), "lines": total,
+            "stale": len(stale), "complete": bool(total) and len(reviewed) >= total,
+            "note": ("A verdict recorded against an earlier snapshot is counted "
+                     "as stale, not as approval of this audio."),
+        }
+
+    @api.get("/api/jobs/{job_id}/versions/{version_id}/compare/{other_id}")
+    def job_version_compare(job_id: str, version_id: str, other_id: str):
+        """What changed between two saved versions of this job's output.
+
+        Separates a line whose *speech* was regenerated from one that was only
+        reprocessed, and names the windows a reviewer should expect to differ —
+        ducking and effect tails reach past the cue that was edited, so a
+        neighbouring region moving is not evidence of a second change.
+        """
+        job = store.get(job_id)
+        if job is None or not job.output_file:
+            raise NotFoundError(f"no job with id {job_id}")
+        for candidate in (version_id, other_id):
+            if not re.fullmatch(r"[0-9a-f]{8,128}", candidate):
+                raise ForbiddenError("that is not a version id")
+        output = _allowed_path(job.output_file)
+        if output is None:
+            raise ForbiddenError("output path is outside the configured directories")
+        root = _versions_root(output)
+        previous = read_json(root / version_id / "version.json")
+        current = read_json(root / other_id / "version.json")
+        for manifest, wanted in ((previous, version_id), (current, other_id)):
+            if manifest.get("version_id") != wanted:
+                raise NotFoundError(f"no saved version {wanted} for this job")
+        result = export_delivery.compare(previous, current)
+        # Delivery evidence travels with the version it was taken on; a check
+        # that ran against the older file closes nothing about the newer one.
+        result["delivery"] = {
+            "previous": _redact_delivery(previous.get("delivery") or {}),
+            "current": _redact_delivery(current.get("delivery") or {}),
+            "note": ("Each report describes the file it was run on. Retesting a "
+                     "fix closes a finding only for the output it was checked "
+                     "against."),
+        }
+        return result
 
     @api.get("/api/jobs/{job_id}/versions/{version_id}/file")
     def job_version_file(job_id: str, version_id: str, request: Request):
@@ -834,6 +991,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         candidate_requests = copy.deepcopy(effective["dub"].get("candidates", {}))
         coverage_events = copy.deepcopy(effective["coverage"].get("events", {}))
         coverage_assets = copy.deepcopy(effective["coverage"].get("assets", {}))
+        treatment_lines = copy.deepcopy(effective["treatments"].get("lines", {}))
         known_events = {row.get("event_id") for row in (data.get("nonverbal") or [])}
         for choice in body.events:
             if choice.event not in known_events:
@@ -866,8 +1024,12 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             cue_id = (row.get("cue") or {}).get("cue_id") or ""
             if patch.cue and cue_id and patch.cue != cue_id:
                 raise HTTPException(409, "This line has changed identity; reload the review")
+            # `treatment` is excluded here and collected separately: it is a
+            # per-cue override on the run, not a field of the line edit, for
+            # the same reason `candidates` is.
             changes = patch.model_dump(
-                exclude_none=True, exclude={"index", "regenerate", "cue", "candidates"})
+                exclude_none=True,
+                exclude={"index", "regenerate", "cue", "candidates", "treatment"})
             if "pauses" in changes:
                 # The wire form is a list so the order is stable; the edit
                 # record is keyed by pause id so a second decision about the
@@ -885,6 +1047,19 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                     raise HTTPException(
                         409, "This line has no stable identity yet; re-render it first")
                 candidate_requests[cue_id] = patch.candidates
+            if patch.treatment is not None:
+                # Keyed by cue, never by position: a treatment somebody chose
+                # after hearing a line has to follow that line through a later
+                # edit rather than land on whatever ends up at that index.
+                if not cue_id:
+                    raise HTTPException(
+                        409, "This line has no stable identity yet; re-render it first")
+                chosen = patch.treatment.model_dump(exclude_none=True)
+                # `bypass: false` is the absence of a bypass, not a decision to
+                # have one. Storing it would make an override that says nothing.
+                if not chosen.get("bypass"):
+                    chosen.pop("bypass", None)
+                treatment_lines[cue_id] = chosen
             if "text" in changes and not changes["text"].strip():
                 raise HTTPException(422, "Dialogue cannot be blank; use Exclude instead")
             if changes.get("end", row["end"]) <= changes.get("start", row["start"]):
@@ -948,6 +1123,8 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             overrides["coverage.events"] = coverage_events
         if coverage_assets:
             overrides["coverage.assets"] = coverage_assets
+        if treatment_lines:
+            overrides["treatments.lines"] = treatment_lines
         rerun = _rerun_plan(body.edits, candidate_requests, body.events)
         updated = store.add(
             title=original.title,

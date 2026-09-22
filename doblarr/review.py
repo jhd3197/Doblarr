@@ -449,6 +449,11 @@ def write_review(job, root, settings=None):
             "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
             "nonverbal": [e.as_dict() for e in job.nonverbal],
             "timing_edits": job.timing_edits,
+            "treatment_edits": job.treatment_edits,
+            # What the exported file was measured to be. Kept beside the run
+            # rather than inside a cue: it is a fact about one delivered
+            # container, not about any single line in it.
+            "delivery": job.delivery,
             "segments": rows,
             "metrics": job.metrics,
             "flagged": sum(bool(s.issues) for s in job.segments),
