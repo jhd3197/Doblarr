@@ -53,7 +53,7 @@ from .cues import (
     now,
     script_ref,
 )
-from .ffmpeg import FFmpegError, run_ffmpeg
+from .ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
 from .languages import resolve_target_locale
 from .levels import analyze as analyze_levels
 from .models import DubJob, Segment, Speaker
@@ -140,8 +140,12 @@ class Scene:
             "speakers": sorted({row["speaker"] for row in self.cues}),
             "text": [{"index": row["index"], "speaker": row["speaker"],
                       "start": round(row["start"] - self.start, 3),
-                      "source": row["text_src"], "dub": row["text_translated"]}
+                      "source": row["text_src"], "dub": row["text_translated"],
+                      "script": row.get("script_text", ""),
+                      "stale_script": bool(row.get("stale_script"))}
                      for row in self.cues],
+            "stale_script_lines": sum(1 for row in self.cues
+                                      if row.get("stale_script")),
         }
 
 
@@ -169,19 +173,47 @@ def find_clip(clips: Path, index: int) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def spoken_text(clip: Path) -> str:
+    """What was actually asked of the engine for this clip, from its own receipt.
+
+    The authority on what a take says is the receipt `synthesize` wrote beside
+    it, not the script cache. A reviewed run rewrites lines and regenerates
+    them, and the base script can be several edits behind the audio sitting
+    next to it — so reading the script would caption a take with words it does
+    not speak, and would hand a recognizer the wrong thing to expect.
+    """
+    receipt = Path(clip).with_suffix(".json")
+    if not receipt.is_file():
+        return ""
+    try:
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str((payload.get("request") or {}).get("text") or "")
+
+
 def inventory(script: dict, clips: Path) -> list[dict]:
     """Every line in a completed run, with whether its audio is still on disk."""
     rows = []
     for raw in script["segments"]:
         index = int(raw["index"])
         clip = find_clip(clips, index)
+        script_text = raw.get("text_translated") or ""
+        spoken = spoken_text(clip) if clip else ""
         rows.append({
             "index": index,
             "start": float(raw["start"]),
             "end": float(raw["end"]),
             "speaker": str(raw.get("speaker") or "SPEAKER_00"),
             "text_src": str(raw.get("text_src") or ""),
-            "text_translated": raw.get("text_translated"),
+            # What the take actually says wins over what the script remembers.
+            "text_translated": spoken or script_text,
+            "script_text": script_text,
+            "spoken_text": spoken,
+            # A run whose script is behind its audio is worth saying out loud:
+            # it means the cached script is not what was reviewed.
+            "stale_script": bool(spoken and script_text
+                                 and spoken.strip() != script_text.strip()),
             "delivery": str(raw.get("delivery") or ""),
             "clip": str(clip) if clip else "",
         })
@@ -295,15 +327,57 @@ def cut_media(source: Path, scene: Scene, dest: Path, cancel=None) -> Path:
     return dest
 
 
-def cut_stem(source: Path, scene: Scene, dest: Path, cancel=None) -> Path:
-    """Cut one already-separated stem for the scene, as 48 kHz stereo PCM."""
+def cut_stem(source: Path, scene: Scene, dest: Path, cancel=None,
+             stream: int | None = None) -> Path:
+    """Cut one audio stream for the scene, as 48 kHz stereo PCM.
+
+    `stream` is an audio-relative index and is not optional in spirit: a file
+    with an English dub before the Japanese original hands ffmpeg's default
+    pick the wrong one, and a comparison whose "original" button plays another
+    dub is worse than having no button at all. It is `None` only for a stem
+    file that has exactly one stream.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     temp = dest.with_suffix(".partial.wav")
-    run_ffmpeg(["-y", "-ss", f"{scene.start:g}", "-i", str(source),
-                "-t", f"{scene.duration:g}", "-vn", "-ac", "2", "-ar", "48000",
-                "-c:a", "pcm_s16le", str(temp)], cancel=cancel)
+    args = ["-y", "-ss", f"{scene.start:g}", "-i", str(source)]
+    if stream is not None:
+        args += ["-map", f"0:a:{stream}"]
+    args += ["-t", f"{scene.duration:g}", "-vn", "-ac", "2", "-ar", "48000",
+             "-c:a", "pcm_s16le", str(temp)]
+    run_ffmpeg(args, cancel=cancel)
     temp.replace(dest)
     return dest
+
+
+def source_stream(media: Path, source_lang: str, cancel=None) -> dict:
+    """Which audio stream of `media` is the original performance.
+
+    Reuses the pipeline's own selection rather than a second rule, and returns
+    what it chose *and* what else was there, because "we used the Japanese
+    track and this file also carries an English dub" is exactly the sentence a
+    listening test has to be able to say.
+    """
+    from .stages.extract import _select_audio_stream
+
+    probe = DubJob(input_file=Path(media), source_lang=source_lang, target_lang="und")
+    absolute = _select_audio_stream(probe, cancel)
+    layout = json.loads(run_ffprobe(
+        ["-v", "error", "-select_streams", "a", "-show_entries",
+         "stream=index:stream_tags=language,title", "-of", "json", str(media)],
+        cancel=cancel))
+    streams = layout.get("streams", [])
+    chosen = next((i for i, row in enumerate(streams)
+                   if row.get("index") == absolute), 0)
+    return {
+        "audio_index": chosen,
+        "container_index": absolute,
+        "language": (streams[chosen].get("tags") or {}).get("language", "und")
+        if chosen < len(streams) else "und",
+        "available": [{"audio_index": i,
+                       "language": (row.get("tags") or {}).get("language", "und"),
+                       "title": (row.get("tags") or {}).get("title", "")}
+                      for i, row in enumerate(streams)],
+    }
 
 
 def seed_separation(job: DubJob, shared_work: Path, scene: Scene, stems: dict,
@@ -619,6 +693,59 @@ def _line_row(seg) -> dict:
 # Objective checks and level-matched playback
 # --------------------------------------------------------------------------
 
+def check_takes(scene: Scene, vb, language: str) -> list[dict]:
+    """Listen to the imported takes once and say what a recognizer hears.
+
+    Run against the *shared* takes rather than per variant, because that is
+    what they are: every variant plays the same audio, so a wrong word or a
+    runaway vocalisation is a property of the material being compared and not
+    of either side of the comparison. Forcing recognition off inside the
+    variants keeps them identical; leaving it off everywhere would hand a
+    listener a defect and no way to know it was already measurable.
+
+    A missing or failing recognizer is recorded as unchecked. It is never a
+    reason to fail the comparison — the takes are still the takes.
+    """
+    from . import verify as content
+
+    rows = []
+    for position, row in enumerate(scene.cues):
+        asked = row.get("spoken_text") or row["text_translated"] or row["text_src"]
+        entry = {"line": position, "speaker": row["speaker"], "asked": asked,
+                 "state": "skipped", "heard": "", "reason": "",
+                 "from_receipt": bool(row.get("spoken_text"))}
+        if vb is None:
+            entry["reason"] = "no recognizer is configured"
+            rows.append(entry)
+            continue
+        try:
+            heard = (vb.transcribe(Path(row["clip"]), language=language) or {}).get("text", "")
+        except Exception as exc:  # noqa: BLE001 - any failure is the same answer
+            entry.update(state="failed", reason=str(exc)[:200])
+            rows.append(entry)
+            continue
+        result = content.compare(asked, heard, language)
+        entry.update(state=result.get("state", "unknown"), heard=heard,
+                     reason=result.get("reason", ""))
+        rows.append(entry)
+    return rows
+
+
+def take_findings(scene_rows: list[dict]) -> list[str]:
+    """The takes a recognizer disagreed with, as sentences for the results sheet."""
+    found = []
+    for scene in scene_rows:
+        for row in scene.get("takes") or []:
+            if row["state"] != "mismatch":
+                continue
+            found.append(
+                f"scene {scene['scene']['index']} line {row['line']} "
+                f"({row['speaker']}): asked “{row['asked']}”, heard "
+                f"“{row['heard'][:70]}{'…' if len(row['heard']) > 70 else ''}” — "
+                f"{row['reason']}")
+    return found
+
+
 def measure(path: Path) -> dict:
     """Speech-active level, peak and duration of one rendered scene."""
     try:
@@ -727,7 +854,7 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
         clips: Path, windows, variants: dict, root: Path, titles=None,
         stems: dict | None = None, source_lang: str = "ja",
         target_lang: str = "es", target_locale: str = "", note: str = "",
-        cancel=None) -> dict:
+        check_content: bool = True, cancel=None) -> dict:
     """Build the whole comparison and return its manifest."""
     root = Path(root) / comparison_id
     if root.exists() and any(root.iterdir()):
@@ -735,9 +862,23 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
             f"{root} already holds a comparison. Give this run its own id rather "
             f"than overwriting evidence somebody may already have listened to.")
     root.mkdir(parents=True, exist_ok=True)
+    original = source_stream(Path(source), source_lang, cancel)
+    if len(original["available"]) > 1:
+        log.info("comparison: the original is audio stream %d (%s); this file also "
+                 "carries %s", original["audio_index"], original["language"],
+                 ", ".join(row["language"] for row in original["available"]
+                           if row["audio_index"] != original["audio_index"]))
     payload = read_script(Path(script))
     rows = inventory(payload, Path(clips))
     scenes = scenes_from(rows, windows, titles)
+    recognizer = None
+    if check_content:
+        # Best effort. A comparison must still build with nothing listening.
+        try:
+            recognizer = Services(config).voicebox
+        except Exception as exc:  # noqa: BLE001 - unconfigured is not an error here
+            log.info("comparison: no recognizer available (%s); the imported takes "
+                     "will not be checked", exc)
     scene_rows = []
     for scene in scenes:
         log.info("comparison: scene %d (%s), %d line(s)", scene.index, scene.title,
@@ -748,7 +889,8 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
         # same file, which is what makes "the same window, the same cast, the
         # same cut" a fact about the comparison rather than an intention.
         excerpt = cut_media(Path(source), scene, scene_dir / "excerpt.mkv", cancel)
-        source_excerpt = cut_stem(Path(source), scene, scene_dir / "source.wav", cancel)
+        source_excerpt = cut_stem(Path(source), scene, scene_dir / "source.wav",
+                                  cancel, stream=original["audio_index"])
         speakers = sorted({row["speaker"] for row in scene.cues})
         rendered = []
         preparations = {}
@@ -773,12 +915,16 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
             "source_excerpt": str(source_excerpt),
             "source_measured": measure(source_excerpt),
             "variants": rendered,
+            # Once, on the shared takes — not per variant, because it is the
+            # same audio in all of them.
+            "takes": check_takes(scene, recognizer, target_lang),
         })
     manifest = {
         "manifest_version": MANIFEST_VERSION,
         "comparison_id": comparison_id,
         "note": note,
         "source": {"media": str(Path(source).resolve()), "stamp": stamp(Path(source)),
+                   "stream": original,
                    "script": str(Path(script).resolve()), "clips": str(Path(clips).resolve()),
                    "source_language": source_lang, "target_language": target_lang,
                    "target_locale": target_locale or target_lang,
@@ -787,6 +933,7 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
         "labels": blind_labels(list(variants), comparison_id),
         "scenes": scene_rows,
         "objective": objective(scene_rows),
+        "take_findings": take_findings(scene_rows),
         "honesty": [
             "Every variant reused the takes imported from a completed run. No "
             "speech was generated for this comparison and the engine handed to "
@@ -818,6 +965,18 @@ def results_sheet(manifest: dict) -> str:
     ]
     for label, name in manifest["labels"].items():
         lines.append(f"| {label} | `{name}` |")
+    flagged = manifest.get("take_findings") or []
+    if flagged:
+        lines += ["", "## Before you listen: the shared takes have known defects", "",
+                  "A recognizer was run once over the imported takes — the same audio",
+                  "every variant plays — and disagreed with these. They are defects in",
+                  "the generated speech itself, present identically in every variant,",
+                  "and no processing setting on either side can fix them:", ""]
+        lines += [f"- {row}" for row in flagged]
+        lines += ["",
+                  "Recognition proves a wrong word, never a right one: a line it agrees",
+                  "with may still be badly acted, and a name it misreads may be fine.",
+                  ""]
     lines += ["", "## What was actually active", "",
               "Read this before listening. A feature that fell back on this material",
               "and a feature that made no audible difference are different findings,",
@@ -935,8 +1094,14 @@ def page(manifest: dict, root: Path) -> str:
     blocks = []
     for row in manifest["scenes"]:
         scene = row["scene"]
-        buttons = [f'<button data-src="{rel(row["source_excerpt"])}">'
-                   f'Original scene (source)</button>']
+        stream = manifest["source"].get("stream") or {}
+        others = [r["language"] for r in stream.get("available", [])
+                  if r["audio_index"] != stream.get("audio_index")]
+        label = f'Original scene ({stream.get("language", "source")})'
+        title = (f'audio stream {stream.get("audio_index")}'
+                 + (f'; this file also carries {", ".join(others)}' if others else ''))
+        buttons = [f'<button data-src="{rel(row["source_excerpt"])}" '
+                   f'title="{_esc(title)}">{_esc(label)}</button>']
         for label, name in manifest["labels"].items():
             variant = next(v for v in row["variants"] if v["name"] == name)
             if variant.get("mixed"):
@@ -948,7 +1113,11 @@ def page(manifest: dict, root: Path) -> str:
                                f'({variant["matched_gain_db"]:+.1f} dB)</button>')
         script_lines = "".join(
             f"<tr><td>{line['start']:.1f}s</td><td>{_esc(line['speaker'])}</td>"
-            f"<td>{_esc(line['source'])}</td><td>{_esc(line['dub'] or '')}</td></tr>"
+            f"<td>{_esc(line['source'])}</td><td>{_esc(line['dub'] or '')}"
+            + (f"<br><span class='was'>cached script said: "
+               f"{_esc(line.get('script') or '')}</span>"
+               if line.get("stale_script") else "")
+            + "</td></tr>"
             for line in scene["text"])
         blocks.append(f"""
   <section>
@@ -987,6 +1156,7 @@ def page(manifest: dict, root: Path) -> str:
            vertical-align: top; }}
  .ok {{ color: #1a6b39; }} .bad {{ color: #9b1c1c; }}
  .note li {{ color: #7a5200; }}
+ .was {{ color: #9a6b00; font-size: .85em; }}
  footer {{ margin-top: 3rem; color: #5a6069; font-size: .9em; }}
  #reveal {{ margin-left: .5rem; }}
 </style>
