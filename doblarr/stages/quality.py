@@ -11,12 +11,13 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from ..artifacts import digest, matches, read_json, record, stamp
-from ..cues import NORMALIZED, RAW, Artifact, Finding, finding_id, now
+from ..cues import NORMALIZED, RAW, TRIMMED, Artifact, Finding, finding_id, now
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
 from ..fingerprints import processing as processing_fingerprint
 from ..fingerprints import verification as verification_fingerprint
 from ..telemetry import write_json
+from . import boundaries
 
 ACOUSTIC_ISSUES = {"silence", "clipping", "unexpected_duration", "text_mismatch", "repetition"}
 
@@ -175,6 +176,7 @@ def run(
     cancel=None,
     dry_run=False,
     budget=None,
+    boundary_options=None,
 ):
     if dry_run or not enabled:
         return
@@ -210,11 +212,25 @@ def run(
                 checkpoint()
             regenerate(seg)
             job.metrics["quality_retries"] = job.metrics.get("quality_retries", 0) + 1
+        # Boundary preparation runs after the raw checks have had their say —
+        # an empty or failed generation must be rejected, not cropped into
+        # something that looks usable — and before anything measures the clip
+        # against its slot.
+        prepared = boundaries.prepare(seg, boundary_options, cancel)
+        job.metrics[f"trim_{prepared.decision}"] = (
+            job.metrics.get(f"trim_{prepared.decision}", 0) + 1)
+        if prepared.decision == "trimmed":
+            job.metrics["trimmed_seconds"] = round(
+                job.metrics.get("trimmed_seconds", 0.0) + prepared.trimmed, 3)
         if normalize and "silence" not in issues:
-            # Always normalize from the immutable raw take: reprocessing an
-            # already normalized file would accumulate gain run after run.
+            # Normalize from the most upstream immutable artifact there is: the
+            # prepared derivative when boundaries were removed, otherwise the
+            # raw take. Reprocessing an already normalized file would
+            # accumulate gain run after run.
             raw = seg.audio.raw()
-            source = Path(raw.path) if raw and raw.exists() else Path(seg.audio_clip)
+            upstream = seg.audio.render(TRIMMED) or raw
+            source = (Path(upstream.path) if upstream and upstream.exists()
+                      else Path(seg.audio_clip))
             request = {"source": stamp(source), "lufs": float(dialogue_lufs), "version": 1}
             dest = source.parent / "normalized" / f"{source.stem}.{digest(request)[:12]}.wav"
             if not matches([dest], request):
@@ -246,9 +262,9 @@ def run(
                 # the generation it came from plus the settings applied. The
                 # on-disk receipt still keys on the file, as it always has.
                 fingerprint=processing_fingerprint({
-                    "input": raw.fingerprint if raw else "",
+                    "input": upstream.fingerprint if upstream else "",
                     "lufs": float(dialogue_lufs), "version": 1}),
-                derived_from=RAW if raw else "",
+                derived_from=upstream.role if upstream else "",
                 bytes=dest.stat().st_size if dest.exists() else None,
             ))
             seg.audio_clip = dest

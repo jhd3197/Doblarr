@@ -12,6 +12,7 @@ from .cues import (
     Placement,
     SourceReference,
     SourceSpans,
+    SpeechPreparation,
 )
 
 
@@ -28,7 +29,8 @@ class Segment:
     plus `lineage` are the identity that survives wording, voice, gain and
     placement edits; `source` keeps the original intervals that a target-timing
     edit must never move; `placement` holds target-only extras; `audio` holds
-    every take and processed derivative separately.
+    every take and processed derivative separately; `preparation` records what
+    boundary analysis found in the selected raw take and what it did about it.
     """
 
     index: int
@@ -56,6 +58,7 @@ class Segment:
     source: SourceSpans = field(default_factory=SourceSpans)
     placement: Placement = field(default_factory=Placement)
     audio: CueAudio = field(default_factory=CueAudio)
+    preparation: SpeechPreparation = field(default_factory=SpeechPreparation)
     findings: list[Finding] = field(default_factory=list)
 
     @property

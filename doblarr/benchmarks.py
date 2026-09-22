@@ -17,7 +17,7 @@ import json
 import math
 import struct
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .config import Config
@@ -67,6 +67,9 @@ class Cue:
     # Seconds of generated speech; longer than the slot means the timing stage
     # has real work to do.
     spoken: float = 0.0
+    # A pause in the middle of the spoken part. Boundary preparation must keep
+    # it: a hesitation is performance, not padding.
+    gap: float = 0.0
 
 
 # One scene covering the cases Plan 01 must keep reproducible: two speakers, an
@@ -75,12 +78,28 @@ class Cue:
 SCENE: tuple[Cue, ...] = (
     Cue(1.0, 3.0, "Primera linea", "SPEAKER_00", level=0.30, spoken=1.8),
     Cue(3.2, 5.0, "Segunda linea", "SPEAKER_01", level=0.12, lead=0.35, tail=0.40, spoken=1.0),
+    # Fallthrough note: SCENE stays exactly as Plan 01 recorded it so the
+    # reference baseline keeps its meaning. New cases go in BOUNDARY_SCENE.
     # Deliberately overlapping the cue above: two speakers talking across each
     # other is a case the mix and any future collision review must handle.
     Cue(4.5, 6.5, "Tercera linea encimada", "SPEAKER_00", level=0.45, spoken=1.9),
     Cue(7.0, 8.0, "Cuarta linea larga que no cabe", "SPEAKER_01", level=0.30, spoken=1.9),
     Cue(9.0, 10.5, "[laughter]", "SPEAKER_00", level=0.20, spoken=1.0),
 )
+
+
+# The same scene with generous generator padding on every cue. Comparing a run
+# of this with `boundaries.trim` off and on is what shows whether preparation
+# removes needless timing repairs without touching the speech itself.
+BOUNDARY_SCENE: tuple[Cue, ...] = tuple(
+    replace(cue, lead=cue.lead + 0.55, tail=cue.tail + 0.45,
+            # One cue holds a deliberate mid-line hesitation, so a comparison
+            # can show the pause is still there after the padding is gone.
+            gap=0.35 if index == 0 else cue.gap)
+    for index, cue in enumerate(SCENE)
+)
+
+SCENES = {"default": SCENE, "boundaries": BOUNDARY_SCENE}
 
 
 def example_script(root: Path) -> DubJob:
@@ -147,14 +166,21 @@ def example_script(root: Path) -> DubJob:
 
 
 def _tone(path: Path, seconds: float, hz: float, amplitude: float,
-          lead: float = 0.0, tail: float = 0.0) -> Path:
-    """A reproducible 16-bit mono tone with optional silent lead-in/tail."""
+          lead: float = 0.0, tail: float = 0.0, gap: float = 0.0) -> Path:
+    """A reproducible 16-bit mono tone with optional silent lead-in/tail/pause.
+
+    `gap` splits the tone in half and puts silence between the halves, which is
+    what an intentional hesitation looks like to an energy detector.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    half = seconds / 2 if gap else seconds
     frames = []
-    for index in range(round(SAMPLE_RATE * (lead + seconds + tail))):
+    for index in range(round(SAMPLE_RATE * (lead + seconds + gap + tail))):
         position = index / SAMPLE_RATE
         value = 0.0
-        if lead <= position < lead + seconds:
+        speaking = (lead <= position < lead + half
+                    or lead + half + gap <= position < lead + seconds + gap)
+        if speaking:
             value = amplitude * math.sin(2 * math.pi * hz * (position - lead))
         frames.append(struct.pack("<h", int(max(-1.0, min(1.0, value)) * 32000)))
     with wave.open(str(path), "wb") as out:
@@ -232,7 +258,8 @@ class ToneEngine:
         return _tone(Path(dest), seconds, 330.0,
                      cue.level if cue else 0.3,
                      lead=cue.lead if cue else 0.0,
-                     tail=cue.tail if cue else 0.0)
+                     tail=cue.tail if cue else 0.0,
+                     gap=cue.gap if cue else 0.0)
 
 
 def observations(job: DubJob, engine: ToneEngine) -> dict:
@@ -241,12 +268,21 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
     for seg in job.segments:
         current = seg.audio.current()
         take = seg.audio.selected()
+        prepared = seg.preparation
         lines.append({
             "cue_id": seg.cue_id,
             "index": seg.index,
             "origin": seg.lineage.origin,
             "speaker": seg.speaker,
             "slot": [seg.start, seg.end],
+            "trim": prepared.decision,
+            "trim_reason": prepared.reason,
+            "trimmed": [prepared.lead, prepared.tail],
+            "active_duration": (round(prepared.active_duration, 3)
+                                if prepared.active_duration else None),
+            "pauses_kept": len(prepared.silences),
+            "rendered_duration": round(current.duration, 3) if current and current.duration
+                                 else None,
             "source_spans": [s.as_dict() for s in seg.source.spans],
             "take_id": take.take_id if take else None,
             "take_fingerprint": take.fingerprint if take else None,
@@ -258,6 +294,7 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
             "findings": sorted(
                 (f.code, f.disposition) for f in seg.findings),
         })
+    # `current` is read in the loop above; recompute the role roll-up here.
     roles: set[str] = set()
     for line in lines:
         roles.update(line["roles"])
@@ -276,6 +313,9 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
         "source_reference": (job.source_reference.as_dict()
                              if job.source_reference else None),
         "roles_available": sorted(roles),
+        "pauses_kept": sum(line["pauses_kept"] for line in lines),
+        "edge_fades": job.metrics.get("edge_fades", 0),
+        "stretched_lines": job.metrics.get("stretched_lines", 0),
         "lines": lines,
     }
 
@@ -318,6 +358,7 @@ def record(root: Path, destination: Path, scene=SCENE,
            media_root: Path | None = None) -> Path:
     """Write a baseline observation file. Local only; never committed."""
     data = baseline(root, scene, overrides, media_root=media_root)
+    data["settings"] = dict(overrides or {})
     data["note"] = note or (
         "Tone fixtures. Numeric invariants only — this proves nothing about "
         "how the dub sounds.")

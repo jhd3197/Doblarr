@@ -124,3 +124,18 @@ quality:
   # Extra speech requests one job may spend in total across quality retries and
   # timing repairs. 0 = no cap (counted only), which matches earlier releases.
   request_budget: 0
+
+# Speech-boundary preparation and protected clip edges. Both are off by default
+# because both change the rendered audio; turn them on after listening to your
+# own material. Trimming removes only generator padding outside the detected
+# speech, never an internal pause, and is reversible: the raw take is kept and
+# the removed offsets are recorded per line.
+boundaries:
+  trim: false                    # drop leading/trailing dead air before fitting
+  handle_ms: 60                  # margin kept on each side of detected speech
+  max_trim_seconds: 2.0          # never remove more than this per side
+  min_trim_ms: 30                # below this there is nothing worth doing
+  threshold_db: 12               # dB above the noise floor that counts as speech
+  min_separation_db: 10          # below this the boundary is not knowable; skip
+  edge_fade_ms: 0                # 0 = off; 8 removes cut clicks inaudibly
+  edge_threshold_db: -40         # an edge quieter than this is already smooth

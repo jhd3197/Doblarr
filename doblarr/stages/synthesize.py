@@ -16,8 +16,6 @@ from pathlib import Path
 from ..artifacts import digest, read_json, stamp
 from ..clients.voicebox import GenerationFailed, VoiceboxClient
 from ..cues import (
-    FITTED,
-    NORMALIZED,
     RAW,
     Artifact,
     Selection,
@@ -183,8 +181,8 @@ def _register_take(seg, signature: dict, dest: Path, state: str) -> Take:
     if previous != identifier:
         seg.audio.selection = Selection(take_id=identifier, reason="auto",
                                         previous=previous, at=now())
-        # Derived audio belonged to the previous take; the raw takes stay.
-        seg.audio.drop_renders((NORMALIZED, FITTED))
+        # Every derivative belonged to the previous take; the raw takes stay.
+        seg.audio.invalidate_after(RAW)
     return take
 
 

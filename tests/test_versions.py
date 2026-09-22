@@ -88,3 +88,19 @@ def test_cue_provenance_is_recorded_without_changing_existing_version_ids(tmp_pa
     assert "path" not in cue["audio"]["takes"][0]["raw"]
     assert cue["audio"]["takes"][0]["raw"]["fingerprint"] == "gen-1"
     assert hash_file(job.output_file) == manifest["output_sha256"]
+
+
+def test_boundary_settings_are_part_of_a_saved_version(tmp_path):
+    """A fade-only change is a different render, and must not look like a
+    different translation."""
+    job, config, working_output = setup_job(tmp_path)
+    plain = preserve_version(job, config)
+    assert plain["settings"]["boundaries"]["trim"] is False
+
+    working_output.write_bytes(b"same script, softened edges")
+    job.output_file = working_output
+    faded = preserve_version(
+        job, config.with_overrides({"boundaries.edge_fade_ms": 8}))
+    assert faded["settings"]["boundaries"]["edge_fade_ms"] == 8
+    assert faded["version_id"] != plain["version_id"]
+    assert faded["translation_id"] == plain["translation_id"]

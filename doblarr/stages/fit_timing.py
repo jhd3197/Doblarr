@@ -195,6 +195,8 @@ def run(
 
     by_start = sorted(job.segments, key=lambda t: t.start)
     job.metrics["timing_flags"] = sum("timing_overflow" in s.issues for s in job.segments)
+    job.metrics["stretched_lines"] = len(plan)
+    job.metrics["max_stretch"] = round(max(factor for _s, _d, _a, factor in plan), 4)
     for s, dest, actual, factor in plan:
         assert s.audio_clip is not None
         if cached(dest, Path(s.audio_clip), force):

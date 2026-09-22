@@ -59,6 +59,9 @@ def preserve_version(job, config, cast=None) -> dict:
         "voicebox": {k: config["voicebox"].get(k) for k in
                      ("default_engine", "model_size", "seed")},
         "quality": dict(config["quality"]),
+        # Boundary preparation and edge fades change the rendered audio, so a
+        # saved version has to record which settings produced it.
+        "boundaries": dict(config.get("boundaries", {})),
     }
     voices = [{"index": s.index, "speaker": s.speaker,
                "profile": s.voice or (job.speakers[s.speaker].voicebox_profile_id

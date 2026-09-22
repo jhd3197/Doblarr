@@ -9,7 +9,14 @@ import shutil
 
 import pytest
 
-from doblarr.benchmarks import LOCAL_COUNTERS, SCENE, baseline, compare, record
+from doblarr.benchmarks import (
+    BOUNDARY_SCENE,
+    LOCAL_COUNTERS,
+    SCENE,
+    baseline,
+    compare,
+    record,
+)
 from doblarr.cues import FITTED, NORMALIZED, RAW, SOURCE
 
 pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
@@ -88,3 +95,43 @@ def test_scene_covers_the_documented_fixture_cases():
     assert len({c.level for c in SCENE}) > 1                       # varied levels
     assert any(a.end > b.start for a, b in zip(SCENE, SCENE[1:], strict=False))  # overlap
     assert any(c.spoken > (c.end - c.start) for c in SCENE)        # overruns its slot
+
+
+def test_boundary_preparation_removes_needless_timing_repairs(tmp_path):
+    """Plan 02's comparison: same padded scene, preparation off then on."""
+    media = tmp_path / "padded"
+    off = baseline(tmp_path / "off", BOUNDARY_SCENE, media_root=media)
+    on = baseline(tmp_path / "on", BOUNDARY_SCENE,
+                  {"boundaries.trim": True, "boundaries.edge_fade_ms": 8},
+                  media_root=media)
+
+    # Padding was being mistaken for an overlong line on every cue.
+    assert off["stretched_lines"] == len(off["lines"])
+    assert on["stretched_lines"] < off["stretched_lines"]
+    # The speech itself was never regenerated to achieve that.
+    assert on["tts_requests"] == off["tts_requests"]
+    assert on["metrics"].get("timing_repairs", 0) == off["metrics"].get("timing_repairs", 0)
+
+    assert all(line["trim"] == "bypassed" for line in off["lines"])
+    assert all(line["trim"] == "trimmed" for line in on["lines"])
+    assert "trimmed" in on["roles_available"] and "trimmed" not in off["roles_available"]
+
+    # A deliberate mid-line hesitation is still there afterwards.
+    assert on["pauses_kept"] == 1
+    hesitant = next(line for line in on["lines"] if line["pauses_kept"])
+    assert hesitant["active_duration"] > SCENE[0].spoken
+
+    # Cue identity, source intervals and takes are untouched by preparation.
+    assert [line["cue_id"] for line in on["lines"]] == [line["cue_id"] for line in off["lines"]]
+    assert [line["source_spans"] for line in on["lines"]] == [
+        line["source_spans"] for line in off["lines"]]
+    assert [line["take_id"] for line in on["lines"]] == [line["take_id"] for line in off["lines"]]
+
+
+def test_conservative_handles_leave_edges_already_smooth(tmp_path):
+    """With a protective handle the trim lands in silence, so no fade is needed."""
+    on = baseline(tmp_path / "on", BOUNDARY_SCENE,
+                  {"boundaries.trim": True, "boundaries.edge_fade_ms": 8},
+                  media_root=tmp_path / "padded")
+    assert on["edge_fades"] == 0
+    assert "edged" not in on["roles_available"]

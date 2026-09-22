@@ -40,6 +40,14 @@ SETTING_KEYS = (
     "quality.asr",
     "quality.max_retries",
     "quality.request_budget",
+    "boundaries.trim",
+    "boundaries.handle_ms",
+    "boundaries.max_trim_seconds",
+    "boundaries.min_trim_ms",
+    "boundaries.threshold_db",
+    "boundaries.min_separation_db",
+    "boundaries.edge_fade_ms",
+    "boundaries.edge_threshold_db",
 )
 ENGINE = Literal[
     "chatterbox", "chatterbox_turbo", "qwen", "qwen_custom_voice", "kokoro", "luxtts", "tada"
@@ -204,6 +212,13 @@ class DubRecipe(StrictModel):
             "dub.max_fit_attempts": (0, 10),
             "quality.max_retries": (0, 10),
             "quality.request_budget": (0, 10000),
+            "boundaries.handle_ms": (0, 1000),
+            "boundaries.max_trim_seconds": (0, 30),
+            "boundaries.min_trim_ms": (0, 1000),
+            "boundaries.threshold_db": (1, 60),
+            "boundaries.min_separation_db": (0, 60),
+            "boundaries.edge_fade_ms": (0, 50),
+            "boundaries.edge_threshold_db": (-90, 0),
             "dub.background_volume": (0, 4),
             "dub.fallback_volume": (0, 4),
             "dub.duck_threshold": (0, 1),

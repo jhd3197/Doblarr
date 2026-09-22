@@ -23,6 +23,7 @@ from .review import apply_edits, write_review
 from .services import Services
 from .stages import (
     audition,
+    boundaries,
     diarize,
     extract,
     fit_timing,
@@ -261,6 +262,7 @@ def run_job(
             checkpoint=lambda: save_script(job, effective_work),
             pronunciations=pronunciations,
             budget=budget,
+            boundary_options=dict(config.get("boundaries", {})),
             **options,
         )
 
@@ -325,6 +327,15 @@ def run_job(
         ("synthesize", _synthesize),
         ("quality", _quality),
         ("fit", _fit),
+        (
+            "edges",
+            lambda: boundaries.finish_edges(
+                job,
+                dict(config.get("boundaries", {})),
+                cancel=cancel_event,
+                dry_run=dry_run,
+            ),
+        ),
         (
             "mix",
             lambda: mix.run(

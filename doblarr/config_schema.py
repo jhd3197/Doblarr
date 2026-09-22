@@ -157,6 +157,23 @@ class QualityModel(_Section):
     request_budget: int = 0
 
 
+class BoundariesModel(_Section):
+    """Speech-boundary preparation and protected clip edges (Plan 02).
+
+    Defaults are off. Both operations change audio, and the roadmap only allows
+    a new DSP default once audio and regression evidence back the rollout.
+    """
+
+    trim: bool = False              # remove generator padding before fitting
+    handle_ms: float = 60           # protective margin kept each side of speech
+    max_trim_seconds: float = 2.0   # never remove more than this per side
+    min_trim_ms: float = 30         # below this there is nothing worth doing
+    threshold_db: float = 12        # dB above the noise floor that counts as speech
+    min_separation_db: float = 10   # below this the boundary is not knowable
+    edge_fade_ms: float = 0         # 0 = no edge fade; 8 is a good starting value
+    edge_threshold_db: float = -40  # an edge quieter than this is already smooth
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -172,6 +189,7 @@ class ConfigModel(_Section):
     dub: DubModel = DubModel()
     knowledge: KnowledgeModel = KnowledgeModel()
     quality: QualityModel = QualityModel()
+    boundaries: BoundariesModel = BoundariesModel()
 
 
 def validate_config(data: dict) -> None:

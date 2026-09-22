@@ -45,16 +45,22 @@ DOMAINS = (SOURCE, TARGET, CLIP, MONTAGE)
 # Artifact roles in processing order. "unknown" is a real state, used when a
 # migrated file's provenance cannot be proven.
 RAW = "raw"
+TRIMMED = "trimmed"        # reversible boundary preparation (Plan 02)
 NORMALIZED = "normalized"
 FITTED = "fitted"
+EDGED = "edged"            # protected final edges (Plan 02)
 UNKNOWN = "unknown"
-ROLES = (RAW, NORMALIZED, FITTED, UNKNOWN)
+ROLES = (RAW, TRIMMED, NORMALIZED, FITTED, EDGED, UNKNOWN)
 # Later plans append their own role here; order defines "most processed last".
-RENDER_ORDER = (RAW, NORMALIZED, FITTED)
+RENDER_ORDER = (RAW, TRIMMED, NORMALIZED, FITTED, EDGED)
 
 ORIGINS = ("import", "legacy", "split", "merge", "manual")
 DISPOSITIONS = ("open", "accepted", "fixed", "obsolete")
 FINDING_KINDS = ("technical", "content", "timing", "performance", "delivery")
+
+# What boundary preparation decided to do with a take. "kept" and
+# "uncertain" are not failures: leaving audio alone is the safe answer.
+TRIM_DECISIONS = ("trimmed", "kept", "uncertain", "empty", "bypassed", "unknown")
 
 
 class SchemaError(DoblarrError):
@@ -315,6 +321,85 @@ class Placement:
 
 
 @dataclass
+class SpeechPreparation:
+    """What boundary analysis found in a raw take, and what it did about it.
+
+    All times are in the CLIP domain — offsets inside the take — because a
+    take's own timeline is not the source timeline and not the target one.
+    `lead`/`tail` are what was actually removed, so the trim is reversible by
+    inspection: the raw file plus these offsets reconstructs the derivative.
+    """
+
+    take_id: str = ""
+    detector: str = ""
+    decision: str = "unknown"
+    reason: str = ""
+    active: Span | None = None          # detected speech-active bounds, CLIP domain
+    handle: float = 0.0                 # protective margin kept on each side
+    lead: float = 0.0                   # seconds removed from the head
+    tail: float = 0.0                   # seconds removed from the tail
+    onset: float | None = None          # intended audible onset re-inserted, if any
+    raw_duration: float | None = None
+    active_duration: float | None = None
+    noise_db: float | None = None       # estimated noise floor
+    speech_db: float | None = None      # level of the active region
+    confidence: float | None = None     # None is unknown, never a silent 0.0
+    clipped: bool = False
+    silences: list[Span] = field(default_factory=list)  # suspected internal gaps
+
+    def __post_init__(self) -> None:
+        if self.decision not in TRIM_DECISIONS:
+            raise SchemaError(f"unknown trim decision {self.decision!r}")
+
+    @property
+    def trimmed(self) -> float:
+        return self.lead + self.tail
+
+    def as_dict(self) -> dict:
+        return {
+            "take_id": self.take_id,
+            "detector": self.detector,
+            "decision": self.decision,
+            "reason": self.reason,
+            "active": self.active.as_dict() if self.active else None,
+            "handle": self.handle,
+            "lead": self.lead,
+            "tail": self.tail,
+            "onset": self.onset,
+            "raw_duration": self.raw_duration,
+            "active_duration": self.active_duration,
+            "noise_db": self.noise_db,
+            "speech_db": self.speech_db,
+            "confidence": self.confidence,
+            "clipped": self.clipped,
+            "silences": [s.as_dict() for s in self.silences],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> SpeechPreparation:
+        data = _mapping(data, "speech preparation")
+        active = data.get("active")
+        return cls(
+            take_id=_text(data.get("take_id")),
+            detector=_text(data.get("detector")),
+            decision=_text(data.get("decision")) or "unknown",
+            reason=_text(data.get("reason")),
+            active=Span.from_dict(active) if active else None,
+            handle=_finite(data.get("handle", 0.0), "trim handle"),
+            lead=_finite(data.get("lead", 0.0), "trimmed lead"),
+            tail=_finite(data.get("tail", 0.0), "trimmed tail"),
+            onset=_opt_float(data.get("onset"), "prepared onset"),
+            raw_duration=_opt_float(data.get("raw_duration"), "raw duration"),
+            active_duration=_opt_float(data.get("active_duration"), "active duration"),
+            noise_db=_opt_float(data.get("noise_db"), "noise floor"),
+            speech_db=_opt_float(data.get("speech_db"), "speech level"),
+            confidence=_opt_float(data.get("confidence"), "trim confidence"),
+            clipped=bool(data.get("clipped", False)),
+            silences=_spans(data.get("silences"), "internal silences"),
+        )
+
+
+@dataclass
 class Artifact:
     """One audio file produced for a cue, with the role it can actually prove."""
 
@@ -545,13 +630,45 @@ class CueAudio:
             return self.renders[-1]
         return self.raw()
 
+    def upstream_of(self, role: str) -> Artifact | None:
+        """The most processed artifact strictly before `role`, else the raw take.
+
+        A processing step reads this rather than `current()`, so re-running it
+        with new settings reprocesses its input instead of its own output.
+        """
+        if role not in RENDER_ORDER:
+            return self.current()
+        for candidate in reversed(RENDER_ORDER[:RENDER_ORDER.index(role)]):
+            if candidate == RAW:
+                break
+            found = self.render(candidate)
+            if found is not None:
+                return found
+        return self.raw()
+
     def put_render(self, artifact: Artifact) -> Artifact:
-        """Register (or replace) the derivative for `artifact.role`."""
+        """Register (or replace) the derivative for `artifact.role`.
+
+        Replacing an artifact with different audio invalidates everything
+        downstream of it: a derivative made from the previous version is not a
+        derivative of this one, and silently keeping it is how a stale render
+        reaches the mix.
+        """
+        previous = self.render(artifact.role)
         self.renders = [a for a in self.renders if a.role != artifact.role]
         self.renders.append(artifact)
         self.renders.sort(key=lambda a: RENDER_ORDER.index(a.role)
                           if a.role in RENDER_ORDER else len(RENDER_ORDER))
+        if previous is None or previous.fingerprint != artifact.fingerprint:
+            self.invalidate_after(artifact.role)
         return artifact
+
+    def invalidate_after(self, role: str) -> None:
+        """Drop every derivative downstream of `role` in the processing order."""
+        if role not in RENDER_ORDER:
+            return
+        downstream = set(RENDER_ORDER[RENDER_ORDER.index(role) + 1:])
+        self.renders = [a for a in self.renders if a.role not in downstream]
 
     def drop_renders(self, roles) -> None:
         """Invalidate derivatives; the immutable raw take is never dropped."""
@@ -726,6 +843,7 @@ def cue_payload(seg) -> dict:
         "source": seg.source.as_dict(),
         "placement": seg.placement.as_dict(),
         "audio": seg.audio.as_dict(),
+        "preparation": seg.preparation.as_dict(),
         "findings": [f.as_dict() for f in seg.findings],
     }
 
@@ -741,6 +859,7 @@ def apply_cue_payload(seg, data: Any) -> None:
     seg.source = SourceSpans.from_dict(data.get("source"))
     seg.placement = Placement.from_dict(data.get("placement"))
     seg.audio = CueAudio.from_dict(data.get("audio"))
+    seg.preparation = SpeechPreparation.from_dict(data.get("preparation"))
     seg.findings = [Finding.from_dict(f) for f in _sequence(data.get("findings"), "findings")]
 
 

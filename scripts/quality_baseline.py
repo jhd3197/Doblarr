@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from doblarr.benchmarks import compare, example_script, record  # noqa: E402
+from doblarr.benchmarks import SCENES, compare, example_script, record  # noqa: E402
 from doblarr.stages.common import save_script  # noqa: E402
 
 DEFAULT_ROOT = Path("work") / "benchmarks"
@@ -38,6 +38,10 @@ def main(argv=None) -> int:
     take.add_argument("--note", default="", help="what this baseline is for")
     take.add_argument("--keep", action="store_true",
                       help="keep this run's work and output directories")
+    take.add_argument("--scene", default="default", choices=sorted(SCENES),
+                      help="which fixture scene to render")
+    take.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                      help="config override, e.g. --set boundaries.trim=true")
 
     diff = sub.add_parser("compare", help="diff two recorded baselines")
     diff.add_argument("before")
@@ -70,15 +74,40 @@ def main(argv=None) -> int:
     # The fixture media lives at a stable path so two baselines describe the
     # same source document and therefore the same cue IDs. Each run still gets
     # a fresh work/output directory, so every baseline is a cold render.
-    media_root = out / "fixture-media"
+    media_root = out / f"fixture-media-{args.scene}"
     root = out / args.name if args.keep else Path(tempfile.mkdtemp(prefix="doblarr-baseline-"))
     try:
-        record(root, destination, note=args.note, media_root=media_root)
+        record(root, destination, scene=SCENES[args.scene], note=args.note,
+               overrides=_overrides(args.set), media_root=media_root)
     finally:
         if not args.keep:
             shutil.rmtree(root, ignore_errors=True)
     print(f"recorded {destination}")
     return 0
+
+
+def _overrides(pairs) -> dict:
+    """Parse `--set key=value` into config overrides, keeping types honest."""
+    values: dict = {}
+    for pair in pairs:
+        key, _, raw = str(pair).partition("=")
+        key = key.strip()
+        if not key or not _:
+            raise SystemExit(f"--set needs KEY=VALUE, got {pair!r}")
+        text = raw.strip()
+        if text.lower() in {"true", "false"}:
+            values[key] = text.lower() == "true"
+            continue
+        try:
+            values[key] = int(text)
+            continue
+        except ValueError:
+            pass
+        try:
+            values[key] = float(text)
+        except ValueError:
+            values[key] = text
+    return values
 
 
 def _resolve(out: Path, name: str) -> Path:

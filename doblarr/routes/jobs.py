@@ -240,6 +240,8 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 "audio": {"takes": [], "selection": None,
                           "renders": [{"role": "unknown", "proven": False,
                                        "available": bool(row.get("has_audio"))}]},
+                "preparation": {"decision": "unknown",
+                                "reason": "snapshot predates boundary analysis"},
                 "findings": [],
             }
             return

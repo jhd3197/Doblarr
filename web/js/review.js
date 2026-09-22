@@ -49,6 +49,7 @@ export function createReview({ onQueued }) {
       <button type="button" class="btn btn-ghost" id="reviewSaveMemory">Save translation for reuse</button></div>
       <p class="hint">Translation: ${esc(row.translation_provenance?.method || 'legacy')} · ${esc(row.translation_provenance?.reason || 'No recorded provenance')}</p>
       <p class="hint">${provenance(row)}</p>
+      <p class="hint">${preparation(row)}</p>
       <div id="reviewCorrection" class="review-correction"></div>`;
     editor.querySelectorAll('input,textarea,select').forEach(f => { f.disabled = !data.editable; });
     wireCorrection(row);
@@ -67,6 +68,25 @@ export function createReview({ onQueued }) {
     const proven = rendered && rendered.proven === false ? ' (unverified role)' : '';
     return `Cue ${esc(cue.cue_id || 'unassigned')} · source ${esc(source)} · `
       + `${takes} take${takes === 1 ? '' : 's'} · rendered from ${esc(role)}${proven}`;
+  }
+
+  // What boundary preparation decided, and why. "kept" and "uncertain" are not
+  // failures — leaving a take alone is the safe answer — so both say so plainly.
+  function preparation(row) {
+    const p = row.cue?.preparation;
+    if (!p || !p.decision || p.decision === 'unknown') return 'Boundaries: not analyzed.';
+    const parts = [];
+    if (p.decision === 'trimmed') {
+      parts.push(`trimmed ${(p.lead ?? 0).toFixed(2)}s lead / ${(p.tail ?? 0).toFixed(2)}s tail`);
+    } else {
+      parts.push(`${esc(p.decision)}${p.reason ? ` — ${esc(p.reason)}` : ''}`);
+    }
+    if (p.active_duration) parts.push(`${p.active_duration.toFixed(2)}s of speech`);
+    if (p.onset) parts.push(`speaks ${p.onset.toFixed(2)}s after the cue starts`);
+    if (p.silences?.length) parts.push(`${p.silences.length} internal pause${p.silences.length === 1 ? '' : 's'} kept`);
+    const edged = (row.cue?.audio?.renders || []).some(r => r.role === 'edged');
+    if (edged) parts.push('edges faded');
+    return `Boundaries: ${parts.join(' · ')}`;
   }
 
   function wireCorrection(row) {

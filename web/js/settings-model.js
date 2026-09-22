@@ -86,6 +86,15 @@ const TABS = [
     C("quality.asr", "Verify generated words", ["off", "suspicious", "all"], "Speech recognition adds processing time; mismatches are review suggestions."),
     N("quality.max_retries", "Quality retry attempts"),
     N("quality.request_budget", "Extra speech requests per job", "Shared cap across quality retries and timing repairs. 0 means no cap."),
+  ]), group("Clip boundaries", [
+    B("boundaries.trim", "Trim generator padding", "Removes dead air outside the detected speech before timing correction. Internal pauses are never removed and the raw take is kept."),
+    N("boundaries.handle_ms", "Protective margin (ms)", "Kept on each side of the detected speech."),
+    N("boundaries.max_trim_seconds", "Most to remove per side (seconds)"),
+    N("boundaries.min_trim_ms", "Smallest trim worth doing (ms)"),
+    N("boundaries.threshold_db", "Speech threshold above noise (dB)"),
+    N("boundaries.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the boundary is not knowable and the clip is left alone."),
+    N("boundaries.edge_fade_ms", "Edge fade (ms)", "0 disables it. Applied only where a clip would otherwise start or end on a click."),
+    N("boundaries.edge_threshold_db", "Edge already smooth below (dB)"),
   ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),
@@ -115,7 +124,9 @@ const PLAN_FIELDS = [
     "translate.locale", "translate.adaptation", "translate.direction", "translate.character_notes",
     "translate.adapt_region", "translate.reuse_memory",
     "dub.version_name", "dub.preserve_versions",
-    "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run"]
+    "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run",
+    // Per-title bypass for boundary preparation; the detector thresholds stay global.
+    "boundaries.trim", "boundaries.edge_fade_ms"]
     .map(k => ({ ...FIELD_BY_KEY[k], t: isBoolField(FIELD_BY_KEY[k]) ? "bool" : FIELD_BY_KEY[k].t })),
 ];
 
