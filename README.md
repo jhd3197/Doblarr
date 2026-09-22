@@ -243,9 +243,27 @@ cp config.docker.example.yaml config/config.yaml   # fill in URLs + keys
 docker compose up -d --build                         # http://localhost:6363
 ```
 
-Tagged releases (`git tag v0.2.0 && git push --tags`) build a multi-arch image to
-`ghcr.io/<owner>/doblarr` (`latest` + the version tag) and cut a GitHub release with
-auto-generated notes — see `.github/workflows/release.yml`.
+Publishing follows the `dev` → `main`/`master` promotion process automatically:
+
+- Push to `dev`: lint, type checks, tests, frontend checks, and a Docker build must
+  pass before publishing `ghcr.io/jhd3197/doblarr:dev` and a numbered dev image.
+- Merge a same-repository `dev` PR into `main` or `master`: the same checks run on
+  the merged commit, then publish `latest` and a stable version, and create its
+  Git tag and GitHub release with generated notes. Direct stable-branch pushes
+  do not publish; the release workflow verifies the merged promotion.
+- The first stable release uses the package version (`0.1.0` initially); later
+  promotions increment the latest stable tag's patch number automatically.
+  Retrying a released commit reuses its version. Dev images never update `latest`.
+
+Images support `linux/amd64` and `linux/arm64` and include a full `sha-<commit>`
+tag. No manual version edits or tag pushes are needed. Publication uses the
+built-in `GITHUB_TOKEN` with `contents: write` and `packages: write`; a separate
+GitHub key is not required. See [the release workflow](.github/workflows/release.yml).
+
+GHCR creates new packages as private by default. After the first publication,
+the package must be **Public** in its GitHub package settings for anonymous pulls
+and the pull-count badge to work. The workflow checks anonymous access and reports
+an error if publication succeeded but the image cannot be read publicly.
 
 `config/` holds `config.yaml`; `data/` holds the job store + generated Kometa
 fragment. The image is the app only (no ML stack) — the worker runs dry-run until

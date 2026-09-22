@@ -1,19 +1,79 @@
 name: Release
 
-# Tag push v* -> multi-arch image on GHCR (latest + version) + GitHub release.
+# Branch pushes own the entire pipeline; generated tags need no second workflow.
 on:
   push:
-    tags: ["v*"]
+    branches: [dev, main, master]
+
+# Serialize stable branches together; dev pushes must not replace queued releases.
+concurrency:
+  group: container-release-${{ github.ref_name == 'dev' && 'dev' || 'stable' }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write   # GitHub release
-  packages: write   # GHCR push
+  contents: read
 
 jobs:
-  docker:
+  promotion:
+    name: Verify dev promotion
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Require a merged dev promotion for stable releases
+        if: github.ref_name != 'dev'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const base = context.ref.replace('refs/heads/', '');
+            const pulls = await github.paginate(
+              github.rest.repos.listPullRequestsAssociatedWithCommit,
+              { owner, repo, commit_sha: context.sha, per_page: 100 }
+            );
+            const promotion = pulls.find(pull =>
+              pull.merged_at && pull.merge_commit_sha === context.sha &&
+              pull.base.ref === base && pull.head.ref === 'dev' &&
+              pull.head.repo?.full_name === `${owner}/${repo}`
+            );
+            if (!promotion) {
+              core.setFailed('Stable releases require a merged dev → main/master PR from this repository.');
+            }
+
+  checks:
+    name: CI Gate
+    needs: promotion
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish container and release
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Refuse stale runs before updating image aliases
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          current=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "::error::This branch has advanced; its newer run will publish."
+            exit 1
+          fi
+      - name: Resolve version and stamp the container source
+        id: version
+        run: python .github/scripts/release_version.py
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -21,27 +81,39 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: img
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.img.outputs.name }}
-          tags: |
-            type=raw,value=latest
-            type=semver,pattern={{version}}
-      - uses: docker/build-push-action@v6
+      - name: Build and publish both architectures
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: softprops/action-gh-release@v2
+          tags: |
+            ${{ steps.version.outputs.image }}:${{ steps.version.outputs.channel }}
+            ${{ steps.version.outputs.image }}:${{ steps.version.outputs.version }}
+            ${{ steps.version.outputs.image }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=${{ github.ref_name }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
+      # Create the tag/release only after publishing succeeds. This also works
+      # with GITHUB_TOKEN, whose tag pushes do not start another workflow.
+      - name: Create stable tag and GitHub release
+        if: github.ref_name != 'dev'
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          make_latest: true
+      - name: Verify anonymous access to the published image
+        env:
+          IMAGE: ${{ steps.version.outputs.image }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/anonymous-docker"
+          if ! DOCKER_CONFIG="$RUNNER_TEMP/anonymous-docker" docker manifest inspect "$IMAGE:$VERSION" > /dev/null; then
+            echo "::error::The image was published but is not publicly readable. Check registry availability and set the doblarr package visibility to Public in GitHub package settings. The pull-count badge needs public access."
+            exit 1
+          fi
