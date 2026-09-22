@@ -213,7 +213,7 @@ def test_preview_surfaces_conflicts_with_existing_rules(client_factory):
 
 
 def test_review_rerender_inherits_or_updates_knowledge(client_factory, tmp_path):
-    from test_review import review_job
+    from tests.test_review import review_job
 
     client = client_factory()
     queued, _, _ = review_job(client, tmp_path)
@@ -233,7 +233,7 @@ def test_review_rerender_inherits_or_updates_knowledge(client_factory, tmp_path)
 
 
 def test_review_exposes_knowledge_scope_refs(client_factory, tmp_path):
-    from test_review import review_job
+    from tests.test_review import review_job
 
     client = client_factory()
     queued, job, _ = review_job(client, tmp_path)
