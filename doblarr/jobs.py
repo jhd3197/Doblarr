@@ -59,6 +59,7 @@ class Job:
     report_file: str | None = None
     review_file: str | None = None
     review_count: int = 0
+    metrics: dict[str, Any] = field(default_factory=dict)
     version_id: str | None = None
     translation_id: str | None = None
     version_name: str = ""

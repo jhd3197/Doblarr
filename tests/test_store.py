@@ -79,6 +79,15 @@ def test_extra_fields_round_trip_via_payload(tmp_path):
     store.close()
 
 
+def test_saved_generation_metrics_do_not_break_job_listing(tmp_path):
+    store = JobStore(tmp_path / "jobs.db")
+    job = store.add(title="Saved dub", source="plex", source_lang="en", target_lang="es")
+    store.update(job.id, metrics={"tts_cache_hits": 275, "timing_flags": 13})
+    assert store.get(job.id).metrics["tts_cache_hits"] == 275
+    assert store.list()[0]["metrics"]["timing_flags"] == 13
+    store.close()
+
+
 def test_scan_state_round_trip(tmp_path):
     db = Database(tmp_path / "d.db")
     assert db.load_scan() is None
