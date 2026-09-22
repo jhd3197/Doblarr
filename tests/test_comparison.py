@@ -374,10 +374,16 @@ def test_the_results_sheet_is_delivered_empty_with_the_mapping_written_down(tmp_
     page = (tmp_path / "out" / "c5" / "index.html").read_text(encoding="utf-8")
     assert "Reveal which is which" in page
     assert "No speech was generated" in page
+    # The player has to follow the reader down a five-scene page, and the
+    # switching has to be reachable without the mouse.
+    assert "position: sticky" in page
+    assert 'id="player"' in page
+    for key in ("data-key=", "keydown", "Level-matched"):
+        assert key in page
     for label, name in manifest["labels"].items():
         assert f"{label} = {name}" in page
     # every playable file the page links to is relative and on disk
     import re
-    for src in re.findall(r'data-src="([^"]+)"', page):
+    for src in re.findall(r'data-actual="([^"]+)"', page):
         assert not src.startswith(("/", "http"))
         assert (tmp_path / "out" / "c5" / src).is_file()

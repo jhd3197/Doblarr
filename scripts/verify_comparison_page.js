@@ -30,13 +30,13 @@ const problems = [];
 page.on('pageerror', e => problems.push(`page error: ${e.message}`));
 await page.goto(page_url);
 
-const buttons = await page.locator('button[data-src]').all();
+const buttons = await page.locator('button[data-actual]').all();
 console.log(`${manifest.comparison_id}: ${buttons.length} playback controls`);
 if (!buttons.length) problems.push('the page offers nothing to play');
 
 for (const button of buttons) {
   const label = (await button.textContent()).trim();
-  const src = await button.getAttribute('data-src');
+  const src = await button.getAttribute('data-actual');
   await button.click();
   // Wait for real decoded audio, not just a src attribute that was set.
   const ok = await page.waitForFunction(() => {
@@ -53,6 +53,32 @@ for (const button of buttons) {
   if (!moved) problems.push(`${label} (${src}) decoded but did not play`);
   console.log(`  ${moved ? 'plays' : 'SILENT'}  ${label} · ${duration.toFixed(2)}s · ${src}`);
 }
+
+// The level-matched toggle must swap the loaded file, not silence it.
+// `find` with an async predicate matches the first element every time — the
+// promise is always truthy — so the attribute is resolved before filtering.
+const attrs = await Promise.all(buttons.map(b => b.getAttribute('data-matched')));
+const withMatched = buttons[attrs.findIndex(Boolean)];
+if (withMatched) {
+  await withMatched.click();
+  await page.locator('#matched').check();
+  const ok = await page.waitForFunction(() => {
+    const p = document.getElementById('player');
+    return p.readyState >= 2 && p.duration > 1;
+  }, null, { timeout: 15000 }).then(() => true).catch(() => false);
+  if (!ok) problems.push('the level-matched toggle did not load a playable file');
+  else console.log('  level-matched toggle swaps the source');
+  await page.locator('#matched').uncheck();
+}
+
+// Keyboard switching is the point of the page; if it is dead, say so.
+// Deliberately pressed straight after touching the checkbox, because that is
+// where the shortcuts used to stop working.
+await page.keyboard.press('2');
+const switched = await page.evaluate(() =>
+  document.querySelector('button.playing')?.dataset.key === '2');
+if (!switched) problems.push('the keyboard did not switch versions');
+else console.log('  keyboard switching works');
 
 // The label mapping is a fairness aid, never a secret.
 await page.getByRole('button', { name: 'Reveal which is which' }).click();

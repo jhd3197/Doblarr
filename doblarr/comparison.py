@@ -1119,12 +1119,215 @@ def _tally(counts: dict) -> str:
     return ", ".join(f"{value} {key}" for key, value in sorted(counts.items()))
 
 
-def page(manifest: dict, root: Path) -> str:
-    """A small local page with working playback for every scene and variant.
+PAGE_CSS = """
+:root {
+  --ink: #16181d; --dim: #5a6069; --line: #e4e7ec; --bg: #fbfbfc;
+  --card: #fff; --accent: #16181d; --good: #1a6b39; --warn: #8a6d3b;
+  --bad: #9b1c1c; --bar: 5.4rem;
+}
+* { box-sizing: border-box; }
+body {
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; color: var(--ink); background: var(--bg);
+  padding-bottom: 4rem;
+}
+.wrap { max-width: 64rem; margin: 0 auto; padding: 0 1rem; }
+h1 { margin: 1.4rem 0 .2rem; font-size: 1.5rem; }
+h2 { margin: 0; font-size: 1.05rem; }
+.meta { color: var(--dim); margin: .15rem 0; font-size: .9em; }
 
-    One audio element, deliberately: two would happily play over each other the
-    moment a switch races a load, and a comparison where both versions are
-    audible at once is not a comparison.
+/* The player follows you. A comparison you have to scroll back up to
+   operate is a comparison nobody makes twice. */
+.bar {
+  position: sticky; top: 0; z-index: 10; background: var(--card);
+  border-bottom: 1px solid var(--line); padding: .6rem 0;
+  box-shadow: 0 1px 8px rgba(0,0,0,.05);
+}
+.bar .wrap { display: flex; gap: .9rem; align-items: center; flex-wrap: wrap; }
+.bar audio { flex: 1 1 22rem; min-width: 16rem; height: 2.4rem; }
+.now { flex: 1 1 14rem; min-width: 12rem; line-height: 1.3; }
+.now strong { display: block; }
+.now span { color: var(--dim); font-size: .85em; }
+.toggles { display: flex; gap: .9rem; align-items: center; flex-wrap: wrap;
+           font-size: .9em; }
+.toggles label { display: flex; gap: .3rem; align-items: center; cursor: pointer; }
+
+section.scene {
+  background: var(--card); border: 1px solid var(--line); border-radius: .6rem;
+  padding: 1rem 1.1rem; margin: 1rem 0; scroll-margin-top: calc(var(--bar) + 1rem);
+}
+section.scene.current { border-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: .45rem; margin: .7rem 0 0; }
+.row .sep { width: 100%; height: 0; }
+button {
+  font: inherit; padding: .42rem .8rem; border: 1px solid #c7ccd4;
+  background: #fff; border-radius: .4rem; cursor: pointer; line-height: 1.2;
+}
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.playing { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.is-original { border-color: var(--good); }
+button.is-dub { border-color: var(--warn); font-style: italic; }
+button kbd {
+  font: inherit; font-size: .82em; opacity: .55; margin-left: .4rem;
+  border: 1px solid currentColor; border-radius: .2rem; padding: 0 .25rem;
+}
+nav.scenes { display: flex; gap: .4rem; flex-wrap: wrap; margin: .8rem 0 0; }
+nav.scenes a {
+  font-size: .85em; text-decoration: none; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 1rem; padding: .2rem .7rem;
+}
+nav.scenes a:hover, nav.scenes a.current { color: var(--ink); border-color: var(--accent); }
+details { margin-top: .8rem; }
+summary { cursor: pointer; color: var(--dim); font-size: .9em; }
+table { border-collapse: collapse; width: 100%; font-size: .88em; margin-top: .5rem; }
+td, th { border-bottom: 1px solid var(--line); padding: .3rem .5rem;
+         text-align: left; vertical-align: top; }
+th { color: var(--dim); font-weight: 500; }
+.was { color: var(--warn); font-size: .85em; }
+.ok { color: var(--good); } .bad { color: var(--bad); }
+.note li { color: var(--warn); }
+.callout {
+  border-left: 3px solid var(--warn); background: #fffdf7; padding: .6rem .9rem;
+  margin: 1rem 0; border-radius: 0 .4rem .4rem 0;
+}
+.callout.good { border-left-color: var(--good); background: #f6fbf7; }
+footer { color: var(--dim); font-size: .9em; margin: 2.5rem 0 1rem; }
+kbd.help { border: 1px solid var(--line); border-radius: .2rem; padding: 0 .3rem; }
+@media (max-width: 40rem) {
+  .bar .wrap { gap: .5rem; }
+  .bar audio { flex: 1 1 100%; }
+}
+"""
+
+PAGE_JS = """
+// One audio element for the whole page, deliberately: two would play over each
+// other the moment a switch races a load, and a comparison where both versions
+// are audible at once is not a comparison.
+const player = document.getElementById('player');
+const nowLabel = document.getElementById('nowLabel');
+const nowScene = document.getElementById('nowScene');
+const matched = document.getElementById('matched');
+const loop = document.getElementById('loop');
+let current = null;              // the button that is loaded
+let scene = 0;                   // the scene the keyboard acts on
+
+const buttons = () => [...document.querySelectorAll('button[data-actual]')];
+const inScene = n => buttons().filter(b => Number(b.dataset.scene) === n);
+
+function srcFor(button) {
+  // The level-matched copy is an audition aid. It only exists for the
+  // variants, so a reference track ignores the toggle rather than going silent.
+  return (matched.checked && button.dataset.matched) || button.dataset.actual;
+}
+
+function play(button, { keepPosition = true } = {}) {
+  if (!button) return;
+  const wasPlaying = !player.paused && !player.ended;
+  const at = keepPosition ? player.currentTime : 0;
+  buttons().forEach(b => b.classList.remove('playing'));
+  button.classList.add('playing');
+  current = button;
+  scene = Number(button.dataset.scene);
+  markScene();
+  nowLabel.textContent = button.dataset.label;
+  nowScene.textContent = button.dataset.scenename
+    + (matched.checked && button.dataset.matched ? ' · level-matched' : '');
+  player.src = srcFor(button);
+  player.load();
+  player.addEventListener('loadedmetadata', () => {
+    // Keep the listener's place across a switch: comparing two versions is
+    // only useful if the same moment is being compared.
+    if (at && isFinite(player.duration)) {
+      player.currentTime = Math.min(at, Math.max(0, player.duration - 0.05));
+    }
+    if (wasPlaying) player.play().catch(() => {});
+  }, { once: true });
+}
+
+function markScene() {
+  document.querySelectorAll('section.scene').forEach(s =>
+    s.classList.toggle('current', Number(s.dataset.scene) === scene));
+  document.querySelectorAll('nav.scenes a').forEach(a =>
+    a.classList.toggle('current', Number(a.dataset.scene) === scene));
+}
+
+buttons().forEach(b => b.addEventListener('click', () => play(b)));
+matched.addEventListener('change', () => play(current, { keepPosition: true }));
+loop.addEventListener('change', () => { player.loop = loop.checked; });
+document.getElementById('reveal').addEventListener('click', e => {
+  document.getElementById('mapping').hidden = false;
+  e.target.hidden = true;
+});
+
+// Which scene the keyboard acts on follows what you are looking at, so
+// switching variants never jumps you to another part of the episode.
+const spy = new IntersectionObserver(entries => {
+  const visible = entries.filter(e => e.isIntersecting)
+    .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+  if (visible && !current) { scene = Number(visible.target.dataset.scene); markScene(); }
+}, { rootMargin: '-30% 0px -50% 0px', threshold: [0.1, 0.5] });
+document.querySelectorAll('section.scene').forEach(s => spy.observe(s));
+
+document.addEventListener('keydown', event => {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const target = event.target;
+  // Only a field you could be typing into swallows a shortcut. Ticking the
+  // level-matched box leaves focus on it, and a listener who then pressed 2
+  // and got nothing would reasonably conclude the keys do not work.
+  if (target.matches('input:not([type=checkbox]):not([type=radio]), textarea, select')) {
+    return;
+  }
+  // Space still belongs to a focused checkbox: that is how it is toggled.
+  if (event.key === ' ' && target.matches('input[type=checkbox]')) return;
+  const here = inScene(scene);
+  const key = event.key.toLowerCase();
+  if (key === ' ') {
+    event.preventDefault();
+    if (!current) { play(here[0], { keepPosition: false }); return; }
+    player.paused ? player.play().catch(() => {}) : player.pause();
+    return;
+  }
+  if (key >= '1' && key <= '9') {
+    const pick = here.find(b => b.dataset.key === key);
+    if (pick) { event.preventDefault(); play(pick); }
+    return;
+  }
+  if (key === 'o' || key === 'r') {
+    const role = key === 'o' ? 'original' : 'dub';
+    const pick = here.find(b => b.dataset.role === role);
+    if (pick) { event.preventDefault(); play(pick); }
+    return;
+  }
+  if (key === 'm') { event.preventDefault(); matched.checked = !matched.checked;
+                     play(current, { keepPosition: true }); return; }
+  if (key === 'l') { event.preventDefault(); loop.checked = !loop.checked;
+                     player.loop = loop.checked; return; }
+  if (key === '[' || key === ']') {
+    event.preventDefault();
+    const total = document.querySelectorAll('section.scene').length;
+    scene = Math.max(0, Math.min(total - 1, scene + (key === ']' ? 1 : -1)));
+    markScene();
+    document.getElementById('scene-' + scene).scrollIntoView({ behavior: 'smooth' });
+    const pick = current
+      ? inScene(scene).find(b => b.dataset.name === current.dataset.name)
+      : null;
+    play(pick || inScene(scene)[0], { keepPosition: false });
+  }
+});
+markScene();
+"""
+
+
+def page(manifest: dict, root: Path) -> str:
+    """A local page built for the job: switch fast, keep your place, read less.
+
+    Three things it is shaped around. The player is sticky, because a
+    comparison you have to scroll back up to operate is one nobody makes
+    twice. Switching is on the keyboard, because A/B judgement lives or dies on
+    how quickly you can go back and forth. And level-matched playback is one
+    toggle rather than a second row of buttons, because doubling the controls
+    to express one boolean is how a page stops being readable.
     """
     def rel(path) -> str:
         try:
@@ -1132,125 +1335,132 @@ def page(manifest: dict, root: Path) -> str:
         except (ValueError, TypeError):
             return ""
 
-    reveal = ", ".join(f"{label} = {name}" for label, name in manifest["labels"].items())
-    blocks = []
+    def clock(seconds: float) -> str:
+        return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
+
+    labels = manifest["labels"]
+    reveal = " · ".join(f"{label} = {name}" for label, name in labels.items())
+    blocks, nav = [], []
     for row in manifest["scenes"]:
-        scene = row["scene"]
-        references = row.get("references") or [
-            {"path": row["source_excerpt"], "label": "Original scene",
-             "note": "", "role": "original"}]
-        buttons = [
-            f'<button data-src="{rel(ref["path"])}" class="ref '
-            f'{"is-original" if ref["role"] == "original" else "is-dub"}" '
-            f'title="{_esc(ref["note"])}">{_esc(ref["label"])}</button>'
-            for ref in sorted(references, key=lambda r: r["role"] != "original")]
-        for label, name in manifest["labels"].items():
-            variant = next(v for v in row["variants"] if v["name"] == name)
-            if variant.get("mixed"):
-                buttons.append(f'<button data-src="{rel(variant["mixed"])}">'
-                               f'{label} — actual level</button>')
-            if variant.get("matched"):
-                buttons.append(f'<button data-src="{rel(variant["matched"])}" '
-                               f'class="matched">{label} — level-matched '
-                               f'({variant["matched_gain_db"]:+.1f} dB)</button>')
-        script_lines = "".join(
+        s = row["scene"]
+        index = s["index"]
+        nav.append(f'<a href="#scene-{index}" data-scene="{index}">'
+                   f'{index + 1}. {_esc(s["title"])}</a>')
+        controls = []
+        for ref in sorted(row.get("references") or [],
+                          key=lambda r: r["role"] != "original"):
+            key = "O" if ref["role"] == "original" else "R"
+            controls.append(
+                f'<button data-actual="{rel(ref["path"])}" data-scene="{index}" '
+                f'data-role="{"original" if ref["role"] == "original" else "dub"}" '
+                f'data-name="{_esc(ref["role"])}" '
+                f'data-label="{_esc(ref["label"])}" '
+                f'data-scenename="Scene {index + 1} · {_esc(s["title"])}" '
+                f'class="{"is-original" if ref["role"] == "original" else "is-dub"}" '
+                f'title="{_esc(ref["note"])}">{_esc(ref["label"])}'
+                f'<kbd>{key}</kbd></button>')
+        controls.append('<span class="sep"></span>')
+        for position, (label, name) in enumerate(labels.items(), start=1):
+            variant = next((v for v in row["variants"] if v["name"] == name), None)
+            if variant is None or not variant.get("mixed"):
+                continue
+            matched_src = (f' data-matched="{rel(variant["matched"])}"'
+                           if variant.get("matched") else "")
+            controls.append(
+                f'<button data-actual="{rel(variant["mixed"])}"{matched_src} '
+                f'data-scene="{index}" data-key="{position}" data-name="{_esc(name)}" '
+                f'data-label="Version {label}" '
+                f'data-scenename="Scene {index + 1} · {_esc(s["title"])}">'
+                f'Version {label}<kbd>{position}</kbd></button>')
+        lines = "".join(
             f"<tr><td>{line['start']:.1f}s</td><td>{_esc(line['speaker'])}</td>"
             f"<td>{_esc(line['source'])}</td><td>{_esc(line['dub'] or '')}"
             + (f"<br><span class='was'>cached script said: "
                f"{_esc(line.get('script') or '')}</span>"
                if line.get("stale_script") else "")
             + "</td></tr>"
-            for line in scene["text"])
+            for line in s["text"])
+        window = s["window"]
         blocks.append(f"""
-  <section>
-    <h2>Scene {scene['index']} — {_esc(scene['title'])}</h2>
-    <p class="meta">{scene['duration']:.1f}s · {scene['lines']} line(s) ·
-       {_esc(', '.join(scene['speakers']))} ·
-       source window {scene['window']['start']:.1f}–{scene['window']['end']:.1f}s</p>
-    <div class="row">{''.join(buttons)}</div>
-    <table><thead><tr><th>At</th><th>Speaker</th><th>Original</th><th>Dub</th></tr></thead>
-    <tbody>{script_lines}</tbody></table>
+  <section class="scene" id="scene-{index}" data-scene="{index}">
+    <h2>{index + 1}. {_esc(s['title'])}</h2>
+    <p class="meta">{s['duration']:.0f}s · {s['lines']} lines ·
+      {_esc(', '.join(s['speakers']))} ·
+      episode {clock(window['start'])}–{clock(window['end'])}</p>
+    <div class="row">{''.join(controls)}</div>
+    <details><summary>Script ({s['lines']} lines)</summary>
+      <table><thead><tr><th>At</th><th>Speaker</th><th>Original</th>
+      <th>What the dub says</th></tr></thead><tbody>{lines}</tbody></table>
+    </details>
   </section>""")
 
     problems = manifest["objective"]["problems"]
     notes = manifest["objective"]["notes"]
-    status = ("<p class='ok'>Objective checks passed: the variants are comparable.</p>"
-              if not problems else
-              "<p class='bad'>Objective checks found problems:</p><ul>"
-              + "".join(f"<li>{_esc(p)}</li>" for p in problems) + "</ul>")
+    if problems:
+        status = ('<div class="callout"><p class="bad"><strong>Objective checks '
+                  'found problems.</strong></p><ul>'
+                  + "".join(f"<li>{_esc(p)}</li>" for p in problems) + "</ul></div>")
+    else:
+        status = ('<p class="meta ok">Objective checks passed: the versions are '
+                  'comparable.</p>')
     if notes:
-        status += "<ul class='note'>" + "".join(f"<li>{_esc(n)}</li>" for n in notes) + "</ul>"
+        status += ('<div class="callout"><ul class="note">'
+                   + "".join(f"<li>{_esc(n)}</li>" for n in notes) + "</ul></div>")
+    flagged = manifest.get("take_findings") or []
+    if flagged:
+        status += ('<div class="callout"><p><strong>The shared takes have known '
+                   'defects.</strong> A recognizer disagreed with these. They are in '
+                   'the generated speech every version plays, so no setting on either '
+                   'side can fix them:</p><ul>'
+                   + "".join(f"<li>{_esc(f)}</li>" for f in flagged[:8])
+                   + ("<li>…and more, in results.md</li>" if len(flagged) > 8 else "")
+                   + "</ul></div>")
+
     return f"""<!doctype html>
-<meta charset="utf-8">
+<html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Doblarr comparison — {_esc(manifest['comparison_id'])}</title>
-<style>
- body {{ font: 15px/1.5 system-ui, sans-serif; max-width: 62rem; margin: 2rem auto;
-         padding: 0 1rem; color: #16181d; background: #fbfbfc; }}
- h1 {{ margin-bottom: .2rem; }} h2 {{ margin-top: 2rem; }}
- .meta {{ color: #5a6069; margin-top: .2rem; }}
- .row {{ display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }}
- button {{ font: inherit; padding: .45rem .8rem; border: 1px solid #c7ccd4;
-           background: #fff; border-radius: .4rem; cursor: pointer; }}
- button.playing {{ background: #16181d; color: #fff; border-color: #16181d; }}
- button.matched {{ border-style: dashed; }}
- button.is-original {{ border-color: #1a6b39; }}
- button.is-dub {{ border-color: #8a6d3b; font-style: italic; }}
- table {{ border-collapse: collapse; width: 100%; font-size: .9em; margin-top: .6rem; }}
- td, th {{ border-bottom: 1px solid #e4e7ec; padding: .3rem .5rem; text-align: left;
-           vertical-align: top; }}
- .ok {{ color: #1a6b39; }} .bad {{ color: #9b1c1c; }}
- .note li {{ color: #7a5200; }}
- .was {{ color: #9a6b00; font-size: .85em; }}
- footer {{ margin-top: 3rem; color: #5a6069; font-size: .9em; }}
- #reveal {{ margin-left: .5rem; }}
-</style>
-<h1>Doblarr comparison — {_esc(manifest['comparison_id'])}</h1>
+<style>{PAGE_CSS}</style>
+
+<div class="bar"><div class="wrap">
+  <audio id="player" controls preload="none"></audio>
+  <div class="now"><strong id="nowLabel">Pick something to play</strong>
+    <span id="nowScene">{len(manifest['scenes'])} scenes · keys 1-3, O, R, M, [ ]</span></div>
+  <div class="toggles">
+    <label title="Plays a gain-matched copy. Audition aid only — it never
+changed any rendered audio."><input type="checkbox" id="matched"> Level-matched</label>
+    <label><input type="checkbox" id="loop"> Loop</label>
+  </div>
+</div></div>
+
+<div class="wrap">
+<h1>{_esc(manifest['comparison_id'])}</h1>
 <p class="meta">{_esc(manifest.get('note') or '')}</p>
 {status}
-<p>Labels are neutral and the mapping is not a secret:
-   <button id="reveal">Reveal which is which</button>
-   <span id="mapping" hidden>{_esc(reveal)}</span></p>
-<p class="meta">A green-edged button is the <strong>original performance</strong>
-   this dub was made from. An italic one is <strong>another dub</strong> of the
-   same scene — worth hearing, but not evidence about the original.</p>
-<audio id="player" controls style="width:100%"></audio>
-<label><input type="checkbox" id="loop"> Loop the excerpt</label>
+<p class="meta">Versions are lettered so the order does not steer you. The mapping
+  is not a secret: <button id="reveal">Reveal which is which</button>
+  <span id="mapping" hidden><strong>{_esc(reveal)}</strong></span></p>
+<p class="meta">Keyboard: <kbd class="help">1</kbd>…<kbd class="help">3</kbd> switch
+  version · <kbd class="help">O</kbd> original · <kbd class="help">R</kbd> reference
+  dub · <kbd class="help">M</kbd> level-matched · <kbd class="help">L</kbd> loop ·
+  <kbd class="help">space</kbd> play/pause · <kbd class="help">[</kbd>
+  <kbd class="help">]</kbd> previous/next scene. Switching keeps your place in the
+  scene.</p>
+<nav class="scenes">{''.join(nav)}</nav>
 {''.join(blocks)}
 <footer>
-<p>Every variant reused the same imported takes. No speech was generated for this
+<p>A green-edged button is the <strong>original performance</strong> this dub was
+made from. An italic one is <strong>another dub</strong> of the same scene — worth
+hearing, and not evidence about the original.</p>
+<p>Every version reused the same imported takes. No speech was generated for this
 comparison.</p>
 <p>This is a bounded excerpt and says nothing about an episode nobody has heard.
 A passing objective check means the files are comparable; whether the dub is
 better is not established by anything on this page.</p>
 </footer>
-<script>
- const player = document.getElementById('player');
- document.getElementById('loop').addEventListener('change', e =>
-   player.loop = e.target.checked);
- document.getElementById('reveal').addEventListener('click', () => {{
-   document.getElementById('mapping').hidden = false;
- }});
- // One element for everything, so switching never leaves two files playing.
- document.querySelectorAll('button[data-src]').forEach(button => {{
-   button.addEventListener('click', () => {{
-     const wasPlaying = !player.paused && !player.ended;
-     const at = player.currentTime;
-     document.querySelectorAll('button[data-src]').forEach(b =>
-       b.classList.remove('playing'));
-     button.classList.add('playing');
-     player.src = button.dataset.src;
-     player.load();
-     player.addEventListener('loadedmetadata', () => {{
-       // Keep the listener's place in the scene across a switch: comparing two
-       // versions is only useful if the same moment is being compared.
-       if (at && isFinite(player.duration)) {{
-         player.currentTime = Math.min(at, Math.max(0, player.duration - 0.05));
-       }}
-       if (wasPlaying) player.play().catch(() => {{}});
-     }}, {{ once: true }});
-   }});
- }});
-</script>
+</div>
+<script>{PAGE_JS}</script>
+</html>
 """
 
 
