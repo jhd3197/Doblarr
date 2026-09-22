@@ -53,6 +53,7 @@ def build(root, overrides=None, engine=None, scene=benchmarks.SCENE, media_root=
         "dub.preset_voices": ["tone-voice"],
         "dub.preserve_versions": False,
         "transcribe.diarize": False,
+        "translate.provider": "passthrough",
         "quality.asr": "off",
         **(overrides or {}),
     })

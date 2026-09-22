@@ -36,6 +36,7 @@ def completed_run(root, scene=benchmarks.TREATMENT_SCENE):
         "dub.preset_voices": ["tone-voice"],
         "dub.preserve_versions": False,
         "transcribe.diarize": False,
+        "translate.provider": "passthrough",
         "quality.asr": "off",
     })
     engine = benchmarks.ToneEngine(root, scene)

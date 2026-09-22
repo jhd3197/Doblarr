@@ -49,6 +49,7 @@ def render(client, tmp_path, overrides=None, engine=None, job_id=None):
         "dub.dry_run": False, "dub.voice_mode": "preset",
         "dub.preset_voices": ["tone-voice"], "dub.preserve_versions": True,
         "transcribe.diarize": False, "levels.mode": "consistent",
+        "translate.provider": "passthrough",
         "quality.asr": "all", "quality.max_retries": 0,
         **(overrides or {}),
     })

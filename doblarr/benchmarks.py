@@ -442,6 +442,7 @@ def baseline(root: Path, scene=SCENE, overrides: dict | None = None,
         "dub.preset_voices": ["tone-voice"],
         "dub.preserve_versions": False,
         "transcribe.diarize": False,
+        "translate.provider": "passthrough",
         "quality.asr": "off",
         **(overrides or {}),
     })

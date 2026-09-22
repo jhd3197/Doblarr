@@ -57,8 +57,10 @@ def test_baseline_keeps_nonspoken_evidence_without_synthesizing_it(observed):
 def test_baseline_reports_its_request_budget(observed):
     spent = observed["metrics"]["request_budget"]
     assert spent["limit"] == 0 and spent["exhausted"] is False
-    # The overlong line triggers exactly one shared repair charge.
-    assert spent["by_kind"] == {"timing_repair": 1}
+    # Offline passthrough never asks a provider to rewrite the overlong line;
+    # FFmpeg still fits it and the overflow remains visible below.
+    assert spent["by_kind"] == {}
+    assert spent["spent"] == 0
     assert spent["spent"] == sum(spent["by_kind"].values())
 
 
