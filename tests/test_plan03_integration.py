@@ -233,6 +233,7 @@ def test_a_tease_keeps_its_own_namespace_and_still_measures_nothing_it_should_no
         "dub.dry_run": False, "dub.voice_mode": "preset",
         "dub.preset_voices": ["tone-voice"], "dub.preserve_versions": False,
         "transcribe.diarize": False, "levels.mode": "consistent",
+        "translate.provider": "passthrough",
     })
     services = Services(config)
     services._cache["voicebox"] = Engine(tmp_path)
@@ -255,6 +256,7 @@ def test_two_target_locales_do_not_share_takes_levels_or_evidence(tmp_path):
             "dub.dry_run": False, "dub.voice_mode": "preset",
             "dub.preset_voices": ["tone-voice"], "dub.preserve_versions": False,
             "transcribe.diarize": False, "levels.mode": "consistent",
+            "translate.provider": "passthrough",
         })
         services = Services(config)
         engine = Engine(tmp_path)
@@ -335,6 +337,7 @@ def test_an_audition_measures_the_original_not_its_own_montage(tmp_path):
         "dub.dry_run": False, "dub.voice_mode": "preset",
         "dub.preset_voices": ["tone-voice"], "dub.preserve_versions": False,
         "transcribe.diarize": False, "levels.mode": "follow_source",
+        "translate.provider": "passthrough",
     })
     services = Services(config)
     services._cache["voicebox"] = Engine(tmp_path)
