@@ -72,6 +72,9 @@ PAD_SECONDS = 1.0
 # A scene longer than this is not an excerpt any more. The protocol asks for a
 # few minutes in total across several short scenes, not an episode.
 MAX_SCENE_SECONDS = 120.0
+# At most this many of the source's own audio tracks are cut as references. A
+# release can carry commentary and descriptive tracks nobody is comparing against.
+MAX_REFERENCES = 4
 
 
 class ComparisonError(RuntimeError):
@@ -347,6 +350,43 @@ def cut_stem(source: Path, scene: Scene, dest: Path, cancel=None,
     run_ffmpeg(args, cancel=cancel)
     temp.replace(dest)
     return dest
+
+
+def cut_references(media: Path, scene: Scene, scene_dir: Path, chosen: dict,
+                   cancel=None) -> list[dict]:
+    """Cut every audio track the source carries for this scene, each labelled.
+
+    The distinction the labels carry is the whole reason this returns more than
+    one file. The stream the pipeline dubbed from is the **original
+    performance** and is the reference for whether a line was translated and
+    acted faithfully. Any other track on the disc is **another dub** — useful
+    for hearing what a professional localisation did with the same scene, and
+    no evidence at all about the original. Collapsing the two, which is what
+    playing whichever stream ffmpeg defaults to amounts to, is how a listener
+    ends up comparing one dub against another and calling it the source.
+    """
+    rows = []
+    for entry in chosen.get("available", [])[:MAX_REFERENCES]:
+        index = entry["audio_index"]
+        is_original = index == chosen.get("audio_index")
+        language = entry.get("language") or "und"
+        name = "source" if is_original else f"reference-{language}-{index}"
+        path = cut_stem(media, scene, scene_dir / f"{name}.wav", cancel, stream=index)
+        rows.append({
+            "path": str(path),
+            "audio_index": index,
+            "language": language,
+            "title": entry.get("title", ""),
+            "role": "original" if is_original else "reference dub",
+            "label": (f"Original scene ({language})" if is_original
+                      else f"Reference dub ({language})"),
+            "note": ("the track this dub was made from; the reference for whether a "
+                     "line was translated and acted faithfully" if is_original else
+                     "another localisation of the same scene. Useful for comparison, "
+                     "and not evidence about the original performance"),
+            "measured": measure(path),
+        })
+    return rows
 
 
 def source_stream(media: Path, source_lang: str, cancel=None) -> dict:
@@ -889,8 +929,9 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
         # same file, which is what makes "the same window, the same cast, the
         # same cut" a fact about the comparison rather than an intention.
         excerpt = cut_media(Path(source), scene, scene_dir / "excerpt.mkv", cancel)
-        source_excerpt = cut_stem(Path(source), scene, scene_dir / "source.wav",
-                                  cancel, stream=original["audio_index"])
+        references = cut_references(Path(source), scene, scene_dir, original, cancel)
+        source_excerpt = Path(next(r["path"] for r in references
+                                   if r["role"] == "original"))
         speakers = sorted({row["speaker"] for row in scene.cues})
         rendered = []
         preparations = {}
@@ -914,6 +955,7 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
             "prepared": preparations,
             "source_excerpt": str(source_excerpt),
             "source_measured": measure(source_excerpt),
+            "references": references,
             "variants": rendered,
             # Once, on the shared takes — not per variant, because it is the
             # same audio in all of them.
@@ -1094,14 +1136,14 @@ def page(manifest: dict, root: Path) -> str:
     blocks = []
     for row in manifest["scenes"]:
         scene = row["scene"]
-        stream = manifest["source"].get("stream") or {}
-        others = [r["language"] for r in stream.get("available", [])
-                  if r["audio_index"] != stream.get("audio_index")]
-        label = f'Original scene ({stream.get("language", "source")})'
-        title = (f'audio stream {stream.get("audio_index")}'
-                 + (f'; this file also carries {", ".join(others)}' if others else ''))
-        buttons = [f'<button data-src="{rel(row["source_excerpt"])}" '
-                   f'title="{_esc(title)}">{_esc(label)}</button>']
+        references = row.get("references") or [
+            {"path": row["source_excerpt"], "label": "Original scene",
+             "note": "", "role": "original"}]
+        buttons = [
+            f'<button data-src="{rel(ref["path"])}" class="ref '
+            f'{"is-original" if ref["role"] == "original" else "is-dub"}" '
+            f'title="{_esc(ref["note"])}">{_esc(ref["label"])}</button>'
+            for ref in sorted(references, key=lambda r: r["role"] != "original")]
         for label, name in manifest["labels"].items():
             variant = next(v for v in row["variants"] if v["name"] == name)
             if variant.get("mixed"):
@@ -1151,6 +1193,8 @@ def page(manifest: dict, root: Path) -> str:
            background: #fff; border-radius: .4rem; cursor: pointer; }}
  button.playing {{ background: #16181d; color: #fff; border-color: #16181d; }}
  button.matched {{ border-style: dashed; }}
+ button.is-original {{ border-color: #1a6b39; }}
+ button.is-dub {{ border-color: #8a6d3b; font-style: italic; }}
  table {{ border-collapse: collapse; width: 100%; font-size: .9em; margin-top: .6rem; }}
  td, th {{ border-bottom: 1px solid #e4e7ec; padding: .3rem .5rem; text-align: left;
            vertical-align: top; }}
@@ -1166,6 +1210,9 @@ def page(manifest: dict, root: Path) -> str:
 <p>Labels are neutral and the mapping is not a secret:
    <button id="reveal">Reveal which is which</button>
    <span id="mapping" hidden>{_esc(reveal)}</span></p>
+<p class="meta">A green-edged button is the <strong>original performance</strong>
+   this dub was made from. An italic one is <strong>another dub</strong> of the
+   same scene — worth hearing, but not evidence about the original.</p>
 <audio id="player" controls style="width:100%"></audio>
 <label><input type="checkbox" id="loop"> Loop the excerpt</label>
 {''.join(blocks)}

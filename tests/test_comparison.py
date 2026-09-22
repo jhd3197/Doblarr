@@ -9,6 +9,7 @@ listener.
 """
 
 import json
+import pathlib
 import shutil
 
 import pytest
@@ -313,6 +314,34 @@ def test_a_treated_variant_produces_the_treated_role_and_the_other_does_not(tmp_
                and row["treatment"]["outcome"] == "applied" for row in phone["lines"])
     assert any(row["role"] == TREATED for row in phone["lines"])
     assert all(row["role"] != TREATED for row in dry["lines"])
+
+
+@needs_ffmpeg
+def test_every_source_track_is_offered_and_the_original_is_named_as_such(tmp_path):
+    """Another dub is a useful reference and is never called the original."""
+    run = completed_run(tmp_path / "source")
+    config = Config.load(tmp_path / "config.yaml")
+    manifest = comparison.run(
+        config, comparison_id="refs", source=run["media"], script=run["script"],
+        clips=run["clips"], windows=[(0.5, 8.5)],
+        variants={"a": {}, "b": {"boundaries.trim": True}},
+        root=tmp_path / "out", source_lang="ja", target_lang="es")
+    references = manifest["scenes"][0]["references"]
+    assert references, "the scene offers nothing to compare against"
+    originals = [r for r in references if r["role"] == "original"]
+    assert len(originals) == 1, "exactly one track is the original performance"
+    assert originals[0]["language"] == "jpn"
+    assert "Original scene" in originals[0]["label"]
+    for row in references:
+        assert pathlib.Path(row["path"]).is_file()
+        if row["role"] != "original":
+            # the words matter: it is a dub, and the note says it proves
+            # nothing about the original
+            assert row["label"].startswith("Reference dub")
+            assert "not evidence about the original" in row["note"]
+    page = (tmp_path / "out" / "refs" / "index.html").read_text(encoding="utf-8")
+    assert "original performance" in page
+    assert "another dub" in page
 
 
 @needs_ffmpeg
