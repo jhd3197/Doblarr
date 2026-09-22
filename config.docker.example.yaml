@@ -31,3 +31,24 @@ filtering:
   hidden_collection_name: Not in your language
   kometa_handoff: true
   auto_label: false
+
+# Source-relative dynamics. `legacy` keeps the pre-timing loudness pass exactly
+# as earlier releases ran it. The other modes move loudness ownership to a
+# single pass *after* timing, so a whisper that the original actor played
+# quietly stays quieter than the line next to it instead of being normalized
+# back to ordinary speech. Only one of the two ever runs.
+#
+# `follow_source` needs trustworthy evidence: a separated dialogue stem, a long
+# enough source interval, and no second speaker across it. Where that is
+# missing the line falls back to the plain target level and says why, rather
+# than amplifying a guess.
+levels:
+  mode: legacy                   # legacy | off | consistent | follow_source | manual
+  target_db: -20.0               # baseline speech-active RMS target, dBFS
+  strength: 0.7                  # how much of the original contrast to follow, 0..1
+  max_boost_db: 4.0              # never push a loud line further than this
+  max_cut_db: 8.0                # never bury a quiet line further than this
+  min_seconds: 0.30              # shorter source evidence is not a measurement
+  min_separation_db: 8.0         # speech this close to its bed is not measurable
+  peak_ceiling: 0.89             # hard peak this pass will not cross
+  measure_source: false          # measure the original even outside follow_source

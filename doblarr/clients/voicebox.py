@@ -33,9 +33,28 @@ class GenerationFailed(VoiceboxError):
     """A confirmed terminal failure; safe to submit a new generation."""
 
 
+# Engines whose /generate accepts an `instruct` delivery direction. This is
+# the adapter's answer to "can this engine be directed", and it is the only
+# place that answer is written down: `generate` refuses instructions for
+# anything else, and `doblarr.performance` asks here before claiming an
+# instruction was applied.
+DIRECTABLE_ENGINES = frozenset({"qwen", "qwen_custom_voice"})
+# Aliases the service accepts for the same engine.
+ENGINE_ALIASES = {"chatterbox-multilingual": "chatterbox", "qwen3-tts": "qwen"}
+
+
 class VoiceboxClient(ArrClient):
     service = "voicebox"
     error_cls = VoiceboxError
+
+    @staticmethod
+    def canonical_engine(engine: str) -> str:
+        return ENGINE_ALIASES.get(str(engine or ""), str(engine or ""))
+
+    @classmethod
+    def supports_direction(cls, engine: str) -> bool:
+        """Whether `engine` can be given a delivery instruction at all."""
+        return cls.canonical_engine(engine) in DIRECTABLE_ENGINES
 
     def __init__(self, base_url: str, timeout: int = 600):
         super().__init__(base_url, timeout=timeout)
@@ -133,11 +152,9 @@ class VoiceboxClient(ArrClient):
         if model_size is not None:
             payload["model_size"] = model_size
         if engine is not None:
-            payload["engine"] = {"chatterbox-multilingual": "chatterbox", "qwen3-tts": "qwen"}.get(
-                engine, engine
-            )
+            payload["engine"] = self.canonical_engine(engine)
         if instruct:
-            if payload.get("engine") not in {"qwen", "qwen_custom_voice"}:
+            if not self.supports_direction(payload.get("engine") or ""):
                 raise VoiceboxError("delivery instructions require a Qwen engine")
             payload["instruct"] = instruct
         # Creation is not idempotent. A lost response must not silently submit twice.

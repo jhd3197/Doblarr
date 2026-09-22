@@ -9,10 +9,14 @@ from .cues import (
     CueAudio,
     CueLineage,
     Finding,
+    LevelDecision,
+    PerformanceIntent,
     Placement,
+    SourceMeasurement,
     SourceReference,
     SourceSpans,
     SpeechPreparation,
+    Verification,
 )
 
 
@@ -60,6 +64,15 @@ class Segment:
     audio: CueAudio = field(default_factory=CueAudio)
     preparation: SpeechPreparation = field(default_factory=SpeechPreparation)
     findings: list[Finding] = field(default_factory=list)
+
+    # Plan 03 records. `intent` is how the line should be acted, `measurement`
+    # is how loud the original actor was, `level` is what the one level owner
+    # did about it, and `verification` is what recognition heard against what
+    # was asked for. All four default to their "nothing established" state.
+    intent: PerformanceIntent = field(default_factory=PerformanceIntent)
+    measurement: SourceMeasurement = field(default_factory=SourceMeasurement)
+    level: LevelDecision = field(default_factory=LevelDecision)
+    verification: Verification = field(default_factory=Verification)
 
     @property
     def duration(self) -> float:
@@ -120,6 +133,18 @@ class DubJob:
     source_reference: SourceReference | None = None
     cue_lineage: dict[str, list[str]] = field(default_factory=dict)
     script_ref: str = ""
+
+    # The extracted original track, kept separately from `source_audio` because
+    # an audition replaces the working audio with a montage. Source
+    # measurements and source playback read this; a montage is never evidence
+    # of how loud the original performance was.
+    source_track: Path | None = None
+    # The ordinary-dialogue reference this run measured, frozen so a resume
+    # compares against the same baseline instead of recomputing one.
+    dialogue_baseline: dict = field(default_factory=dict)
+    # Per-cue gain a reviewer set by hand, in dB. A manual value wins over any
+    # automatic source-relative gain: the person already heard the line.
+    manual_gains: dict[str, float] = field(default_factory=dict)
 
     # Non-spoken cues dropped before TTS, kept as evidence for reaction coverage
     # (Plan 08). Excluding a cue from synthesis is not the same as not knowing

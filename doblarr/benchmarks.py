@@ -23,6 +23,7 @@ from pathlib import Path
 from .config import Config
 from .cues import (
     FITTED,
+    LEVELED,
     MONTAGE,
     NORMALIZED,
     RAW,
@@ -293,6 +294,21 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
             "issues": sorted(seg.issues),
             "findings": sorted(
                 (f.code, f.disposition) for f in seg.findings),
+            # Plan 03 records. Every one of them is a *decision* or a *state*,
+            # not a measured dB value: two machines measure the same tone
+            # identically, but a comparison that included raw levels would
+            # still be comparing the fixture, not the behaviour.
+            "speech_mode": seg.intent.mode,
+            "direction": seg.intent.effective,
+            "direction_applied": seg.intent.capability,
+            "measurement": seg.measurement.state,
+            "measurement_trusted": seg.measurement.trusted,
+            "level_mode": seg.level.mode,
+            "level_outcome": seg.level.outcome,
+            "level_applied_db": seg.level.applied_db,
+            "level_peak_limited": seg.level.peak_limited,
+            "verification": seg.verification.state,
+            "verification_checked": seg.verification.checked,
         })
     # `current` is read in the loop above; recompute the role roll-up here.
     roles: set[str] = set()
@@ -316,6 +332,10 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
         "pauses_kept": sum(line["pauses_kept"] for line in lines),
         "edge_fades": job.metrics.get("edge_fades", 0),
         "stretched_lines": job.metrics.get("stretched_lines", 0),
+        "levels_applied": job.metrics.get("levels_applied", 0),
+        "verification_checked": sum(1 for line in lines if line["verification_checked"]),
+        "dialogue_baseline": {k: v for k, v in (job.dialogue_baseline or {}).items()
+                              if k in ("scope", "samples", "method", "units")},
         "lines": lines,
     }
 
@@ -377,7 +397,11 @@ def compare(before: Path, after: Path) -> dict:
         if previous is None:
             changed.append({"cue_id": line["cue_id"], "change": "added"})
             continue
-        fields = {k: [previous[k], line[k]] for k in line if previous.get(k) != line[k]}
+        # A baseline recorded before a plan added its fields is still a
+        # baseline worth comparing against. A field the older run never
+        # recorded reads as `null`, which is what it is: not measured then.
+        fields = {k: [previous.get(k), line[k]] for k in line
+                  if previous.get(k) != line[k]}
         if fields:
             changed.append({"cue_id": line["cue_id"], "change": "changed", "fields": fields})
     missing = [cue for cue in by_cue if cue not in {line["cue_id"] for line in right["lines"]}]
@@ -400,4 +424,4 @@ def roles_present(job: DubJob) -> set[str]:
         if seg.audio.raw():
             found.add(RAW)
         found.update(a.role for a in seg.audio.renders)
-    return found & {RAW, NORMALIZED, FITTED}
+    return found & {RAW, NORMALIZED, FITTED, LEVELED}

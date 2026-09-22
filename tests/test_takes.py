@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from doblarr.budget import RequestBudget
-from doblarr.cues import FITTED, NORMALIZED, RAW, UNKNOWN, Artifact
+from doblarr.cues import CUE_SCHEMA_VERSION, FITTED, NORMALIZED, RAW, UNKNOWN, Artifact
 from doblarr.models import DubJob, Segment, Speaker
 from doblarr.stages import fit_timing, quality, synthesize
 from doblarr.stages.common import load_script, save_script
@@ -193,7 +193,7 @@ def test_review_snapshot_carries_cue_records_and_a_revision(tmp_path):
     write_review(job, tmp_path / "work")
     import json
     data = json.loads(job.review_file.read_text(encoding="utf-8"))
-    assert data["cue_schema"] == 1
+    assert data["cue_schema"] == CUE_SCHEMA_VERSION
     assert data["revision"] == snapshot_revision(job)
     row = data["segments"][0]
     assert row["cue"]["cue_id"] == job.segments[0].cue_id

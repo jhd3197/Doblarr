@@ -6,7 +6,9 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
+from . import levels
 from .artifacts import digest, media_work
 from .budget import RequestBudget
 from .clients.translator import build_translator
@@ -15,7 +17,7 @@ from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
-from .languages import base_language, resolve_target_locale
+from .languages import base_language, display_name, resolve_target_locale
 from .languages import parse as parse_language_tag
 from .models import DubJob
 from .presets import effective_config
@@ -198,12 +200,60 @@ def run_job(
         if not dry_run and job.segments:
             save_script(job, translation_work)  # + translations
 
+    def _recent_effective_scripts():
+        """Effective script caches for this media, newest first.
+
+        Each distinct set of review edits gets its own directory so two
+        concurrent edits cannot collide. That isolation would also throw away
+        every take the previous round generated, so a new edit set starts from
+        the newest existing one and applies its edits on top.
+        """
+        root = work / "effective"
+        if not root.is_dir():
+            return []
+        found = []
+        for directory in root.iterdir():
+            if not directory.is_dir() or directory == effective_work:
+                continue
+            script = next(directory.glob("*.script.json"), None)
+            if script is not None:
+                found.append((script.stat().st_mtime, directory))
+        return [directory for _stamp, directory in sorted(found, reverse=True)]
+
     def _edits():
         if dry_run or not edits:
             return
-        if not load_script(job, effective_work, force):
-            apply_edits(job, edits, lineage=job.cue_lineage)
-            save_script(job, effective_work)
+        if load_script(job, effective_work, force):
+            return
+        for previous in _recent_effective_scripts():
+            # Takes, candidates and the current selection come forward; the
+            # new edit set is applied over them below.
+            if load_script(job, previous, force):
+                break
+        apply_edits(job, edits, lineage=job.cue_lineage)
+        save_script(job, effective_work)
+
+    # The locale layer of a line's delivery direction. Explicit config wins;
+    # otherwise a regional target contributes its own accent guidance, which a
+    # per-line direction can override without discarding the rest.
+    locale_direction = str(config["dub"].get("locale_direction", "") or "")
+    if not locale_direction and job.target_locale and (
+            base_language(job.target_locale) != job.target_locale):
+        locale_direction = f"speak in {display_name(job.target_locale)}"
+    character_notes = dict(config["translate"].get("character_notes", {}) or {})
+    candidate_requests = dict(config["dub"].get("candidates", {}) or {})
+
+    def _narrator_speakers():
+        return {
+            label
+            for label in job.speakers
+            if len(job.speakers) == 1
+            or label == "NARRATOR"
+            or any(
+                e["speaker_id"] == label and e.get("category") == "narrator"
+                for e in (cast_holder["cast"] or [])
+            )
+        }
 
     def _synthesize(segments=None):
         target = (
@@ -234,24 +284,22 @@ def run_job(
             knowledge=knowledge,
             narrator_voice=config["dub"].get("narrator_voice", ""),
             narrator_delivery=config["dub"].get("narrator_delivery", ""),
-            narrator_speakers={
-                label
-                for label in job.speakers
-                if len(job.speakers) == 1
-                or label == "NARRATOR"
-                or any(
-                    e["speaker_id"] == label and e.get("category") == "narrator"
-                    for e in (cast_holder["cast"] or [])
-                )
-            },
+            narrator_speakers=_narrator_speakers(),
+            locale_direction=locale_direction,
+            character_notes=character_notes,
+            clone_cleanup=config["dub"].get("clone_cleanup", False),
         )
         if db is not None and not dry_run and segments is None:
             save_characters(job, db, character_group, character_map)
+
+    level_options = dict(config.get("levels", {}))
+    owns_levels = levels.owns_processing(level_options)
 
     def _quality(segments=None, retry=True):
         target = job if segments is None else replace(job, segments=segments)
         options = dict(config.get("quality", {}))
         options.pop("request_budget", None)  # owned by the shared budget above
+        sample = float(options.pop("asr_sample", 0.0) or 0.0)
         options["max_retries"] = options.get("max_retries", 1) if retry else 0
         quality.run(
             target,
@@ -263,8 +311,83 @@ def run_job(
             pronunciations=pronunciations,
             budget=budget,
             boundary_options=dict(config.get("boundaries", {})),
+            # Loudness has exactly one owner per run. With the post-fit owner
+            # active the pre-fit loudnorm pass stands down, so a performance
+            # gain can never be erased by a second normalization.
+            own_levels=owns_levels,
+            sample=sample,
             **options,
         )
+
+    def _measure():
+        levels.measure_sources(job, level_options, cancel=cancel_event, work_dir=work)
+        if not dry_run and job.segments:
+            save_script(job, effective_work)
+
+    def _levels():
+        # A reviewer's per-line gain is merged over the configured map here, so
+        # the level owner sees one set of gains and a manual decision made in
+        # review survives a resume without becoming a config edit.
+        options = {**level_options,
+                   "gains": {**dict(level_options.get("gains") or {}), **job.manual_gains}}
+        levels.process(job, options, cancel=cancel_event, dry_run=dry_run)
+        if not dry_run and job.segments:
+            save_script(job, effective_work)
+
+    def _candidates():
+        """Extra takes for the cues review asked to hear alternatives for."""
+        if dry_run or not candidate_requests or not job.segments:
+            return
+        synthesize.candidates(
+            job, vb, work, candidate_requests,
+            cast={e["speaker_id"]: e for e in (cast_holder["cast"] or [])},
+            engine=config["voicebox"].get("default_engine"),
+            model_size=config["voicebox"].get("model_size"),
+            seed=config["voicebox"].get("seed"),
+            budget=budget, cancel=cancel_event,
+            limit=int(config["dub"].get("candidate_limit", 4)),
+            pronunciations=pronunciations,
+            locale_direction=locale_direction,
+            character_notes=character_notes,
+            narrator_delivery=config["dub"].get("narrator_delivery", ""),
+            narrator_speakers=_narrator_speakers(),
+        )
+        save_script(job, effective_work)
+
+    def _reverify():
+        """Re-check words on audio that timing or levels actually changed.
+
+        Time-stretching and gain are exactly the processing that can introduce
+        an artifact a recognizer will hear, so evidence gathered on the raw
+        take is not automatically still valid. Unchanged cues reuse it.
+        """
+        options = dict(config.get("quality", {}))
+        if dry_run or not options.get("enabled", True):
+            return
+        policy = options.get("asr", "off")
+        if policy == "off" or not job.segments:
+            return
+        rechecked = 0
+        for seg in job.segments:
+            current = seg.audio.current()
+            if current is None or not current.exists():
+                continue
+            expected = seg.verification.expected or ""
+            if not expected or not seg.verification.checked:
+                continue
+            result, reused = quality.verify_clip(
+                seg, Path(current.path), job.target_lang, vb, policy,
+                "re-checked after timing and level processing", expected,
+                budget=budget, audio_fingerprint=current.fingerprint,
+                target=current.role)
+            seg.verification = result
+            quality.verification_findings(seg)
+            seg.issues = [i for i in seg.issues if i not in quality._VERIFY_ISSUES]
+            seg.issues += quality.legacy_issues(result)
+            rechecked += 0 if reused else 1
+        job.metrics["verification_rechecked"] = rechecked
+        job.metrics["verification"] = quality.coverage(job)
+        save_script(job, effective_work)
 
     def _regenerate(seg):
         _synthesize([seg])
@@ -324,9 +447,13 @@ def run_job(
         ("cast", _ensure_cast),
         ("translate", _translate),
         ("edits", _edits),
+        ("measure", _measure),
         ("synthesize", _synthesize),
+        ("candidates", _candidates),
         ("quality", _quality),
         ("fit", _fit),
+        ("levels", _levels),
+        ("verify", _reverify),
         (
             "edges",
             lambda: boundaries.finish_edges(
@@ -351,6 +478,11 @@ def run_job(
                 cancel=cancel_event,
                 force=force,
             ),
+        ),
+        (
+            "mix_check",
+            lambda: levels.check_mix(job, level_options, cancel=cancel_event,
+                                     work_dir=work, dry_run=dry_run),
         ),
         (
             "mux",
@@ -410,7 +542,15 @@ def run_job(
         if not dry_run and job.segments:
             ensure_identity(job)
             validate_cues(job.segments, job.cue_lineage)
-            write_review(job, config.work_dir)
+            write_review(job, config.work_dir, settings={
+                # What this run actually used, not what is configured now.
+                "levels": {k: level_options.get(k, default) for k, default in (
+                    ("mode", "legacy"), ("target_db", -20.0), ("strength", 0.7),
+                    ("max_boost_db", 4.0), ("max_cut_db", 8.0))},
+                "verification_policy": config["quality"].get("asr", "off"),
+                "candidate_limit": int(config["dub"].get("candidate_limit", 4)),
+                "clone_cleanup": bool(config["dub"].get("clone_cleanup", False)),
+            })
     report.finish()
 
     log.info("=== done -> %s ===", job.output_file)

@@ -33,7 +33,12 @@ from .errors import DoblarrError
 
 # Bump only for an incompatible change to the records below. A payload written
 # by a newer Doblarr is rejected, never guessed at.
-CUE_SCHEMA_VERSION = 1
+#
+# 2 (Plan 03): the `leveled` artifact role, plus the performance intent, source
+# measurement, level decision and content-verification records. A version-1
+# payload is read unchanged — the new records simply stay empty, which is their
+# honest state for a run that never produced them.
+CUE_SCHEMA_VERSION = 2
 
 # Time domains. Never mix them in one number.
 SOURCE = "source"    # the original media timeline
@@ -46,13 +51,18 @@ DOMAINS = (SOURCE, TARGET, CLIP, MONTAGE)
 # migrated file's provenance cannot be proven.
 RAW = "raw"
 TRIMMED = "trimmed"        # reversible boundary preparation (Plan 02)
-NORMALIZED = "normalized"
+NORMALIZED = "normalized"  # legacy pre-fit loudness pass (levels.mode="legacy")
 FITTED = "fitted"
+LEVELED = "leveled"        # post-fit baseline level + performance gain (Plan 03)
 EDGED = "edged"            # protected final edges (Plan 02)
 UNKNOWN = "unknown"
-ROLES = (RAW, TRIMMED, NORMALIZED, FITTED, EDGED, UNKNOWN)
+ROLES = (RAW, TRIMMED, NORMALIZED, FITTED, LEVELED, EDGED, UNKNOWN)
 # Later plans append their own role here; order defines "most processed last".
-RENDER_ORDER = (RAW, TRIMMED, NORMALIZED, FITTED, EDGED)
+# `normalized` stays where Plan 02 put it so a legacy run keeps reproducing
+# exactly what it rendered before; Plan 03's level owner sits after fitting,
+# because a loudness decision made before time-stretching is a decision about
+# audio that no longer exists. Only one of the two ever runs.
+RENDER_ORDER = (RAW, TRIMMED, NORMALIZED, FITTED, LEVELED, EDGED)
 
 ORIGINS = ("import", "legacy", "split", "merge", "manual")
 DISPOSITIONS = ("open", "accepted", "fixed", "obsolete")
@@ -61,6 +71,22 @@ FINDING_KINDS = ("technical", "content", "timing", "performance", "delivery")
 # What boundary preparation decided to do with a take. "kept" and
 # "uncertain" are not failures: leaving audio alone is the safe answer.
 TRIM_DECISIONS = ("trimmed", "kept", "uncertain", "empty", "bypassed", "unknown")
+
+# How a line's loudness was decided. "legacy" is the pre-Plan-03 path: one
+# loudness pass before fitting, owned by the quality stage.
+LEVEL_MODES = ("legacy", "consistent", "follow_source", "manual", "off")
+# Why a level decision ended where it did. A clamp and a fallback are different
+# facts: one bounded a trusted request, the other had nothing to trust.
+LEVEL_OUTCOMES = ("applied", "clamped", "fallback", "bypassed", "unavailable", "unknown")
+# How much a source measurement can be trusted. `unknown` is never a zero.
+MEASUREMENT_STATES = ("measured", "insufficient", "contaminated", "missing", "unknown")
+# What a spoken-content check concluded. Only `mismatch` is evidence of wrong
+# words; every other non-match state says the check could not establish one.
+VERIFY_STATES = ("match", "mismatch", "uncertain", "empty", "unsupported",
+                 "failed", "skipped", "unknown")
+# How a line is meant to be performed. A mode is not a character and never
+# mandates a fixed dB change on its own.
+SPEECH_MODES = ("normal", "thought", "whisper", "shout", "call", "broadcast", "unknown")
 
 
 class SchemaError(DoblarrError):
@@ -400,6 +426,310 @@ class SpeechPreparation:
 
 
 @dataclass
+class PerformanceIntent:
+    """How a line is meant to be acted, and what the engine could actually do.
+
+    `mode` and `traits` are structured intent; `direction` is the reviewer's own
+    words. `effective` is what was really sent to the engine after composition,
+    and `unsupported` names every instruction the adapter could not honor — an
+    unsupported instruction is reported, never quietly counted as applied.
+    """
+
+    mode: str = "unknown"                 # SPEECH_MODES
+    traits: list[str] = field(default_factory=list)   # e.g. ["urgent", "restrained"]
+    direction: str = ""                   # freeform reviewer direction
+    origin: str = "unknown"               # manual | cast | knowledge | suggestion | unknown
+    revision: int = 0                     # accepted intent revision
+    treatment: str = ""                   # acoustic treatment reference (Plan 05 owns the DSP)
+    effective: str = ""                   # the composed instruction actually requested
+    unsupported: list[str] = field(default_factory=list)
+    capability: str = "unknown"           # supported | unsupported | unknown
+    sources: list[dict] = field(default_factory=list)  # which layer contributed what
+    at: str = ""
+
+    def __post_init__(self) -> None:
+        if self.mode not in SPEECH_MODES:
+            raise SchemaError(f"unknown speech mode {self.mode!r}")
+
+    @property
+    def empty(self) -> bool:
+        """True when nothing was ever asked for. Distinct from 'asked for normal'."""
+        return (self.mode in ("", "unknown") and not self.traits and not self.direction
+                and not self.treatment)
+
+    def as_dict(self) -> dict:
+        return {
+            "mode": self.mode,
+            "traits": list(self.traits),
+            "direction": self.direction,
+            "origin": self.origin,
+            "revision": self.revision,
+            "treatment": self.treatment,
+            "effective": self.effective,
+            "unsupported": list(self.unsupported),
+            "capability": self.capability,
+            "sources": [dict(s) for s in self.sources],
+            "at": self.at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> PerformanceIntent:
+        data = _mapping(data, "performance intent")
+        return cls(
+            mode=_text(data.get("mode")) or "unknown",
+            traits=[_text(t) for t in _sequence(data.get("traits"), "delivery traits")],
+            direction=_text(data.get("direction")),
+            origin=_text(data.get("origin")) or "unknown",
+            revision=_opt_int(data.get("revision"), "intent revision") or 0,
+            treatment=_text(data.get("treatment")),
+            effective=_text(data.get("effective")),
+            unsupported=[_text(u) for u in
+                         _sequence(data.get("unsupported"), "unsupported instructions")],
+            capability=_text(data.get("capability")) or "unknown",
+            sources=[_mapping(x, "intent source")
+                     for x in _sequence(data.get("sources"), "intent sources")],
+            at=_text(data.get("at")),
+        )
+
+
+@dataclass
+class SourceMeasurement:
+    """How loud the original actor was, and how much that number can be trusted.
+
+    Measured on the recorded source stream over this cue's source spans — never
+    on a cleaned clone reference or an audition montage, which are conditioned
+    audio and say nothing about performance dynamics.
+    """
+
+    state: str = "unknown"               # MEASUREMENT_STATES
+    speech_db: float | None = None       # speech-active level of this cue
+    baseline_db: float | None = None     # ordinary-dialogue reference it is compared to
+    relative_db: float | None = None     # speech_db - baseline_db, when both are known
+    units: str = ""                      # e.g. "dBFS-rms-speech"
+    method: str = ""                     # detector name and version
+    channels: str = ""                   # channel/downmix policy actually used
+    measured_seconds: float | None = None
+    confidence: float | None = None      # None is unknown, never a silent 0.0
+    baseline_scope: str = ""             # global | speaker | fallback
+    baseline_samples: int = 0
+    overlapped: bool = False             # another speaker talks across this cue
+    contaminated: bool = False           # music/FX or separation artifacts in the reference
+    exclusions: list[str] = field(default_factory=list)
+    source: str = ""                     # which stream the measurement came from
+    inputs: str = ""                     # fingerprint of the exact measured inputs
+
+    def __post_init__(self) -> None:
+        if self.state not in MEASUREMENT_STATES:
+            raise SchemaError(f"unknown measurement state {self.state!r}")
+
+    @property
+    def trusted(self) -> bool:
+        """Only a clean, sufficient measurement may drive automatic gain."""
+        return (self.state == "measured" and self.relative_db is not None
+                and not self.overlapped and not self.contaminated)
+
+    def as_dict(self) -> dict:
+        return {
+            "state": self.state,
+            "speech_db": self.speech_db,
+            "baseline_db": self.baseline_db,
+            "relative_db": self.relative_db,
+            "units": self.units,
+            "method": self.method,
+            "channels": self.channels,
+            "measured_seconds": self.measured_seconds,
+            "confidence": self.confidence,
+            "baseline_scope": self.baseline_scope,
+            "baseline_samples": self.baseline_samples,
+            "overlapped": self.overlapped,
+            "contaminated": self.contaminated,
+            "exclusions": list(self.exclusions),
+            "source": self.source,
+            "inputs": self.inputs,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> SourceMeasurement:
+        data = _mapping(data, "source measurement")
+        return cls(
+            state=_text(data.get("state")) or "unknown",
+            speech_db=_opt_float(data.get("speech_db"), "source speech level"),
+            baseline_db=_opt_float(data.get("baseline_db"), "dialogue baseline"),
+            relative_db=_opt_float(data.get("relative_db"), "relative level"),
+            units=_text(data.get("units")),
+            method=_text(data.get("method")),
+            channels=_text(data.get("channels")),
+            measured_seconds=_opt_float(data.get("measured_seconds"), "measured seconds"),
+            confidence=_opt_float(data.get("confidence"), "measurement confidence"),
+            baseline_scope=_text(data.get("baseline_scope")),
+            baseline_samples=_opt_int(data.get("baseline_samples"), "baseline samples") or 0,
+            overlapped=bool(data.get("overlapped", False)),
+            contaminated=bool(data.get("contaminated", False)),
+            exclusions=[_text(x) for x in
+                        _sequence(data.get("exclusions"), "measurement exclusions")],
+            source=_text(data.get("source")),
+            inputs=_text(data.get("inputs")),
+        )
+
+
+@dataclass
+class LevelDecision:
+    """What the one level owner did to this line, and why.
+
+    Recorded whether or not any gain was applied, because "nothing was needed"
+    and "we could not tell" are different answers a reviewer has to be able to
+    tell apart. `requested_db` minus `applied_db` is exactly what the bounds
+    took away.
+    """
+
+    mode: str = "off"                    # LEVEL_MODES
+    outcome: str = "unknown"             # LEVEL_OUTCOMES
+    target_db: float | None = None       # the baseline loudness target
+    measured_db: float | None = None     # the generated line measured after fitting
+    requested_db: float = 0.0            # performance gain asked for
+    applied_db: float = 0.0              # performance gain actually applied
+    baseline_db: float = 0.0             # gain used to reach the baseline target
+    strength: float = 1.0                # how much of the source contrast was followed
+    bound_db: float = 0.0                # the per-side bound in force
+    peak: float | None = None            # measured peak of the result, 0..1
+    peak_limited: bool = False
+    reason: str = ""
+    manual: bool = False                 # a reviewer set this gain by hand
+    inputs: str = ""
+
+    def __post_init__(self) -> None:
+        if self.mode not in LEVEL_MODES:
+            raise SchemaError(f"unknown level mode {self.mode!r}")
+        if self.outcome not in LEVEL_OUTCOMES:
+            raise SchemaError(f"unknown level outcome {self.outcome!r}")
+
+    @property
+    def clamped_db(self) -> float:
+        return round(self.requested_db - self.applied_db, 3)
+
+    def as_dict(self) -> dict:
+        return {
+            "mode": self.mode,
+            "outcome": self.outcome,
+            "target_db": self.target_db,
+            "measured_db": self.measured_db,
+            "requested_db": self.requested_db,
+            "applied_db": self.applied_db,
+            "baseline_db": self.baseline_db,
+            "strength": self.strength,
+            "bound_db": self.bound_db,
+            "peak": self.peak,
+            "peak_limited": self.peak_limited,
+            "reason": self.reason,
+            "manual": self.manual,
+            "inputs": self.inputs,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> LevelDecision:
+        data = _mapping(data, "level decision")
+        return cls(
+            mode=_text(data.get("mode")) or "off",
+            outcome=_text(data.get("outcome")) or "unknown",
+            target_db=_opt_float(data.get("target_db"), "level target"),
+            measured_db=_opt_float(data.get("measured_db"), "measured level"),
+            requested_db=_finite(data.get("requested_db", 0.0), "requested gain"),
+            applied_db=_finite(data.get("applied_db", 0.0), "applied gain"),
+            baseline_db=_finite(data.get("baseline_db", 0.0), "baseline gain"),
+            strength=_finite(data.get("strength", 1.0), "matching strength"),
+            bound_db=_finite(data.get("bound_db", 0.0), "gain bound"),
+            peak=_opt_float(data.get("peak"), "output peak"),
+            peak_limited=bool(data.get("peak_limited", False)),
+            reason=_text(data.get("reason")),
+            manual=bool(data.get("manual", False)),
+            inputs=_text(data.get("inputs")),
+        )
+
+
+@dataclass
+class Verification:
+    """What Doblarr expected to hear against what recognition actually heard.
+
+    `state` separates a real mismatch from every reason a check could not
+    establish one. `differences` is the ordered alignment, so review can show
+    where a word went missing instead of only a similarity score.
+    """
+
+    state: str = "unknown"               # VERIFY_STATES
+    policy: str = "off"                  # off | suspicious | all
+    reason: str = ""                     # why this line was or was not checked
+    expected: str = ""                   # the effective spoken text that was requested
+    heard: str = ""                      # raw recognition output, unedited
+    language: str = ""
+    tokenizer: str = ""                  # which tokenizer ran, or the fallback used
+    similarity: float | None = None
+    confidence: float | None = None      # recognizer confidence when it supplies one
+    differences: list[dict] = field(default_factory=list)
+    critical: list[dict] = field(default_factory=list)  # names/numbers/negation at risk
+    recognizer: str = ""                 # engine/model/version when known
+    checker: str = ""                    # checker name and version
+    target: str = ""                     # take id or artifact role that was listened to
+    inputs: str = ""                     # verification fingerprint of the exact inputs
+    at: str = ""
+    attempts: int = 0                    # bounded repairs already spent on this line
+
+    def __post_init__(self) -> None:
+        if self.state not in VERIFY_STATES:
+            raise SchemaError(f"unknown verification state {self.state!r}")
+
+    @property
+    def checked(self) -> bool:
+        """A line is only 'verified' when recognition actually produced a verdict."""
+        return self.state in ("match", "mismatch", "uncertain")
+
+    def as_dict(self) -> dict:
+        return {
+            "state": self.state,
+            "policy": self.policy,
+            "reason": self.reason,
+            "expected": self.expected,
+            "heard": self.heard,
+            "language": self.language,
+            "tokenizer": self.tokenizer,
+            "similarity": self.similarity,
+            "confidence": self.confidence,
+            "differences": [dict(d) for d in self.differences],
+            "critical": [dict(c) for c in self.critical],
+            "recognizer": self.recognizer,
+            "checker": self.checker,
+            "target": self.target,
+            "inputs": self.inputs,
+            "at": self.at,
+            "attempts": self.attempts,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Verification:
+        data = _mapping(data, "verification")
+        return cls(
+            state=_text(data.get("state")) or "unknown",
+            policy=_text(data.get("policy")) or "off",
+            reason=_text(data.get("reason")),
+            expected=_text(data.get("expected")),
+            heard=_text(data.get("heard")),
+            language=_text(data.get("language")),
+            tokenizer=_text(data.get("tokenizer")),
+            similarity=_opt_float(data.get("similarity"), "similarity"),
+            confidence=_opt_float(data.get("confidence"), "recognition confidence"),
+            differences=[_mapping(d, "difference")
+                         for d in _sequence(data.get("differences"), "differences")],
+            critical=[_mapping(c, "critical term")
+                      for c in _sequence(data.get("critical"), "critical terms")],
+            recognizer=_text(data.get("recognizer")),
+            checker=_text(data.get("checker")),
+            target=_text(data.get("target")),
+            inputs=_text(data.get("inputs")),
+            at=_text(data.get("at")),
+            attempts=_opt_int(data.get("attempts"), "repair attempts") or 0,
+        )
+
+
+@dataclass
 class Artifact:
     """One audio file produced for a cue, with the role it can actually prove."""
 
@@ -464,6 +794,15 @@ class Take:
     remote_id: str | None = None
     raw: Artifact | None = None
     created_at: str = ""
+    # Candidate provenance (Plan 03). `origin` separates the take the pipeline
+    # made on its own from one a reviewer asked for; `checks` holds the
+    # technical measurements a ranking may explain itself with. A number here
+    # is never an acting judgement.
+    origin: str = "auto"         # auto | candidate | repair | migrated
+    attempt: int = 0
+    intent: PerformanceIntent | None = None
+    checks: dict = field(default_factory=dict)
+    error: str = ""              # why a failed take failed, kept as evidence
 
     def as_dict(self) -> dict:
         return {
@@ -481,6 +820,11 @@ class Take:
             "remote_id": self.remote_id,
             "raw": self.raw.as_dict() if self.raw else None,
             "created_at": self.created_at,
+            "origin": self.origin,
+            "attempt": self.attempt,
+            "intent": self.intent.as_dict() if self.intent else None,
+            "checks": dict(self.checks),
+            "error": self.error,
         }
 
     @classmethod
@@ -505,6 +849,12 @@ class Take:
             remote_id=_optional_text(data.get("remote_id")),
             raw=Artifact.from_dict(raw) if raw else None,
             created_at=_text(data.get("created_at")),
+            origin=_text(data.get("origin")) or "auto",
+            attempt=_opt_int(data.get("attempt"), "take attempt") or 0,
+            intent=(PerformanceIntent.from_dict(data["intent"])
+                    if data.get("intent") else None),
+            checks=_mapping(data.get("checks"), "take checks"),
+            error=_text(data.get("error")),
         )
 
 
@@ -513,7 +863,7 @@ class Selection:
     """Which take is rendered, and why. Resume must not silently pick another."""
 
     take_id: str = ""
-    reason: str = "auto"      # auto | review | migrated
+    reason: str = "auto"      # auto | review | candidate | restored | migrated
     actor: str = ""
     previous: str | None = None
     at: str = ""
@@ -844,6 +1194,10 @@ def cue_payload(seg) -> dict:
         "placement": seg.placement.as_dict(),
         "audio": seg.audio.as_dict(),
         "preparation": seg.preparation.as_dict(),
+        "intent": seg.intent.as_dict(),
+        "measurement": seg.measurement.as_dict(),
+        "level": seg.level.as_dict(),
+        "verification": seg.verification.as_dict(),
         "findings": [f.as_dict() for f in seg.findings],
     }
 
@@ -860,6 +1214,13 @@ def apply_cue_payload(seg, data: Any) -> None:
     seg.placement = Placement.from_dict(data.get("placement"))
     seg.audio = CueAudio.from_dict(data.get("audio"))
     seg.preparation = SpeechPreparation.from_dict(data.get("preparation"))
+    # A version-1 payload has none of these. Empty is their honest state, not a
+    # migration failure: the run that wrote it never measured or directed
+    # anything, and inventing a value here would fabricate evidence.
+    seg.intent = PerformanceIntent.from_dict(data.get("intent"))
+    seg.measurement = SourceMeasurement.from_dict(data.get("measurement"))
+    seg.level = LevelDecision.from_dict(data.get("level"))
+    seg.verification = Verification.from_dict(data.get("verification"))
     seg.findings = [Finding.from_dict(f) for f in _sequence(data.get("findings"), "findings")]
 
 

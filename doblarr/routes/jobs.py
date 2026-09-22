@@ -9,16 +9,25 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .. import preview as scene_preview
 from ..artifacts import read_json
 from ..config import Config
-from ..cues import check_schema
+from ..cues import (
+    DISPOSITIONS,
+    SPEECH_MODES,
+    adopt_legacy,
+    apply_cue_payload,
+    check_schema,
+)
 from ..errors import ForbiddenError, NotFoundError
 from ..events import EventBus
 from ..jobs import JobStore, Worker
 from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language, normalize
+from ..models import DubJob, Segment, Speaker
+from ..review import load_decisions, merge_decisions, record_decision
 from ..voices import cast_key
 
 
@@ -44,6 +53,58 @@ class LineEditIn(BaseModel):
     delivery: str | None = Field(default=None, max_length=500)
     exclude: bool | None = None
     regenerate: bool = False
+    # Plan 03: structured acting direction, a chosen take, a per-line gain and
+    # a request for alternatives. All optional; omitting one leaves whatever
+    # the run already decided untouched.
+    mode: str | None = Field(default=None, max_length=32)
+    traits: list[str] | None = Field(default=None, max_length=8)
+    direction: str | None = Field(default=None, max_length=500)
+    take: str | None = Field(default=None, max_length=64)
+    gain_db: float | None = Field(default=None, ge=-24, le=24)
+    candidates: int | None = Field(default=None, ge=0, le=4)
+
+    @field_validator("mode")
+    @classmethod
+    def known_mode(cls, value):
+        if value is not None and value not in SPEECH_MODES:
+            raise ValueError(f"speech mode must be one of {', '.join(SPEECH_MODES)}")
+        return value
+
+    @field_validator("traits")
+    @classmethod
+    def clean_traits(cls, value):
+        if value is None:
+            return value
+        cleaned = [str(t).strip().lower() for t in value if str(t).strip()]
+        if any(len(t) > 40 for t in cleaned):
+            raise ValueError("a delivery trait must be short")
+        return cleaned
+
+
+class DispositionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    finding: str = Field(min_length=1, max_length=64)
+    disposition: str = Field(min_length=1, max_length=32)
+    note: str = Field(default="", max_length=2000)
+
+    @field_validator("disposition")
+    @classmethod
+    def known(cls, value):
+        if value not in DISPOSITIONS:
+            raise ValueError(f"disposition must be one of {', '.join(DISPOSITIONS)}")
+        return value
+
+
+class DecisionIn(BaseModel):
+    """A reviewer's verdict on one cue, recorded without re-rendering anything."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    cue: str = Field(min_length=1, max_length=64)
+    base_revision: str = Field(min_length=1, max_length=64)
+    dispositions: list[DispositionIn] = Field(default_factory=list, max_length=50)
+    note: str | None = Field(default=None, max_length=2000)
+    actor: str = Field(default="", max_length=100)
+    reviewed: bool | None = None
 
 
 class ReviewEditsIn(BaseModel):
@@ -53,6 +114,52 @@ class ReviewEditsIn(BaseModel):
     # The review snapshot these edits were made against. Omitted by older
     # clients, whose edits are resolved against their own snapshot as before.
     base_revision: str | None = Field(default=None, max_length=64)
+
+
+# Which work a set of edits actually costs, per line. A reviewer deciding
+# whether to queue a re-render should not have to know which field triggers
+# speech generation and which one only re-renders the audio that already
+# exists.
+_REGENERATES = ("text", "voice", "delivery", "mode", "traits", "direction")
+_REPROCESSES = ("start", "end", "gain_db", "take")
+
+
+def _versions_root(output: Path) -> Path:
+    """Where this job's saved versions live, whichever render produced `output`.
+
+    `preserve_version` moves a completed output into `versions/<id>/`, so a job
+    that has saved one already points inside that tree; a job that has not
+    points at the plain output directory next to it.
+    """
+    if output.parent.parent.name == "versions":
+        return output.parent.parent
+    return output.parent / "versions"
+
+
+def _rerun_plan(edits, candidate_requests: dict) -> dict:
+    """Say plainly what each edited line will cost before it is queued."""
+    lines = []
+    for patch in edits:
+        fields = patch.model_dump(exclude_none=True,
+                                  exclude={"index", "cue", "regenerate", "candidates"})
+        regenerates = bool(patch.regenerate) or any(k in fields for k in _REGENERATES)
+        reprocesses = regenerates or any(k in fields for k in _REPROCESSES)
+        lines.append({
+            "index": patch.index,
+            "cue": patch.cue,
+            "work": ("generates new speech" if regenerates
+                     else "re-renders existing audio" if reprocesses
+                     else "records a decision only"),
+            "rechecks": regenerates or reprocesses,
+        })
+    return {
+        "lines": lines,
+        "generating": sum(1 for line in lines if line["work"] == "generates new speech"),
+        "processing": sum(1 for line in lines
+                          if line["work"] == "re-renders existing audio"),
+        "candidates": sum(int(n) for n in candidate_requests.values()),
+        "note": "Lines not listed here reuse their existing audio.",
+    }
 
 
 def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus) -> APIRouter:
@@ -256,6 +363,25 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                        and Path(render["path"]).is_file())
             render.pop("path", None)
 
+    def _media(data: dict) -> dict:
+        """Which scene previews this snapshot can actually produce, and why not.
+
+        Availability is resolved server-side against the real filesystem and
+        the same path guard the download routes use, so the browser never
+        offers a control that cannot work.
+        """
+        media = data.get("media") or {}
+        found = {}
+        for key in ("source_track", "source_audio", "dubbed_track", "output"):
+            path = _allowed_path(media[key]) if media.get(key) else None
+            found[key] = bool(path and path.is_file())
+        return {
+            "source": found["source_track"] or found["source_audio"],
+            "dub": found["dubbed_track"] or found["output"],
+            "note": ("" if found["source_track"] or found["source_audio"]
+                     else "the extracted original audio is no longer on disk"),
+        }
+
     @api.get("/api/jobs/{job_id}/review")
     def job_review(job_id: str):
         job, data = artifact(job_id, "review_file")
@@ -267,13 +393,236 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             row.pop("words", None)
             _redact_cue(row)
         effective = config.with_overrides(job.overrides or {})
-        return {
+        # The run's own settings win; live config is only a fallback for a
+        # snapshot written before they were frozen.
+        frozen = data.get("settings") or {}
+        previews = _media(data)
+        # Machine-local paths never leave the server; the browser gets the
+        # availability flags computed from them instead.
+        data.pop("media", None)
+        reference_clips = data.pop("references", None) or {}
+        payload = {
             **data,
             "title": job.title,
             "editable": job.status not in {"running", "queued"},
             "title_ref": cast_key(path=str(job.input_file)) if job.input_file else "",
             "show_ref": effective["dub"].get("cast_group", ""),
+            "previews": previews,
+            "levels": frozen.get("levels") or {
+                k: effective["levels"].get(k) for k in
+                ("mode", "target_db", "strength", "max_boost_db", "max_cut_db")},
+            "verification_policy": frozen.get(
+                "verification_policy", effective["quality"].get("asr", "off")),
+            "candidate_limit": int(frozen.get(
+                "candidate_limit", effective["dub"].get("candidate_limit", 4))),
+            "references": sorted(reference_clips),
+            "frozen_settings": bool(frozen),
         }
+        return merge_decisions(payload, load_decisions(config.work_dir, job_id))
+
+    def _scene_job(job, data: dict):
+        """Rebuild just enough of a run from its snapshot to cut previews from.
+
+        The snapshot is the authority here: it names the media this run
+        produced and carries each cue's records, so a preview is always of the
+        run being reviewed rather than of whatever the live config would make
+        now.
+        """
+        media = data.get("media") or {}
+
+        def resolved(*keys):
+            for key in keys:
+                value = media.get(key)
+                if not value:
+                    continue
+                path = _allowed_path(value)
+                if path and path.is_file():
+                    return path
+            return None
+
+        rebuilt = DubJob(
+            input_file=Path(job.input_file or data.get("title") or "unknown"),
+            source_lang=data.get("source_language") or "und",
+            target_lang=data.get("language") or "und",
+            target_locale=data.get("locale") or "",
+        )
+        rebuilt.source_track = resolved("source_track", "source_audio")
+        rebuilt.source_audio = rebuilt.source_track
+        rebuilt.dubbed_track = resolved("dubbed_track", "output")
+        work = _allowed_path(media["work"]) if media.get("work") else None
+        rebuilt.artifacts_dir = work or config.work_dir / "previews"
+        segments = []
+        for row in data["segments"]:
+            seg = Segment(index=int(row["index"]), start=float(row["start"]),
+                          end=float(row["end"]), text_src=row.get("text_src", ""),
+                          speaker=row.get("speaker", "SPEAKER_00"),
+                          text_translated=row.get("text_translated"))
+            record = row.get("cue")
+            clip = _allowed_path(row["audio_clip"]) if row.get("audio_clip") else None
+            if clip and clip.is_file():
+                seg.audio_clip = clip
+            if record:
+                apply_cue_payload(seg, record)
+            else:
+                # A snapshot from before the cue schema. Its one clip is
+                # registered with an unproven role, which is what it is.
+                adopt_legacy(seg, data.get("revision", ""))
+            current = seg.audio.current()
+            if current and current.path:
+                seg.audio_clip = Path(current.path)
+            segments.append(seg)
+        rebuilt.segments = segments
+        # Speakers exist here only to carry their clone reference, which is
+        # what the "reference" preview plays.
+        for label, clip in (data.get("references") or {}).items():
+            resolved_clip = _allowed_path(str(clip))
+            rebuilt.speakers[label] = Speaker(
+                label=label,
+                reference_clip=resolved_clip if resolved_clip and resolved_clip.is_file()
+                else None)
+        return rebuilt, segments
+
+    @api.get("/api/jobs/{job_id}/scene/{index}")
+    def job_scene(job_id: str, index: int, context: int = 2):
+        """The exchange around one line: which cues, which spans, what can play."""
+        job, data = artifact(job_id, "review_file")
+        check_schema(data.get("cue_schema"), "review snapshot")
+        rebuilt, segments = _scene_job(job, data)
+        try:
+            frame = scene_preview.window(segments, index, context)
+        except scene_preview.PreviewError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        seg = next(s for s in segments if s.index == index)
+        return {
+            **frame,
+            "revision": data.get("revision"),
+            "available": {
+                **_media(data),
+                "reference": bool((data.get("references") or {}).get(seg.speaker)),
+                "line": bool(seg.audio.current() and seg.audio.current().exists()),
+                "take": bool(seg.audio.selected() and seg.audio.selected().raw
+                             and seg.audio.selected().raw.exists()),
+            },
+            # Ordered by what the technical checks can actually establish —
+            # a take with a defect goes last, with the defect named. This is
+            # not a ranking of the acting, and the UI says so.
+            "takes": sorted(
+                ({"take_id": t.take_id, "origin": t.origin, "state": t.state,
+                  "attempt": t.attempt, "direction": t.direction,
+                  "checks": t.checks, "error": t.error,
+                  "selected": bool(seg.audio.selection
+                                   and seg.audio.selection.take_id == t.take_id),
+                  "available": bool(t.raw and t.raw.exists())}
+                 for t in seg.audio.takes),
+                key=lambda t: (not t["selected"],
+                               t["state"] == "failed",
+                               (t["checks"] or {}).get("state") == "defective",
+                               t["attempt"])),
+            "selection": (seg.audio.selection.as_dict() if seg.audio.selection else None),
+        }
+
+    @api.get("/api/jobs/{job_id}/preview/{kind}/{index}")
+    def job_preview(job_id: str, kind: str, index: int, request: Request,
+                    context: int = 2, take: str = "", start: float | None = None,
+                    end: float | None = None):
+        """Stream one bounded preview: the original scene, the dub, a line or a take."""
+        job, data = artifact(job_id, "review_file")
+        check_schema(data.get("cue_schema"), "review snapshot")
+        rebuilt, segments = _scene_job(job, data)
+        bounds = (start, end) if start is not None and end is not None else None
+        try:
+            resolved = scene_preview.resolve(rebuilt, segments, kind, index,
+                                             context=context, bounds=bounds, take=take)
+        except scene_preview.PreviewError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        path = _allowed_path(str(resolved["path"]))
+        if path is None:
+            raise ForbiddenError("preview media is outside the configured directories")
+        if not path.is_file():
+            raise NotFoundError("the media for this preview is no longer on disk")
+        return _ranged_response(path, request.headers.get("range"))
+
+    @api.get("/api/jobs/{job_id}/versions")
+    def job_versions(job_id: str):
+        """Saved dub versions for this job's output, newest first.
+
+        A version is an immutable render someone already produced. Listing
+        them is what makes "compare with the previous version" possible
+        without re-rendering anything.
+        """
+        job = store.get(job_id)
+        if job is None:
+            raise NotFoundError(f"no job with id {job_id}")
+        output = _allowed_path(job.output_file) if job.output_file else None
+        if output is None:
+            return {"versions": [], "current": job.version_id}
+        root = _versions_root(output)
+        rows = []
+        for manifest_path in sorted(root.glob("*/version.json")) if root.is_dir() else []:
+            manifest = read_json(manifest_path)
+            if not manifest.get("version_id"):
+                continue
+            media = _allowed_path(manifest.get("output") or "")
+            rows.append({
+                "version_id": manifest["version_id"],
+                "name": manifest.get("name") or "Dub",
+                "created_at": manifest.get("created_at"),
+                "translation_id": manifest.get("translation_id"),
+                "kind": manifest.get("kind"),
+                "current": manifest["version_id"] == job.version_id,
+                "available": bool(media and media.is_file()),
+            })
+        rows.sort(key=lambda row: row.get("created_at") or "", reverse=True)
+        return {"versions": rows, "current": job.version_id}
+
+    @api.get("/api/jobs/{job_id}/versions/{version_id}/file")
+    def job_version_file(job_id: str, version_id: str, request: Request):
+        """Stream one saved version's media, so two renders can be compared."""
+        job = store.get(job_id)
+        if job is None or not job.output_file:
+            raise NotFoundError(f"no job with id {job_id}")
+        if not re.fullmatch(r"[0-9a-f]{8,128}", version_id):
+            raise ForbiddenError("that is not a version id")
+        output = _allowed_path(job.output_file)
+        if output is None:
+            raise ForbiddenError("output path is outside the configured directories")
+        manifest = read_json(_versions_root(output) / version_id / "version.json")
+        media = _allowed_path(manifest.get("output") or "")
+        if media is None or not media.is_file():
+            raise NotFoundError("that version's media is not on disk")
+        return _ranged_response(media, request.headers.get("range"))
+
+    @api.post("/api/jobs/{job_id}/decisions")
+    def job_decision(job_id: str, body: DecisionIn):
+        """Record a reviewer's verdict on a cue without re-rendering anything.
+
+        A generated export never marks a scene reviewed; this is the only way
+        a disposition is set, and it always carries the snapshot revision the
+        reviewer was looking at.
+        """
+        job, data = artifact(job_id, "review_file")
+        check_schema(data.get("cue_schema"), "review snapshot")
+        if body.base_revision != data.get("revision"):
+            raise HTTPException(
+                409,
+                "This review has changed since you opened it. Reload it so your "
+                "notes apply to the current lines.")
+        known = {(row.get("cue") or {}).get("cue_id") for row in data["segments"]}
+        if body.cue not in known:
+            raise HTTPException(404, "That line is not part of this review")
+        patch: dict[str, Any] = {
+            "dispositions": {d.finding: {"disposition": d.disposition, "note": d.note}
+                             for d in body.dispositions}}
+        if body.note is not None:
+            patch["note"] = body.note
+        if body.reviewed is not None:
+            patch["reviewed"] = body.reviewed
+        try:
+            entry = record_decision(config.work_dir, job_id, data["revision"], body.cue,
+                                    patch, actor=body.actor)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return {"ok": True, "decision": entry}
 
     @api.get("/api/jobs/{job_id}/clips/{index}")
     def line_audio(job_id: str, index: int, request: Request):
@@ -303,6 +652,8 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         rows = {s["index"]: s for s in data["segments"]}
         effective = config.with_overrides(original.overrides or {})
         edits = copy.deepcopy(effective["dub"].get("line_edits", {}))
+        candidate_requests = copy.deepcopy(effective["dub"].get("candidates", {}))
+        decisions = load_decisions(config.work_dir, job_id)
         seen = set()
         for patch in body.edits:
             if patch.index not in rows or patch.index in seen:
@@ -313,7 +664,17 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             if patch.cue and cue_id and patch.cue != cue_id:
                 raise HTTPException(409, "This line has changed identity; reload the review")
             changes = patch.model_dump(
-                exclude_none=True, exclude={"index", "regenerate", "cue"})
+                exclude_none=True, exclude={"index", "regenerate", "cue", "candidates"})
+            if patch.take:
+                takes = {t.get("take_id") for t
+                         in (row.get("cue") or {}).get("audio", {}).get("takes", [])}
+                if patch.take not in takes:
+                    raise HTTPException(409, "That take is not on this line any more")
+            if patch.candidates:
+                if not cue_id:
+                    raise HTTPException(
+                        409, "This line has no stable identity yet; re-render it first")
+                candidate_requests[cue_id] = patch.candidates
             if "text" in changes and not changes["text"].strip():
                 raise HTTPException(422, "Dialogue cannot be blank; use Exclude instead")
             if changes.get("end", row["end"]) <= changes.get("start", row["start"]):
@@ -335,9 +696,38 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             edit.update(changes)
             if patch.regenerate:
                 edit["revision"] = max(edit.get("revision", 0), row.get("revision", 0)) + 1
+        # Verdicts recorded against *this* snapshot travel with the re-render,
+        # so a decision survives the run it was made about. A verdict recorded
+        # against an older snapshot is left behind rather than carried onto
+        # audio it was never about.
+        for cue_id, entry in decisions.get("cues", {}).items():
+            if entry.get("revision") != data.get("revision"):
+                continue
+            verdicts = {f: {"disposition": v.get("disposition"),
+                            "note": v.get("note", ""), "actor": v.get("actor", "")}
+                        for f, v in (entry.get("dispositions") or {}).items()}
+            if not verdicts:
+                continue
+            target = next((key for key, edit in edits.items()
+                           if edit.get("cue") == cue_id), None)
+            if target is None:
+                row = next((r for r in data["segments"]
+                            if (r.get("cue") or {}).get("cue_id") == cue_id), None)
+                if row is None:
+                    continue
+                target = str(row["index"])
+                edits.setdefault(target, {}).update({
+                    "cue": cue_id,
+                    "text": row.get("text_translated") or row["text_src"],
+                    "start": row["start"], "end": row["end"],
+                    "delivery": row.get("delivery", ""),
+                    "revision": row.get("revision", 0)})
+            edits[target]["dispositions"] = verdicts
         overrides = copy.deepcopy(original.overrides or {})
         overrides["dub.line_edits"] = edits
+        overrides["dub.candidates"] = candidate_requests
         overrides["dub.dry_run"] = False
+        rerun = _rerun_plan(body.edits, candidate_requests)
         updated = store.add(
             title=original.title,
             source=original.source,
@@ -356,6 +746,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             overrides=overrides,
         )
         bus.publish("job", {"type": "queued", "job_id": updated.id, "title": updated.title})
-        return {"ok": True, "job": asdict(updated)}
+        return {"ok": True, "job": asdict(updated), "rerun": rerun,
+                "previous_version": original.version_id}
 
     return api

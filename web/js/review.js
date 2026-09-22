@@ -1,17 +1,41 @@
-import { api, apiUrl } from './api.js';
-import { escapeHtml as esc, safeGet } from './dom.js';
+import { api } from './api.js';
+import { escapeHtml as esc } from './dom.js';
 import { openCorrection } from './knowledge-correction.js';
+import { FILTERS, createSceneSection, matchesFilter } from './review-scene.js';
 
 export function createReview({ onQueued }) {
   const $ = id => document.getElementById(id);
+  const sceneHost = document.createElement('div');
+  sceneHost.id = 'reviewScene';
   const dialog = $('reviewDialog'), list = $('reviewLines'), editor = $('reviewEditor');
   const status = $('reviewStatus'), submit = $('reviewSubmit');
   let data, jobId, selected, voices = [], pending = new Map(), opener, epoch = 0;
   const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const currentRow = () => data?.segments.find(s => s.index === selected);
+
+  // The scene panel owns playback, takes, direction, level and verdicts. It
+  // lives inside the editor so one line is the unit of work, and it is torn
+  // down with the dialog so no audio or poll outlives the review.
+  const scene = createSceneSection({
+    container: sceneHost,
+    getJobId: () => jobId,
+    getRow: currentRow,
+    getData: () => data,
+    // A saved verdict must not re-render the editor underneath the reviewer:
+    // the line list marker is the only thing that needs refreshing, and
+    // rebuilding the panel would wipe the confirmation they just read.
+    onDecision: () => renderList(),
+  });
+
+  function filter() {
+    const chosen = $('reviewFilter');
+    if (chosen && chosen.value) return chosen.value;
+    return $('reviewFlagged').checked ? 'flagged' : 'all';
+  }
 
   function renderList() {
     if (!data) return;
-    const rows = data.segments.filter(s => !$('reviewFlagged').checked || s.issues.length);
+    const rows = data.segments.filter(s => matchesFilter(s, filter()));
     list.innerHTML = rows.map(s => `<button type="button" class="review-line" data-line="${s.index}" aria-pressed="${s.index === selected}">
       <span class="m">${clock(s.source_start ?? s.start)}</span><span><strong>${esc(s.speaker)}</strong>
       <span class="review-excerpt">${esc(s.text_translated || s.text_src)}</span></span>
@@ -22,19 +46,18 @@ export function createReview({ onQueued }) {
   }
 
   function select(index) {
+    scene.stop();
     editor.querySelector('audio')?.pause();
     selected = index;
     const row = data.segments.find(s => s.index === index);
     if (!row) { editor.innerHTML = '<p>Select a line to review.</p>'; renderList(); return; }
     const edit = pending.get(index) || {};
-    const key = safeGet('doblarr_api_key', '');
-    const audio = apiUrl(`jobs/${jobId}/clips/${index}`) + (key ? `?api_key=${encodeURIComponent(key)}` : '');
     const voice = edit.voice ?? row.voice ?? '';
     const choices = [...voices];
     if (voice && !choices.some(v => v.id === voice)) choices.push({ id: voice, name: voice });
     editor.innerHTML = `<div class="review-line-heading"><h3>Line ${index + 1}</h3><span class="m">${esc(row.speaker)}</span></div>
       <p class="review-source">${esc(row.text_src)}</p>
-      ${row.has_audio ? `<audio controls preload="none" src="${esc(audio)}" aria-label="Generated line ${index + 1}"></audio>` : '<p class="hint">No generated audio yet.</p>'}
+      ${row.has_audio ? '' : '<p class="hint">No generated audio yet.</p>'}
       ${row.issues.length ? `<p class="review-flags">${row.issues.map(i => esc(i.replaceAll('_', ' '))).join(' · ')}</p>` : ''}
       <label class="review-field">Dubbed dialogue<textarea id="reviewText" class="input" rows="4">${esc(edit.text ?? row.text_translated ?? row.text_src)}</textarea></label>
       <div class="review-timing"><label class="review-field">Start (seconds)<input id="reviewStart" class="input m" type="number" min="0" step="0.01" value="${edit.start ?? row.start}"></label>
@@ -50,8 +73,14 @@ export function createReview({ onQueued }) {
       <p class="hint">Translation: ${esc(row.translation_provenance?.method || 'legacy')} · ${esc(row.translation_provenance?.reason || 'No recorded provenance')}</p>
       <p class="hint">${provenance(row)}</p>
       <p class="hint">${preparation(row)}</p>
+      <div id="reviewScene"></div>
       <div id="reviewCorrection" class="review-correction"></div>`;
     editor.querySelectorAll('input,textarea,select').forEach(f => { f.disabled = !data.editable; });
+    // The scene panel is appended rather than inlined so its audio element
+    // survives a re-render of the surrounding editor.
+    const host = editor.querySelector('#reviewScene');
+    host.replaceWith(sceneHost);
+    scene.load(row);
     wireCorrection(row);
     renderList();
   }
@@ -156,13 +185,15 @@ export function createReview({ onQueued }) {
   function collect() {
     const row = data.segments.find(s => s.index === selected);
     if (!row) return;
+    const extra = scene.collect();
     const patch = { index: selected, cue: row.cue?.cue_id || undefined, text: $('reviewText').value,
       start: Number($('reviewStart').value), end: Number($('reviewEnd').value),
       voice: $('reviewVoice').value, delivery: $('reviewDelivery').value,
-      regenerate: $('reviewRegenerate').checked, exclude: $('reviewExclude').checked };
+      regenerate: $('reviewRegenerate').checked, exclude: $('reviewExclude').checked,
+      ...extra };
     const changed = patch.text !== (row.text_translated || row.text_src) || patch.start !== row.start
       || patch.end !== row.end || patch.voice !== (row.voice || '') || patch.delivery !== (row.delivery || '')
-      || patch.regenerate || patch.exclude;
+      || patch.regenerate || patch.exclude || Object.keys(extra).length > 0;
     if (changed) pending.set(selected, patch); else pending.delete(selected);
     status.textContent = '';
     renderList();
@@ -172,9 +203,26 @@ export function createReview({ onQueued }) {
     const button = e.target.closest('[data-line]');
     if (button) select(Number(button.dataset.line));
   });
-  $('reviewFlagged').addEventListener('change', renderList);
+  $('reviewFlagged').addEventListener('change', () => {
+    const chosen = $('reviewFilter');
+    if (chosen) chosen.value = $('reviewFlagged').checked ? 'flagged' : 'all';
+    renderList();
+  });
+  $('reviewFilter')?.addEventListener('change', () => {
+    $('reviewFlagged').checked = $('reviewFilter').value !== 'all';
+    renderList();
+  });
+  // Escape out of the editor returns to the list rather than closing the
+  // review, so a keyboard user does not lose their place in the episode.
+  editor.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    event.stopPropagation();
+    event.preventDefault();
+    list.querySelector(`[data-line="${selected}"]`)?.focus();
+  });
   $('reviewClose').addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => {
+    scene.reset();
     editor.querySelector('audio')?.pause();
     const target = opener?.isConnected ? opener
       : [...document.querySelectorAll('.job-review')].find(button => button.dataset.id === jobId);
@@ -190,19 +238,36 @@ export function createReview({ onQueued }) {
     submit.disabled = true;
     status.textContent = 'Queuing changes…';
     try {
-      await api(`jobs/${jobId}/review`, { method: 'POST', json: {
+      const result = await api(`jobs/${jobId}/review`, { method: 'POST', json: {
         edits, use_updated_knowledge: $('reviewUpdatedKnowledge').checked,
         base_revision: data.revision,
       } });
       pending.clear(); data.editable = false; select(selected);
-      status.textContent = 'Queued. Unchanged clips will be reused. Close to follow progress.';
+      // Say plainly what was queued: which lines cost new speech, which only
+      // re-render, and that everything else is reused.
+      status.textContent = `Queued. ${describeRerun(result.rerun)} Close to follow progress.`;
       onQueued();
     } catch (error) { status.textContent = error.message; submit.disabled = false; }
   });
 
+  function describeRerun(plan) {
+    if (!plan) return 'Unchanged clips will be reused.';
+    const parts = [];
+    if (plan.generating) {
+      parts.push(`${plan.generating} line${plan.generating === 1 ? '' : 's'} will be generated`);
+    }
+    if (plan.processing) {
+      parts.push(`${plan.processing} will be re-rendered from existing audio`);
+    }
+    if (plan.candidates) parts.push(`${plan.candidates} alternative takes requested`);
+    if (!parts.length) parts.push('nothing needs re-rendering');
+    return `${parts.join(', ')}. ${plan.note || ''}`.trim();
+  }
+
   async function open(id) {
     const version = ++epoch;
     data = null;
+    scene.reset();
     opener = document.activeElement; jobId = id; pending = new Map();
     list.innerHTML = ''; editor.innerHTML = '<p>Loading dialogue…</p>';
     status.textContent = ''; submit.disabled = true;
@@ -215,6 +280,12 @@ export function createReview({ onQueued }) {
       $('reviewTitle').textContent = data.title;
       $('reviewSummary').textContent = `${data.segments.length} lines · ${data.flagged} flagged for review`;
       $('reviewFlagged').checked = data.flagged > 0;
+      const chooser = $('reviewFilter');
+      if (chooser) {
+        chooser.innerHTML = FILTERS.map(([value, label]) =>
+          `<option value="${value}">${esc(label)}</option>`).join('');
+        chooser.value = data.flagged > 0 ? 'flagged' : 'all';
+      }
       voices = [];
       select((data.segments.find(s => s.issues.length) || data.segments[0])?.index);
       // Voice discovery must not block listening or discard edits made while it loads.

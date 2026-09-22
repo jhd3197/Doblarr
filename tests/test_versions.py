@@ -2,6 +2,7 @@
 import pytest
 
 from doblarr.config import Config
+from doblarr.cues import CUE_SCHEMA_VERSION
 from doblarr.models import DubJob, Segment, Speaker
 from doblarr.versions import file_hash, preserve_version
 
@@ -80,7 +81,7 @@ def test_cue_provenance_is_recorded_without_changing_existing_version_ids(tmp_pa
     assert manifest["version_id"] == digest(identity)
     assert "cues" not in identity and "cue_schema" not in identity
 
-    assert manifest["cue_schema"] == 1
+    assert manifest["cue_schema"] == CUE_SCHEMA_VERSION
     cue = manifest["cues"][0]
     assert cue["index"] == 0 and cue["cue_id"] == seg.cue_id
     assert cue["audio"]["selection"]["take_id"] == "t1"

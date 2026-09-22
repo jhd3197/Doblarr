@@ -7,11 +7,20 @@ import re
 import sys
 import wave
 from array import array
-from difflib import SequenceMatcher
 from pathlib import Path
 
+from .. import verify as content
 from ..artifacts import digest, matches, read_json, record, stamp
-from ..cues import NORMALIZED, RAW, TRIMMED, Artifact, Finding, finding_id, now
+from ..cues import (
+    NORMALIZED,
+    RAW,
+    TRIMMED,
+    Artifact,
+    Finding,
+    Verification,
+    finding_id,
+    now,
+)
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
 from ..fingerprints import processing as processing_fingerprint
@@ -98,7 +107,111 @@ def spoken_form(text: str, pronunciations: dict) -> str:
     return re.sub(pattern, lambda match: pronunciations[match.group()], text)
 
 
-def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=None):
+def recognizer_id(vb) -> str:
+    """Best-effort identity of the recognizer, for the verification cache key.
+
+    A client that cannot name its model is recorded as unknown rather than
+    given a made-up version, so a real upgrade still invalidates evidence but a
+    nameless stub does not pretend to be a pinned model.
+    """
+    if vb is None:
+        return "none"
+    name = type(vb).__name__
+    for attribute in ("asr_model", "transcribe_model", "model_size"):
+        value = getattr(vb, attribute, None)
+        if value:
+            return f"{name}/{value}"
+    return f"{name}/unknown"
+
+
+def verify_clip(seg, path: Path, language: str, vb, policy: str, reason: str,
+                expected: str, budget=None, recognizer: str = "",
+                audio_fingerprint: str = "", target: str = "") -> tuple[Verification, bool]:
+    """Listen to one clip and compare it with what was asked for.
+
+    Returns the verification and whether it was reused. Recognition is charged
+    to the shared budget; a refusal leaves the line explicitly unchecked rather
+    than silently verified. The only thing that can set `mismatch` here is the
+    comparison in `doblarr.verify` — a service failure never becomes one.
+    """
+    recognizer = recognizer or recognizer_id(vb)
+    key = content.verification_key(
+        # The artifact's own fingerprint when the caller knows it; otherwise
+        # the file stamp, which is at least stable for this machine.
+        audio=audio_fingerprint or str(stamp(path)),
+        expected=expected, language=language, policy=policy, recognizer=recognizer)
+    if seg.verification.inputs == key and seg.verification.state != "unknown":
+        return seg.verification, True
+    receipt = Path(path).with_suffix(".verify.json")
+    saved = read_json(receipt)
+    if saved.get("key") == key and isinstance(saved.get("result"), dict):
+        restored = Verification.from_dict(saved["result"])
+        restored.attempts = seg.verification.attempts
+        return restored, True
+    if vb is None:
+        return content.skipped(seg, policy, "no recognizer is configured",
+                               language, expected), False
+    if budget is not None and not budget.charge("asr"):
+        return content.skipped(seg, policy, "the shared request budget is exhausted",
+                               language, expected), False
+    try:
+        heard = vb.transcribe(Path(path), language=language) or {}
+    except Exception as exc:  # noqa: BLE001 - any client failure is reviewable
+        return content.failure(seg, policy, f"recognition failed: {exc}", language,
+                               expected, recognizer), False
+    if not isinstance(heard, dict):
+        return content.failure(seg, policy, "recognition returned an unreadable result",
+                               language, expected, recognizer), False
+    comparison = content.compare(expected, str(heard.get("text") or ""), language,
+                                 _confidence(heard),
+                                 heard_language=str(heard.get("language") or ""))
+    result = Verification(policy=policy, recognizer=recognizer, target=target,
+                          inputs=key, at=now(), attempts=seg.verification.attempts,
+                          **{k: v for k, v in comparison.items() if k in _VERIFY_FIELDS})
+    if reason:
+        result.reason = f"{result.reason} ({reason})"
+    write_json(receipt, {"key": key, "result": result.as_dict()})
+    return result, False
+
+
+_VERIFY_FIELDS = frozenset({
+    "state", "reason", "expected", "heard", "language", "tokenizer",
+    "similarity", "confidence", "differences", "critical", "checker",
+})
+
+
+def _confidence(heard: dict) -> float | None:
+    """Recognizer confidence when it supplies one; never a fabricated 1.0."""
+    for key in ("confidence", "avg_logprob", "probability"):
+        value = heard.get(key)
+        if isinstance(value, int | float):
+            # avg_logprob is a log probability; anything <= 0 is mapped through
+            # exp so the scale is comparable, and anything else is taken as is.
+            return round(min(1.0, max(0.0, math.exp(value) if value < 0 else float(value))), 4)
+    return None
+
+
+# The legacy string issues the new states map onto, so existing review filters,
+# metrics and the `ACOUSTIC_ISSUES` contract keep working unchanged.
+LEGACY_ISSUE = {"mismatch": "text_mismatch"}
+# Issues the content check owns. They are recomputed from the verification on
+# every pass, so a stale one from a cached acoustic receipt is dropped first.
+_VERIFY_ISSUES = ("text_mismatch", "repetition")
+
+
+def legacy_issues(result: Verification) -> list[str]:
+    """The pre-Plan-03 issue strings implied by one verification."""
+    issues = []
+    code = LEGACY_ISSUE.get(result.state)
+    if code:
+        issues.append(code)
+    if result.state == "mismatch" and "repeats" in result.reason:
+        issues.append("repetition")
+    return issues
+
+
+def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=None,
+               budget=None, reason="", verify=True, sample=0.0):
     source = Path(seg.audio_clip)
     # The exact spoken form synthesis resolved for this line (per its speaker's
     # engine); the legacy flat pronunciation map remains the fallback.
@@ -114,7 +227,15 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
     receipt = source.with_suffix(".quality.json")
     saved = read_json(receipt)
     if saved.get("request") == request:
-        return saved["issues"], saved["stats"], True, verification_fingerprint(request)
+        # The acoustic measurement is reusable; the content check is not part
+        # of this receipt and runs on its own cache, so a warm rerun still
+        # reports verification instead of quietly leaving the line unchecked.
+        issues, stats = list(saved["issues"]), dict(saved["stats"])
+        if verify:
+            issues = [i for i in issues if i not in _VERIFY_ISSUES]
+            issues += _verify_here(seg, source, language, vb, asr, text, issues,
+                                   budget, reason, stats, sample)
+        return issues, stats, True, verification_fingerprint(request)
     try:
         stats = inspect_pcm(source)
     except (wave.Error, EOFError):
@@ -143,23 +264,81 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
         issues.append("clipping")
     if stats["duration"] < 0.15 or stats["duration"] > max(2, seg.duration * 2):
         issues.append("unexpected_duration")
-    if vb and (asr == "all" or (asr == "suspicious" and issues)):
-        heard = vb.transcribe(source, language=language).get("text", "")
-
-        def clean(value):
-            return re.sub(r"[\W_]", "", value.casefold())
-
-        # A low similarity is evidence of a mismatch, not proof of an omission;
-        # the ratio is kept so review can weigh it.
-        ratio = SequenceMatcher(None, clean(text), clean(heard)).ratio()
-        stats["asr_similarity"] = ratio
-        if ratio < 0.55:
-            issues.append("text_mismatch")
-        words = heard.casefold().split()
-        if len(words) > 12 and len(set(words)) / len(words) < 0.3:
-            issues.append("repetition")
     write_json(receipt, {"request": request, "issues": issues, "stats": stats})
+    if verify:
+        issues += _verify_here(seg, source, language, vb, asr, text, issues, budget, reason,
+                               stats, sample)
     return issues, stats, False, verification_fingerprint(request)
+
+
+def verification_findings(seg) -> None:
+    """Publish this cue's verification as structured findings.
+
+    Kept out of `verify_clip` so a caller can compare without touching the cue,
+    and so the findings for a reused verification are refreshed on every pass.
+    """
+    apply_findings(seg, content.CHECKER, seg.verification.inputs,
+                   content.findings_for(seg.verification))
+
+
+def _verify_here(seg, source, language, vb, asr, text, issues, budget, reason, stats,
+                 sample=0.0):
+    """Run the content check for this clip and fold its verdict into `issues`.
+
+    Kept separate from the acoustic receipt on purpose: a checker-policy change
+    must re-verify without re-measuring or regenerating anything, and an
+    acoustic re-measure must not silently discard recognition evidence.
+    """
+    wanted, why = content.should_check(seg, asr, key=seg.cue_id, sample=sample,
+                                       acoustic_issues=issues)
+    if not wanted:
+        seg.verification = content.skipped(seg, asr, why, language, text)
+        return []
+    result, _reused = verify_clip(
+        seg, Path(source), language, vb, asr, reason or why, text, budget=budget,
+        audio_fingerprint=_listened_fingerprint(seg), target=_listened_role(seg))
+    seg.verification = result
+    if result.similarity is not None:
+        stats["asr_similarity"] = result.similarity
+    return legacy_issues(result)
+
+
+def _listened_fingerprint(seg) -> str:
+    current = seg.audio.current()
+    if current and current.fingerprint:
+        return current.fingerprint
+    raw = seg.audio.raw()
+    return raw.fingerprint if raw else ""
+
+
+def _listened_role(seg) -> str:
+    current = seg.audio.current()
+    return current.role if current else RAW
+
+
+def coverage(job) -> dict:
+    """What verification actually covered, in terms a reviewer can audit.
+
+    `checked` counts lines recognition produced a verdict for. Every other
+    line is counted under the state that explains why it did not, because
+    reporting an unlistened line as verified is the one thing this must never
+    do.
+    """
+    states: dict[str, int] = {}
+    reasons: dict[str, int] = {}
+    for seg in job.segments:
+        states[seg.verification.state] = states.get(seg.verification.state, 0) + 1
+        if not seg.verification.checked and seg.verification.reason:
+            reasons[seg.verification.reason] = reasons.get(seg.verification.reason, 0) + 1
+    checked = sum(1 for s in job.segments if s.verification.checked)
+    return {
+        "policy": next((s.verification.policy for s in job.segments), "off"),
+        "lines": len(job.segments),
+        "checked": checked,
+        "unchecked": len(job.segments) - checked,
+        "states": dict(sorted(states.items())),
+        "reasons": dict(sorted(reasons.items())[:12]),
+    }
 
 
 def run(
@@ -177,10 +356,18 @@ def run(
     dry_run=False,
     budget=None,
     boundary_options=None,
+    own_levels=False,
+    sample=0.0,
 ):
+    """Check every generated clip, verify its words, and prepare its boundaries.
+
+    `own_levels` hands loudness to the post-fit level owner (Plan 03): the
+    pre-fit normalization below is the legacy path and the two never both run,
+    because a second loudness pass after a performance gain would erase it.
+    """
     if dry_run or not enabled:
         return
-    if asr not in {"off", "suspicious", "all"}:
+    if asr not in content.POLICIES:
         raise ValueError("quality.asr must be off, suspicious or all")
     attempts = max(0, min(3, int(max_retries)))
     for seg in job.segments:
@@ -188,7 +375,8 @@ def run(
             if cancel is not None and cancel.is_set():
                 raise JobCancelled("cancelled during clip checks")
             issues, stats, hit, checked = check_clip(
-                seg, job.target_lang, vb, asr, pronunciations, cancel)
+                seg, job.target_lang, vb, asr, pronunciations, cancel,
+                budget=budget, sample=sample)
             key = "quality_cache_hits" if hit else "quality_checked"
             job.metrics[key] = job.metrics.get(key, 0) + 1
             seg.issues = [i for i in seg.issues if i not in ACOUSTIC_ISSUES] + issues
@@ -198,16 +386,23 @@ def run(
                  dict(stats))
                 for code in issues
             ])
+            # The structured content findings carry the ordered differences the
+            # legacy strings cannot; both are published so old filters keep
+            # working while review can show where a word actually went.
+            verification_findings(seg)
             retryable = set(issues) - {"unexpected_duration"}
             if not retryable or attempt >= attempts or regenerate is None:
                 break
-            # Retries share one budget with timing repairs and (later) extra
-            # candidates, so nested stages cannot multiply provider requests.
+            # Retries share one budget with timing repairs and extra candidate
+            # takes, so nested stages cannot multiply provider requests.
             if budget is not None and not budget.charge("quality_retry"):
                 job.metrics["quality_retries_refused"] = (
                     job.metrics.get("quality_retries_refused", 0) + 1)
+                seg.verification.reason = (
+                    f"{seg.verification.reason}; repair stopped: budget exhausted")
                 break
             seg.revision += 1
+            seg.verification.attempts += 1
             if checkpoint:
                 checkpoint()
             regenerate(seg)
@@ -222,7 +417,7 @@ def run(
         if prepared.decision == "trimmed":
             job.metrics["trimmed_seconds"] = round(
                 job.metrics.get("trimmed_seconds", 0.0) + prepared.trimmed, 3)
-        if normalize and "silence" not in issues:
+        if normalize and not own_levels and "silence" not in issues:
             # Normalize from the most upstream immutable artifact there is: the
             # prepared derivative when boundaries were removed, otherwise the
             # raw take. Reprocessing an already normalized file would
@@ -268,4 +463,13 @@ def run(
                 bytes=dest.stat().st_size if dest.exists() else None,
             ))
             seg.audio_clip = dest
+        elif own_levels:
+            # The level owner reads the prepared (or raw) take directly, so any
+            # normalized derivative left behind by a legacy run is not an input
+            # to anything any more and must not reach the mix.
+            seg.audio.drop_renders((NORMALIZED,))
+            upstream = seg.audio.render(TRIMMED) or seg.audio.raw()
+            if upstream and upstream.exists():
+                seg.audio_clip = Path(upstream.path)
     job.metrics["quality_flags"] = sum(bool(s.issues) for s in job.segments)
+    job.metrics["verification"] = coverage(job)

@@ -113,8 +113,10 @@ def run(job, work, count=8, cancel=None, force=False, dry_run=False):
         remapped.append(copy)
         offset += end - start
     job.segments = remapped
-    # Deliberately not touching job.source_reference: the montage replaces the
-    # working audio, never the record of which original track this came from.
+    # Deliberately not touching job.source_reference or job.source_track: the
+    # montage replaces the working audio, never the record of which original
+    # track this came from or where the original performance can be heard.
+    job.source_track = job.source_track or source
     job.source_audio = dest
     job.speakers = {s.speaker: job.speakers[s.speaker] for s in remapped}
     job.metrics["audition_seconds"] = offset

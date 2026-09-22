@@ -104,6 +104,10 @@ def run(
 ) -> Plan | None:
     out = work_dir / f"{work_stem(job)}.source.wav"
     job.source_audio = out
+    # `source_audio` is the working audio and an audition montage replaces it.
+    # `source_track` is the recorded original and never moves, so source
+    # measurement and source playback always know where the performance is.
+    job.source_track = out
     args = ["-y", "-i", str(job.input_file)]
     if duration:
         args += ["-t", str(duration)]  # tease: only the first `duration` seconds

@@ -105,6 +105,12 @@ def save_script(job, work_dir: Path) -> Path:
                              if job.source_reference else None),
         "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
         "nonverbal": job.nonverbal,
+        # The measured dialogue reference is frozen with the script: a resume
+        # must compare against the baseline this run established, not one
+        # recomputed over whichever cues happen to be measurable next time.
+        "dialogue_baseline": job.dialogue_baseline,
+        "manual_gains": job.manual_gains,
+        "source_track": str(job.source_track) if job.source_track else None,
         "transcription_options": job.transcription_options,
         "translation_options": job.translation_options,
         "audio": stamp(job.source_audio),
@@ -202,6 +208,12 @@ def _restore_cues(job, payload: dict) -> None:
     job.cue_lineage = {str(k): [str(c) for c in v]
                        for k, v in (payload.get("cue_lineage") or {}).items()}
     job.nonverbal = list(payload.get("nonverbal") or [])
+    job.dialogue_baseline = dict(payload.get("dialogue_baseline") or {})
+    job.manual_gains = {str(k): float(v)
+                        for k, v in (payload.get("manual_gains") or {}).items()}
+    track = payload.get("source_track")
+    if track and job.source_track is None:
+        job.source_track = Path(track)
     for seg, row in zip(job.segments, payload["segments"], strict=True):
         record = row.get("cue")
         if record:

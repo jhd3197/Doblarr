@@ -62,6 +62,9 @@ def preserve_version(job, config, cast=None) -> dict:
         # Boundary preparation and edge fades change the rendered audio, so a
         # saved version has to record which settings produced it.
         "boundaries": dict(config.get("boundaries", {})),
+        # So does the level owner, including the per-cue manual gains: two
+        # renders that differ only by a reviewer's gain are different dubs.
+        "levels": dict(config.get("levels", {})),
     }
     voices = [{"index": s.index, "speaker": s.speaker,
                "profile": s.voice or (job.speakers[s.speaker].voicebox_profile_id
@@ -98,6 +101,11 @@ def preserve_version(job, config, cast=None) -> dict:
                 "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
                 "nonverbal": job.nonverbal,
                 "cues": [_cue_provenance(s) for s in job.segments],
+                # What the run measured and what it concluded, outside the
+                # identity digest: evidence about this version, not part of
+                # what makes it this version.
+                "dialogue_baseline": job.dialogue_baseline,
+                "manual_gains": job.manual_gains,
                 # Knowledge provenance for this version; outside the identity digest
                 # so an unrelated rule edit never forks an identical render.
                 "knowledge": job.knowledge_snapshot,

@@ -175,6 +175,29 @@
 .review-flags { font-size:13px; color:var(--color-accent-700); }
 .review-footer { border-top:1px solid var(--line); }
 .review-footer p { margin:0; font-size:13px; line-height:1.5; color:var(--muted); }
+.review-filter { display:flex; align-items:center; gap:8px; font-size:13px; }
+.review-filter .input { padding:4px 8px; font-size:12.5px; }
+/* Scene playback: one player, four clearly separated sources. */
+.scene { margin-top:20px; padding:14px; border:1px solid var(--line); border-radius:10px; }
+.scene-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.scene-tab[aria-selected=true] { background:color-mix(in srgb,var(--color-accent) 16%,transparent); box-shadow:inset 0 -2px var(--color-accent); }
+.scene-version { display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:13px; }
+.scene-version .input { padding:4px 8px; font-size:12.5px; }
+.scene audio { width:100%; height:38px; }
+.scene-controls { display:flex; flex-wrap:wrap; gap:16px; align-items:center; margin-top:10px; font-size:13px; }
+.scene-controls .hint { margin:0; flex:1 1 220px; }
+.scene-takes,.scene-direction,.scene-findings { margin-top:20px; padding:14px; border:1px solid var(--line); border-radius:10px; }
+.scene-takes legend,.scene-direction legend,.scene-findings legend { padding:0 6px; font-size:13px; font-weight:600; }
+.scene-take { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:start; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+.scene-take:last-of-type { border-bottom:0; }
+.scene-take.is-missing { opacity:.6; }
+.scene-take .hint { display:block; margin:2px 0 0; }
+.scene-finding { padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
+.scene-finding:last-of-type { border-bottom:0; }
+.scene-finding p { margin:0 0 6px; }
+.scene-finding pre { margin:8px 0 0; padding:8px; overflow:auto; max-height:160px; background:color-mix(in srgb,var(--color-text) 6%,transparent); border-radius:8px; font-size:11.5px; }
+.scene-finding .review-options { margin-top:8px; gap:10px; }
+.scene-finding .scene-note { flex:1 1 220px; }
 @media (max-width:650px) { .review-layout { grid-template-columns:1fr; } .review-lines { max-height:22vh; border-right:0; border-bottom:1px solid var(--line); } .review-editor { max-height:42vh; } .review-footer { flex-wrap:wrap; } }
 
 /* Title workspace: episode inventory and voice direction. */

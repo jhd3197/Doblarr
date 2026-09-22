@@ -39,7 +39,23 @@ SETTING_KEYS = (
     "quality.dialogue_lufs",
     "quality.asr",
     "quality.max_retries",
+    "quality.asr_sample",
     "quality.request_budget",
+    # Level policy travels; the measured numbers and the per-cue manual gains
+    # do not. A gain someone set after hearing one line of one episode is not
+    # a reusable setting, and `levels.gains` is deliberately absent here.
+    "levels.mode",
+    "levels.target_db",
+    "levels.strength",
+    "levels.max_boost_db",
+    "levels.max_cut_db",
+    "levels.min_seconds",
+    "levels.min_separation_db",
+    "levels.peak_ceiling",
+    "levels.measure_source",
+    "dub.locale_direction",
+    "dub.candidate_limit",
+    "dub.clone_cleanup",
     "boundaries.trim",
     "boundaries.handle_ms",
     "boundaries.max_trim_seconds",

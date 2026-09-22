@@ -4,15 +4,20 @@ import math
 import os
 import shutil
 from dataclasses import asdict
+from pathlib import Path
 
 from .artifacts import digest
 from .cues import (
     CUE_SCHEMA_VERSION,
+    DISPOSITIONS,
+    Selection,
     cue_payload,
     ensure_identity,
+    now,
     register_unknown_clip,
     resolve_cue,
 )
+from .performance import from_edit
 from .telemetry import write_json
 
 
@@ -35,6 +40,10 @@ def snapshot_revision(job) -> str:
             "issues": sorted(seg.issues),
             "take": seg.audio.selection.take_id if seg.audio.selection else None,
             "render": (seg.audio.current().fingerprint if seg.audio.current() else None),
+            "intent": seg.intent.as_dict(),
+            "level": seg.level.applied_db,
+            "verification": seg.verification.inputs,
+            "dispositions": sorted((f.finding_id, f.disposition) for f in seg.findings),
         }
         for seg in job.segments
     ])[:16]
@@ -86,13 +95,203 @@ def apply_edits(job, edits, lineage=None):
         for key in ("voice", "delivery", "revision"):
             if key in edit:
                 setattr(seg, key, edit[key])
+        _apply_intent(seg, edit)
+        _apply_gain(job, seg, edit)
+        _apply_selection(seg, edit)
+        _apply_dispositions(seg, edit)
         kept.append(seg)
     if not kept:
         raise ValueError("review edits excluded every spoken line")
     job.segments = kept
 
 
-def write_review(job, root):
+# Edits that change what the engine would be asked to say or how. Any of them
+# retires a reviewed take selection: the take a person chose was a take of the
+# *old* line, and keeping it selected would quietly ignore the edit.
+_REGENERATING = ("text", "delivery", "voice", "mode", "traits", "direction")
+
+
+def _apply_intent(seg, edit) -> None:
+    """Structured acting direction, composed again at synthesis time."""
+    fields = {k: edit[k] for k in ("mode", "traits", "direction", "treatment", "origin")
+              if k in edit}
+    if fields:
+        seg.intent = from_edit(fields, seg.intent)
+
+
+def _apply_gain(job, seg, edit) -> None:
+    """A reviewer's per-line gain, in dB, kept with the job so a resume honors it."""
+    if "gain_db" not in edit:
+        return
+    value = edit["gain_db"]
+    if value in (None, ""):
+        job.manual_gains.pop(seg.cue_id, None)
+        return
+    gain = float(value)
+    if not math.isfinite(gain):
+        raise ValueError(f"line {seg.index} needs a finite gain in dB")
+    if abs(gain) > 24:
+        raise ValueError(f"line {seg.index}: a manual gain beyond +/-24 dB is a mistake")
+    job.manual_gains[seg.cue_id] = round(gain, 3)
+
+
+def _apply_selection(seg, edit) -> None:
+    """Point the cue at the take a reviewer chose, or back at a previous one.
+
+    Selecting a take is not a generation: the raw audio already exists. Only
+    the derivatives made from the *other* take are dropped, so the render
+    reruns and the TTS does not.
+    """
+    chosen = seg.audio.selection
+    if (chosen and chosen.reason in ("review", "restored", "candidate")
+            and any(key in edit for key in _REGENERATING)):
+        # The line changed; the chosen take was a take of the old line.
+        seg.audio.selection = Selection(take_id=chosen.take_id, reason="auto",
+                                        actor=chosen.actor, previous=chosen.previous,
+                                        at=now())
+    take_id = edit.get("take")
+    if not take_id:
+        return
+    take = seg.audio.take(str(take_id))
+    if take is None:
+        raise ValueError(f"line {seg.index} has no take {take_id}")
+    if take.raw is None or not take.raw.exists():
+        raise ValueError(f"take {take_id} has no audio on disk any more")
+    previous = seg.audio.selection.take_id if seg.audio.selection else None
+    if previous == take.take_id:
+        return
+    seg.audio.selection = Selection(
+        take_id=take.take_id,
+        reason="restored" if take.origin == "auto" else "review",
+        actor=str(edit.get("actor") or ""), previous=previous, at=now())
+    seg.audio.invalidate_after("raw")
+    seg.audio_clip = Path(take.raw.path)
+
+
+def _apply_dispositions(seg, edit) -> None:
+    """Record a human verdict on a finding, with its history and its note."""
+    decisions = edit.get("dispositions") or {}
+    if not isinstance(decisions, dict):
+        raise ValueError(f"line {seg.index}: dispositions must be an object")
+    for finding_id, decision in decisions.items():
+        found = next((f for f in seg.findings if f.finding_id == str(finding_id)), None)
+        if found is None:
+            # A finding that no longer exists is not an error: the audio it was
+            # about may have been replaced. The verdict is simply dropped.
+            continue
+        value = str((decision or {}).get("disposition") or "").strip()
+        if value not in DISPOSITIONS:
+            raise ValueError(f"unknown disposition {value!r} for finding {finding_id}")
+        note = str((decision or {}).get("note") or "")
+        actor = str((decision or {}).get("actor") or "")
+        if found.disposition == value and not note:
+            continue
+        found.history.append({"at": now(), "from": found.disposition, "to": value,
+                              "reason": note or "reviewer decision", "actor": actor,
+                              "inputs": found.inputs})
+        found.disposition = value
+
+
+# --------------------------------------------------------------------------
+# Reviewer decisions
+# --------------------------------------------------------------------------
+#
+# A review snapshot is an immutable projection of one run. A reviewer's verdict
+# on a finding is new information about that run, so it lives in a sidecar next
+# to the snapshot rather than being written back into it. The snapshot stays
+# exactly what the pipeline produced; the sidecar says what a person concluded
+# about it, and records which snapshot revision they were looking at.
+
+def decisions_path(root, job_id: str) -> Path:
+    """Where one job's reviewer decisions live.
+
+    Keyed by the job, not by the snapshot file: every run writes a fresh
+    report name, so a sidecar next to the snapshot would silently lose every
+    verdict the moment the job was re-rendered.
+    """
+    if not job_id:
+        raise ValueError("review decisions belong to a job")
+    return Path(root) / "reviews" / "decisions" / f"{job_id}.json"
+
+
+def load_decisions(root, job_id: str) -> dict:
+    from .artifacts import read_json
+
+    data = read_json(decisions_path(root, job_id))
+    if not isinstance(data, dict) or not isinstance(data.get("cues"), dict):
+        return {"version": 1, "cues": {}}
+    return data
+
+
+def record_decision(root, job_id: str, revision: str, cue_id: str, patch: dict,
+                    actor: str = "") -> dict:
+    """Store one cue's reviewer decision, keeping its history.
+
+    Every disposition carries the snapshot revision it was made against, so a
+    verdict recorded before a re-render is visibly about the older audio
+    instead of silently certifying the new one.
+    """
+    if not cue_id:
+        raise ValueError("a review decision needs the cue it is about")
+    data = load_decisions(root, job_id)
+    entry = dict(data["cues"].get(cue_id) or {})
+    history = list(entry.get("history") or [])
+    dispositions = dict(entry.get("dispositions") or {})
+    for finding_id, decision in (patch.get("dispositions") or {}).items():
+        value = str((decision or {}).get("disposition") or "").strip()
+        if value not in DISPOSITIONS:
+            raise ValueError(f"unknown disposition {value!r}")
+        record = {"disposition": value, "note": str((decision or {}).get("note") or ""),
+                  "actor": actor, "at": now(), "revision": revision}
+        dispositions[str(finding_id)] = record
+        history.append({"finding": str(finding_id), **record})
+    entry["dispositions"] = dispositions
+    entry["history"] = history[-50:]
+    for key in ("note", "mode", "traits", "direction", "gain_db", "take", "candidates",
+                "reviewed"):
+        if key in patch:
+            entry[key] = patch[key]
+    entry["revision"] = revision
+    entry["at"] = now()
+    data["cues"][cue_id] = entry
+    data["version"] = 1
+    write_json(decisions_path(root, job_id), data)
+    return entry
+
+
+def merge_decisions(payload: dict, decisions: dict) -> dict:
+    """Fold stored decisions into a review payload for display.
+
+    A disposition recorded against an older snapshot revision is shown as
+    stale rather than applied: the audio it was about is not the audio on
+    screen, and quietly carrying it forward is how an old approval ends up
+    certifying a new render.
+    """
+    current = payload.get("revision")
+    for row in payload.get("segments", []):
+        cue_id = (row.get("cue") or {}).get("cue_id") or ""
+        entry = decisions.get("cues", {}).get(cue_id)
+        if not entry:
+            continue
+        stale = entry.get("revision") != current
+        row["decision"] = {**entry, "stale": stale}
+        for finding in (row.get("cue") or {}).get("findings", []):
+            verdict = entry.get("dispositions", {}).get(finding.get("finding_id"))
+            if not verdict:
+                continue
+            finding["review"] = {**verdict, "stale": stale}
+            if not stale:
+                finding["disposition"] = verdict["disposition"]
+    return payload
+
+
+def write_review(job, root, settings=None):
+    """Write the immutable snapshot of this run for review.
+
+    `settings` are the effective settings the run used. They are frozen here
+    rather than read back from live config, so opening an old review shows the
+    policy that produced it instead of whatever is configured today.
+    """
     if not job.report_file:
         return
     ensure_identity(job)
@@ -127,6 +326,23 @@ def write_review(job, root):
             "version": 1,
             "cue_schema": CUE_SCHEMA_VERSION,
             "revision": snapshot_revision(job),
+            # Where this run's playable evidence lives. Machine-local, so the
+            # API resolves previews from it and never sends it to a browser.
+            "media": {
+                "source_track": str(job.source_track) if job.source_track else None,
+                "source_audio": str(job.source_audio) if job.source_audio else None,
+                "dubbed_track": str(job.dubbed_track) if job.dubbed_track else None,
+                "output": str(job.output_file) if job.output_file else None,
+                "work": str(job.artifacts_dir) if job.artifacts_dir else None,
+            },
+            "settings": dict(settings or {}),
+            "dialogue_baseline": job.dialogue_baseline,
+            "manual_gains": job.manual_gains,
+            # Which sample each cloned voice was built from, so the same
+            # character can be compared across scenes. Paths stay server-side.
+            "references": {label: str(speaker.reference_clip)
+                           for label, speaker in job.speakers.items()
+                           if speaker.reference_clip},
             "language": job.target_lang,
             "source_language": job.script_lang or job.source_lang,
             "locale": job.target_locale or job.target_lang,

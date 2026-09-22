@@ -133,6 +133,16 @@ class DubModel(_Section):
     cast_group: str = ""
     character_map: dict[str, str] = {}
     audition_lines: int = 8
+    # Acting direction and alternate takes (Plan 03). `candidates` maps a cue
+    # id to how many extra takes to generate for it; a reviewer sets it and it
+    # is spent once, under the shared request budget.
+    locale_direction: str = ""       # "" derives accent guidance from the target locale
+    candidates: dict[str, int] = {}
+    candidate_limit: int = 4
+    # A restrained cleanup of the clone reference sample. Off by default: it
+    # changes the voice the clone learns, and the original sample is always
+    # kept so the choice is reversible.
+    clone_cleanup: bool = False
     track_name_template: str = "{language_name} AI"
     preset_voices: list[str] = []
     teaser_minutes: int = 10
@@ -150,6 +160,10 @@ class QualityModel(_Section):
     normalize: bool = True
     dialogue_lufs: float = -18
     asr: str = "off"
+    # Fraction of otherwise-unsuspicious lines to verify anyway under the
+    # `suspicious` policy. Deterministic per cue, so a rerun checks the same
+    # lines; 0 keeps the historical behavior of checking none of them.
+    asr_sample: float = 0.0
     max_retries: int = 1
     # Extra provider requests one job may spend across quality retries, timing
     # repairs and later candidate takes. 0 = counted but never capped, which is
@@ -174,6 +188,26 @@ class BoundariesModel(_Section):
     edge_threshold_db: float = -40  # an edge quieter than this is already smooth
 
 
+class LevelsModel(_Section):
+    """Source-relative dynamics and the one post-fit level owner (Plan 03).
+
+    `mode` defaults to `legacy`, which keeps the pre-fit `quality.normalize`
+    loudness pass exactly as it was. The other modes move loudness ownership
+    after timing; only one of the two ever runs.
+    """
+
+    mode: Literal["legacy", "off", "consistent", "follow_source", "manual"] = "legacy"
+    target_db: float = -20.0        # baseline speech-active RMS target, dBFS
+    strength: float = 0.7           # how much of the source contrast to follow, 0..1
+    max_boost_db: float = 4.0       # never push a loud line further than this
+    max_cut_db: float = 8.0         # never bury a quiet line further than this
+    min_seconds: float = 0.30       # shorter source evidence is not a measurement
+    min_separation_db: float = 8.0  # speech this close to its bed is not measurable
+    peak_ceiling: float = 0.89      # hard peak the level pass will not cross
+    measure_source: bool = False    # measure the original even outside follow_source
+    gains: dict[str, float] = {}    # per-cue manual gain in dB, keyed by cue id
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -190,6 +224,7 @@ class ConfigModel(_Section):
     knowledge: KnowledgeModel = KnowledgeModel()
     quality: QualityModel = QualityModel()
     boundaries: BoundariesModel = BoundariesModel()
+    levels: LevelsModel = LevelsModel()
 
 
 def validate_config(data: dict) -> None:

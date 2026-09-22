@@ -364,7 +364,8 @@
       <p id="reviewSummary" class="hint"></p></div>
       <button type="button" id="reviewClose" class="btn btn-secondary">Close</button></div>
     <div class="review-toolbar"><label><input type="checkbox" id="reviewFlagged"> Flagged lines only</label>
-      <span class="hint">Listen, edit, then render the changed lines.</span></div>
+      <label class="review-filter">Show <select id="reviewFilter" class="input"></select></label>
+      <span class="hint">Hear the exchange, compare the original with the dub, then render the changed lines.</span></div>
     <div class="review-layout"><nav id="reviewLines" class="review-lines" aria-label="Dialogue lines"></nav>
       <section id="reviewEditor" class="review-editor" aria-label="Line editor"></section></div>
     <div class="review-footer"><p id="reviewStatus" role="status"></p>
