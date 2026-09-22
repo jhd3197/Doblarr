@@ -10,12 +10,14 @@ from .cues import (
     CueLineage,
     Finding,
     LevelDecision,
+    NonverbalEvent,
     PerformanceIntent,
     Placement,
     SourceMeasurement,
     SourceReference,
     SourceSpans,
     SpeechPreparation,
+    TimingPlan,
     Verification,
 )
 
@@ -73,6 +75,12 @@ class Segment:
     measurement: SourceMeasurement = field(default_factory=SourceMeasurement)
     level: LevelDecision = field(default_factory=LevelDecision)
     verification: Verification = field(default_factory=Verification)
+
+    # Plan 04. `phrasing` is how this line's internal timing was decided: which
+    # phrases were found, which pauses were protected, which anchors they were
+    # asked to land on and what the rendered output actually measured. Its
+    # empty state means whole-clip fitting owned the run.
+    phrasing: TimingPlan = field(default_factory=TimingPlan)
 
     @property
     def duration(self) -> float:
@@ -146,10 +154,17 @@ class DubJob:
     # automatic source-relative gain: the person already heard the line.
     manual_gains: dict[str, float] = field(default_factory=dict)
 
-    # Non-spoken cues dropped before TTS, kept as evidence for reaction coverage
-    # (Plan 08). Excluding a cue from synthesis is not the same as not knowing
-    # that something was heard there.
-    nonverbal: list[dict] = field(default_factory=list)
+    # Non-spoken cues dropped before TTS, kept as timed evidence for reaction
+    # coverage. Excluding a cue from synthesis is not the same as not knowing
+    # that something was heard there. Plan 04 made these typed records with an
+    # explicit retain/replace/omit/unresolved decision on each one.
+    nonverbal: list[NonverbalEvent] = field(default_factory=list)
+
+    # Per-cue phrase timing a reviewer set by hand: hard anchors, protected
+    # pauses, a bypass, and an accepted intentional overlap. Kept with the job
+    # (like `manual_gains`) so a resume honours it without it becoming a
+    # config edit, and merged over the configured `timing.phrases`.
+    timing_edits: dict[str, dict] = field(default_factory=dict)
 
     def summary(self) -> str:
         return (

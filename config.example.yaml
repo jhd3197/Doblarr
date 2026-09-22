@@ -163,3 +163,51 @@ levels:
   min_separation_db: 8.0         # speech this close to its bed is not measurable
   peak_ceiling: 0.89             # hard peak this pass will not cross
   measure_source: false          # measure the original even outside follow_source
+
+# Phrase timing (Plan 04). `whole` is the long-standing behaviour: a line that
+# overruns its slot is time-compressed evenly end to end. `phrase` fits the
+# parts instead — it gives back the padding between phrases first, protects a
+# pause that is performance, and compresses speech only where it still has to.
+#
+# Default stays `whole`: phrase fitting changes how every fitted line sounds,
+# and no default that changes audio moves before listening supports it.
+timing:
+  mode: whole                    # whole | phrase
+  max_stretch: 1.3               # most a phrase is ever compressed
+  min_stretch: 1.0               # 1.0 = never slow speech down; only a hard anchor can
+  handle_ms: 40                  # margin kept each side of a phrase, so joins keep consonants
+  min_pause: 0.12                # a redistributable gap never shrinks below this
+  protect_pause: 0.45            # a gap at least this long is performance, and is kept
+  tail_handle_ms: 60             # trailing silence never trimmed below this
+  anchor_tolerance: 0.12         # how close a phrase has to land to count as on time
+  min_phrase_seconds: 0.15       # shorter runs are stop consonants, not phrases
+  threshold_db: 12               # dB above the noise floor that counts as speech
+  min_separation_db: 10          # below this, phrase boundaries are not knowable
+  collision_gap: 0.0             # extra slack before two turns count as colliding
+  repair: true                   # allow a bounded rewrite when a line cannot fit
+  phrases: {}                    # per-cue anchors and protected pauses, set in review
+  overlaps: {}                   # per-cue accepted intentional overlaps, set in review
+
+# Reaction and background coverage (Plan 04). Laughs, gasps and doors that the
+# subtitle cleanup removes stay in an explicit ledger with a retain / replace /
+# omit / unresolved decision each.
+#
+#   off     the ledger is built and no audio is touched at all
+#   review  a decision's sound is prepared so it can be auditioned in review,
+#           and is deliberately left out of the dub
+#   retain  the same, and the sound is placed in the dub
+#
+# Nothing is ever inserted on a guess: an event with no decision stays
+# unresolved, and an engine that cannot generate a laugh is recorded as
+# unsupported rather than as applied.
+coverage:
+  mode: "off"                    # off | review | retain
+  gain_db: 0.0                   # level applied to a retained or replaced sound
+  handle_ms: 80                  # margin kept each side when cutting from the original
+  fade_ms: 25                    # fade in/out on a placed sound
+  max_seconds: 4.0               # a longer window is a scene, not a reaction
+  leakage_check: false           # screen retained sounds and the bed for source words
+  generate: false                # ask the engine for a reaction where it supports one
+  events: {}                     # per-event decisions, set in review
+  assets: {}                     # per-event local replacement sound files (machine-local)
+  extra: []                      # events a person added that no subtitle recorded

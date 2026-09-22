@@ -183,6 +183,22 @@ def measure(path: Path, threshold_db: float = 12.0) -> Bounds:
                   first, last, clipped_fraction > 0.001, gaps)
 
 
+def inspect(path: Path, threshold_db: float = 12.0, cancel=None) -> Bounds:
+    """Measure any audio file, converting to PCM first when it is not already.
+
+    The public entry point for stages that need the same speech-active
+    evidence outside boundary preparation — phrase timing reads the internal
+    gaps from here rather than reimplementing the detector.
+    """
+    source = Path(path)
+    analysed = _pcm(source, cancel)
+    try:
+        return measure(analysed, threshold_db)
+    finally:
+        if analysed != source:
+            analysed.unlink(missing_ok=True)
+
+
 def decide(bounds: Bounds, slot: float, settings: dict) -> SpeechPreparation:
     """Turn measurements into a trim decision, preferring to do nothing.
 

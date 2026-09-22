@@ -43,10 +43,13 @@ def snapshot_revision(job) -> str:
             "intent": seg.intent.as_dict(),
             "level": seg.level.applied_db,
             "verification": seg.verification.inputs,
+            # A timing edit changes what a reviewer heard, so a verdict made
+            # before it must read as stale rather than certify the new fit.
+            "timing": seg.phrasing.inputs or f"{seg.phrasing.mode}/{seg.phrasing.state}",
             "dispositions": sorted((f.finding_id, f.disposition) for f in seg.findings),
         }
         for seg in job.segments
-    ])[:16]
+    ] + [sorted((e.event_id, e.coverage, e.inputs) for e in job.nonverbal)])[:16]
 
 
 def apply_edits(job, edits, lineage=None):
@@ -97,6 +100,7 @@ def apply_edits(job, edits, lineage=None):
                 setattr(seg, key, edit[key])
         _apply_intent(seg, edit)
         _apply_gain(job, seg, edit)
+        _apply_timing(job, seg, edit)
         _apply_selection(seg, edit)
         _apply_dispositions(seg, edit)
         kept.append(seg)
@@ -133,6 +137,73 @@ def _apply_gain(job, seg, edit) -> None:
     if abs(gain) > 24:
         raise ValueError(f"line {seg.index}: a manual gain beyond +/-24 dB is a mistake")
     job.manual_gains[seg.cue_id] = round(gain, 3)
+
+
+# Timing decisions a reviewer makes about one line. None of them regenerates
+# speech: they change how the take that already exists is placed and cut.
+_TIMING_KEYS = ("anchors", "pauses", "bypass_timing", "overlap")
+
+
+def _apply_timing(job, seg, edit) -> None:
+    """Reviewer anchors, protected pauses, a bypass and an accepted overlap.
+
+    Kept with the job rather than written into the config, for the same reason
+    a manual gain is: it is a decision about this run, it must survive a
+    resume, and it must not quietly become the default for the next episode.
+    """
+    if not any(key in edit for key in _TIMING_KEYS):
+        return
+    entry = dict(job.timing_edits.get(seg.cue_id) or {})
+    if "anchors" in edit:
+        anchors = []
+        for raw in (edit["anchors"] or []):
+            if not isinstance(raw, dict) or raw.get("at") is None:
+                raise ValueError(f"line {seg.index}: an anchor needs a phrase and a time")
+            try:
+                at = float(raw["at"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"line {seg.index}: an anchor needs a time") from exc
+            if not math.isfinite(at) or at < 0 or at > seg.duration + 1e-6:
+                raise ValueError(
+                    f"line {seg.index}: an anchor must sit inside the line's window")
+            anchors.append({"phrase": str(raw.get("phrase") or ""),
+                            "order": raw.get("order"),
+                            "edge": "end" if str(raw.get("edge")) == "end" else "start",
+                            "at": round(at, 4),
+                            "note": str(raw.get("note") or "")[:200]})
+        if anchors:
+            entry["anchors"] = anchors
+        else:
+            entry.pop("anchors", None)
+    if "pauses" in edit:
+        supplied = edit["pauses"] or {}
+        if not isinstance(supplied, dict):
+            raise ValueError(f"line {seg.index}: pauses must be an object")
+        pauses = {str(k): {"protected": bool((v or {}).get("protected", True)),
+                           "kind": str((v or {}).get("kind") or "pause")}
+                  for k, v in supplied.items()}
+        if pauses:
+            entry["pauses"] = pauses
+        else:
+            entry.pop("pauses", None)
+    if "bypass_timing" in edit:
+        if edit["bypass_timing"]:
+            entry["bypass"] = True
+        else:
+            entry.pop("bypass", None)
+    if "overlap" in edit:
+        if edit["overlap"]:
+            current = seg.audio.current()
+            # Bound to the exact render they heard. When the audio changes the
+            # acceptance reads as stale instead of certifying a new collision.
+            entry["overlap"] = {"accepted": True, "at": now(),
+                                "inputs": current.fingerprint if current else ""}
+        else:
+            entry.pop("overlap", None)
+    if entry:
+        job.timing_edits[seg.cue_id] = entry
+    else:
+        job.timing_edits.pop(seg.cue_id, None)
 
 
 def _apply_selection(seg, edit) -> None:
@@ -219,22 +290,33 @@ def load_decisions(root, job_id: str) -> dict:
 
     data = read_json(decisions_path(root, job_id))
     if not isinstance(data, dict) or not isinstance(data.get("cues"), dict):
-        return {"version": 1, "cues": {}}
+        return {"version": 1, "cues": {}, "events": {}}
+    # A sidecar written before coverage existed has no events map. Adding an
+    # empty one is not a migration, it is the same file read forward.
+    if not isinstance(data.get("events"), dict):
+        data["events"] = {}
     return data
 
 
 def record_decision(root, job_id: str, revision: str, cue_id: str, patch: dict,
-                    actor: str = "") -> dict:
-    """Store one cue's reviewer decision, keeping its history.
+                    actor: str = "", scope: str = "cue") -> dict:
+    """Store one cue's or one event's reviewer decision, keeping its history.
 
     Every disposition carries the snapshot revision it was made against, so a
     verdict recorded before a re-render is visibly about the older audio
     instead of silently certifying the new one.
+
+    Events get their own map rather than being filed under a cue: a reaction's
+    cue is very often the one that was removed from synthesis, and half of them
+    have no surviving cue at all.
     """
     if not cue_id:
-        raise ValueError("a review decision needs the cue it is about")
+        raise ValueError("a review decision needs the cue or event it is about")
+    if scope not in ("cue", "event"):
+        raise ValueError("a review decision is about a cue or an event")
     data = load_decisions(root, job_id)
-    entry = dict(data["cues"].get(cue_id) or {})
+    where = data["cues"] if scope == "cue" else data["events"]
+    entry = dict(where.get(cue_id) or {})
     history = list(entry.get("history") or [])
     dispositions = dict(entry.get("dispositions") or {})
     for finding_id, decision in (patch.get("dispositions") or {}).items():
@@ -248,12 +330,12 @@ def record_decision(root, job_id: str, revision: str, cue_id: str, patch: dict,
     entry["dispositions"] = dispositions
     entry["history"] = history[-50:]
     for key in ("note", "mode", "traits", "direction", "gain_db", "take", "candidates",
-                "reviewed"):
+                "reviewed", "timing_note", "coverage_note"):
         if key in patch:
             entry[key] = patch[key]
     entry["revision"] = revision
     entry["at"] = now()
-    data["cues"][cue_id] = entry
+    where[cue_id] = entry
     data["version"] = 1
     write_json(decisions_path(root, job_id), data)
     return entry
@@ -273,16 +355,26 @@ def merge_decisions(payload: dict, decisions: dict) -> dict:
         entry = decisions.get("cues", {}).get(cue_id)
         if not entry:
             continue
-        stale = entry.get("revision") != current
-        row["decision"] = {**entry, "stale": stale}
-        for finding in (row.get("cue") or {}).get("findings", []):
-            verdict = entry.get("dispositions", {}).get(finding.get("finding_id"))
-            if not verdict:
-                continue
-            finding["review"] = {**verdict, "stale": stale}
-            if not stale:
-                finding["disposition"] = verdict["disposition"]
+        _fold(row, (row.get("cue") or {}).get("findings", []), entry, current)
+    for event in payload.get("nonverbal", []):
+        entry = decisions.get("events", {}).get(event.get("event_id") or "")
+        if not entry:
+            continue
+        _fold(event, event.get("findings", []), entry, current)
     return payload
+
+
+def _fold(row: dict, findings: list, entry: dict, current) -> None:
+    """Attach one stored decision to a row and to the findings it judged."""
+    stale = entry.get("revision") != current
+    row["decision"] = {**entry, "stale": stale}
+    for finding in findings:
+        verdict = entry.get("dispositions", {}).get(finding.get("finding_id"))
+        if not verdict:
+            continue
+        finding["review"] = {**verdict, "stale": stale}
+        if not stale:
+            finding["disposition"] = verdict["disposition"]
 
 
 def write_review(job, root, settings=None):
@@ -334,6 +426,12 @@ def write_review(job, root, settings=None):
                 "dubbed_track": str(job.dubbed_track) if job.dubbed_track else None,
                 "output": str(job.output_file) if job.output_file else None,
                 "work": str(job.artifacts_dir) if job.artifacts_dir else None,
+                # The two separated stems, so a coverage review can hear the bed
+                # under the dub and the voices that were taken out of it.
+                "vocals": str(job.vocals) if job.vocals else None,
+                "background": (str(job.background)
+                               if job.background and job.background != job.source_audio
+                               else None),
             },
             "settings": dict(settings or {}),
             "dialogue_baseline": job.dialogue_baseline,
@@ -349,7 +447,8 @@ def write_review(job, root, settings=None):
             "source_reference": (job.source_reference.as_dict()
                                  if job.source_reference else None),
             "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
-            "nonverbal": job.nonverbal,
+            "nonverbal": [e.as_dict() for e in job.nonverbal],
+            "timing_edits": job.timing_edits,
             "segments": rows,
             "metrics": job.metrics,
             "flagged": sum(bool(s.issues) for s in job.segments),

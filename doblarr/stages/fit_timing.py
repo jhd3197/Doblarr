@@ -18,7 +18,7 @@ import threading
 import wave
 from pathlib import Path
 
-from ..cues import FITTED, NORMALIZED, Artifact
+from ..cues import FITTED, Artifact
 from ..ffmpeg import run_ffmpeg, run_ffprobe
 from ..fingerprints import processing as processing_fingerprint
 from ..models import DubJob, Segment
@@ -71,9 +71,34 @@ def _atempo_chain(factor: float) -> str:
 DETECTOR = "fit-timing/1"
 
 
+def stand_down(job, reason: str) -> None:
+    """Drop this owner's derivative for a run the phrase owner is fitting.
+
+    Whole-clip fitting and phrase fitting are the two timing owners and only
+    one runs. A `fitted` file left behind by a previous whole-clip run is not a
+    derivative of anything this run produced, so keeping it would feed the mix
+    audio that was stretched from an input nothing else is reading any more.
+    """
+    for seg in job.segments:
+        if seg.audio.render(FITTED) is None:
+            continue
+        seg.audio.drop_renders((FITTED,))
+        seg.audio.invalidate_after(FITTED)
+        upstream = seg.audio.upstream_of(FITTED)
+        if upstream is not None and upstream.path:
+            seg.audio_clip = Path(upstream.path)
+    for seg in job.segments:
+        # Retire this owner's findings: an overflow measured against a
+        # whole-clip fit says nothing about the phrase recipe now in use. The
+        # legacy issue strings belong to whichever owner *did* run, so they are
+        # left exactly as the phrase owner set them.
+        apply_findings(seg, DETECTOR, "bypassed", [])
+    log.info("fit_timing: %s", reason)
+
+
 def _register_fit(seg, dest: Path, actual: float, factor: float) -> None:
     """Record the time-fitted derivative and the immutable input it came from."""
-    upstream = seg.audio.render(NORMALIZED) or seg.audio.raw()
+    upstream = seg.audio.upstream_of(FITTED)
     request = {"input": upstream.fingerprint if upstream else "",
                "factor": round(factor, 4), "slot": seg.duration, "version": 1}
     seg.audio.put_render(Artifact(
@@ -117,16 +142,22 @@ def run(
     if dry_run:
         return dry("would measure each clip vs slot and time-stretch to fit")
 
-    clips = [
-        (s, Path(s.audio_clip))
-        for s in job.segments
-        if s.audio_clip and Path(s.audio_clip).exists()
-    ]
+    # Read the declared upstream artifact, not the clip projection: re-running
+    # with a different slot must re-stretch the prepared take rather than the
+    # previously stretched file.
+    clips = []
+    for s in job.segments:
+        upstream = s.audio.upstream_of(FITTED)
+        source = (Path(upstream.path) if upstream and upstream.exists()
+                  else Path(s.audio_clip) if s.audio_clip and Path(s.audio_clip).exists()
+                  else None)
+        if source is not None:
+            clips.append((s, source))
     if not clips:
         log.info("fit_timing: no generated clips to fit")
         return None
 
-    plan: list[tuple[Segment, Path, float, float]] = []  # seg, dest, actual, factor
+    plan: list[tuple[Segment, Path, Path, float, float]] = []  # seg, src, dest, actual, factor
     measured: list[tuple[Segment, float, float]] = []     # seg, actual, factor
     for s, src in clips:
         s.issues = [i for i in s.issues if i not in {"timing_overflow", "timing_repair_failed"}]
@@ -170,9 +201,13 @@ def run(
                     checkpoint()
                 regenerate(s)
                 job.metrics["timing_repairs"] = job.metrics.get("timing_repairs", 0) + 1
-                if s.audio_clip is None:
+                regenerated = s.audio.upstream_of(FITTED)
+                if regenerated is not None and regenerated.exists():
+                    src = Path(regenerated.path)
+                elif s.audio_clip is not None:
+                    src = Path(s.audio_clip)
+                else:
                     raise RuntimeError("timing repair did not produce an audio clip")
-                src = Path(s.audio_clip)
                 actual = _duration(src, cancel=cancel)
         if actual <= s.duration * FIT_SLACK:
             measured.append((s, actual, 1.0))
@@ -182,7 +217,7 @@ def run(
             s.issues.append("timing_overflow")
         dest = src.parent / "fit" / f"{src.stem}.{factor:.4f}.wav"
         measured.append((s, actual, factor))
-        plan.append((s, dest, actual, factor))
+        plan.append((s, src, dest, actual, factor))
 
     # Every measured clip updates its findings, so a cue that now fits retires
     # its old overflow instead of leaving a stale one open.
@@ -196,10 +231,9 @@ def run(
     by_start = sorted(job.segments, key=lambda t: t.start)
     job.metrics["timing_flags"] = sum("timing_overflow" in s.issues for s in job.segments)
     job.metrics["stretched_lines"] = len(plan)
-    job.metrics["max_stretch"] = round(max(factor for _s, _d, _a, factor in plan), 4)
-    for s, dest, actual, factor in plan:
-        assert s.audio_clip is not None
-        if cached(dest, Path(s.audio_clip), force):
+    job.metrics["max_stretch"] = round(max(factor for *_row, factor in plan), 4)
+    for s, src, dest, actual, factor in plan:
+        if cached(dest, src, force):
             _register_fit(s, dest, actual, factor)
             s.audio_clip = dest
             continue
@@ -209,7 +243,7 @@ def run(
             [
                 "-y",
                 "-i",
-                str(s.audio_clip),
+                str(src),
                 "-af",
                 _atempo_chain(factor),
                 "-ac",

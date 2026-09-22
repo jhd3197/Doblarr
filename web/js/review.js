@@ -41,8 +41,14 @@ export function createReview({ onQueued }) {
       <span class="review-excerpt">${esc(s.text_translated || s.text_src)}</span></span>
       <span class="review-marker">${pending.has(s.index) ? 'Edited' : s.issues.length ? 'Review' : ''}</span></button>`).join('')
       || '<p class="hint">No lines match this filter.</p>';
-    submit.textContent = pending.size ? `Render ${pending.size} changed line${pending.size === 1 ? '' : 's'}` : 'Render changes';
-    submit.disabled = !pending.size || !data.editable;
+    const events = scene.events().length;
+    const parts = [];
+    if (pending.size) {
+      parts.push(`${pending.size} changed line${pending.size === 1 ? '' : 's'}`);
+    }
+    if (events) parts.push(`${events} reaction${events === 1 ? '' : 's'}`);
+    submit.textContent = parts.length ? `Render ${parts.join(' and ')}` : 'Render changes';
+    submit.disabled = (!pending.size && !events) || !data.editable;
   }
 
   function select(index) {
@@ -229,7 +235,8 @@ export function createReview({ onQueued }) {
     target?.focus();
   });
   submit.addEventListener('click', async () => {
-    if (!pending.size) return;
+    const events = scene.events();
+    if (!pending.size && !events.length) return;
     const edits = [...pending.values()];
     if (edits.some(e => !Number.isFinite(e.start) || !Number.isFinite(e.end) || e.start < 0
       || e.end <= e.start || !e.text.trim())) {
@@ -239,7 +246,7 @@ export function createReview({ onQueued }) {
     status.textContent = 'Queuing changes…';
     try {
       const result = await api(`jobs/${jobId}/review`, { method: 'POST', json: {
-        edits, use_updated_knowledge: $('reviewUpdatedKnowledge').checked,
+        edits, events, use_updated_knowledge: $('reviewUpdatedKnowledge').checked,
         base_revision: data.revision,
       } });
       pending.clear(); data.editable = false; select(selected);
@@ -260,6 +267,10 @@ export function createReview({ onQueued }) {
       parts.push(`${plan.processing} will be re-rendered from existing audio`);
     }
     if (plan.candidates) parts.push(`${plan.candidates} alternative takes requested`);
+    if (plan.coverage) {
+      parts.push(`${plan.coverage} coverage decision${plan.coverage === 1 ? '' : 's'} `
+        + 'will be re-mixed without generating speech');
+    }
     if (!parts.length) parts.push('nothing needs re-rendering');
     return `${parts.join(', ')}. ${plan.note || ''}`.trim();
   }

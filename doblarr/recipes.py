@@ -64,6 +64,30 @@ SETTING_KEYS = (
     "boundaries.min_separation_db",
     "boundaries.edge_fade_ms",
     "boundaries.edge_threshold_db",
+    # Timing and coverage policy travels; the per-cue anchors, the per-event
+    # decisions and the local sound files deliberately do not. An anchor
+    # somebody set after hearing one line of one episode is a decision about
+    # that episode, and `coverage.assets` names files on one computer.
+    "timing.mode",
+    "timing.max_stretch",
+    "timing.min_stretch",
+    "timing.handle_ms",
+    "timing.min_pause",
+    "timing.protect_pause",
+    "timing.tail_handle_ms",
+    "timing.anchor_tolerance",
+    "timing.min_phrase_seconds",
+    "timing.threshold_db",
+    "timing.min_separation_db",
+    "timing.collision_gap",
+    "timing.repair",
+    "coverage.mode",
+    "coverage.gain_db",
+    "coverage.handle_ms",
+    "coverage.fade_ms",
+    "coverage.max_seconds",
+    "coverage.leakage_check",
+    "coverage.generate",
 )
 ENGINE = Literal[
     "chatterbox", "chatterbox_turbo", "qwen", "qwen_custom_voice", "kokoro", "luxtts", "tada"
@@ -242,6 +266,21 @@ class DubRecipe(StrictModel):
             "dub.duck_release_ms": (0, 10000),
             "translate.chars_per_second": (1, 100),
             "quality.dialogue_lufs": (-70, 0),
+            "timing.max_stretch": (1, 3),
+            "timing.min_stretch": (0.5, 1),
+            "timing.handle_ms": (0, 500),
+            "timing.min_pause": (0, 2),
+            "timing.protect_pause": (0, 5),
+            "timing.tail_handle_ms": (0, 1000),
+            "timing.anchor_tolerance": (0.01, 2),
+            "timing.min_phrase_seconds": (0.05, 5),
+            "timing.threshold_db": (1, 60),
+            "timing.min_separation_db": (0, 60),
+            "timing.collision_gap": (0, 2),
+            "coverage.gain_db": (-24, 24),
+            "coverage.handle_ms": (0, 1000),
+            "coverage.fade_ms": (0, 500),
+            "coverage.max_seconds": (0.1, 6),
         }
         for key, value in settings.items():
             if key in choices and value not in choices[key]:

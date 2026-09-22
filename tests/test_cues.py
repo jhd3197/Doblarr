@@ -288,10 +288,15 @@ def test_prepare_merges_cues_and_keeps_nonspoken_evidence(tmp_path):
     assert [(s.start, s.end) for s in merged.source.spans] == [(0.0, 1.0), (1.1, 2.0)]
     assert job.cue_lineage[before[0]] == [merged.cue_id]
 
-    # The removed cue is not synthesized, but its timed evidence survives.
-    assert job.nonverbal[0]["cue_id"] == before[2]
-    assert job.nonverbal[0]["type"] == "unknown"
-    assert job.nonverbal[0]["source"] == [{"start": 3.0, "end": 4.0, "domain": SOURCE}]
+    # The removed cue is not synthesized, but its timed evidence survives, now
+    # as a typed event with the wording it was read from.
+    event = job.nonverbal[0]
+    assert event.cue_id == before[2]
+    assert (event.type, event.category) == ("laugh", "vocal")
+    assert event.text == "[laughter]"
+    assert [s.as_dict() for s in event.source] == [
+        {"start": 3.0, "end": 4.0, "domain": SOURCE}]
+    assert (event.decision, event.coverage) == ("unresolved", "unresolved")
     validate_cues(job.segments, job.cue_lineage)
 
 

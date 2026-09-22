@@ -20,8 +20,13 @@ export const SOURCES = [
   { kind: 'dub', label: 'Dubbed scene', window: 'target' },
   // A saved version is the whole file, so its own timeline *is* scene time.
   { kind: 'version', label: 'Previous version', window: 'target', absolute: true },
+  // The two halves of the separation, so the bed under the dub and the voices
+  // taken out of it can be checked at the same position as the finished mix.
+  { kind: 'vocals', label: 'Original voices', window: 'target' },
+  { kind: 'bed', label: 'Background bed', window: 'target' },
   { kind: 'line', label: 'Processed line' },
   { kind: 'take', label: 'Dry take' },
+  { kind: 'event', label: 'Reaction' },
   { kind: 'reference', label: 'Voice reference' },
 ];
 
@@ -29,6 +34,7 @@ const entry = kind => SOURCES.find(s => s.kind === kind);
 
 export function createScenePlayer(audio) {
   let jobId = null, index = null, scene = null, kind = 'dub', take = '', version = '';
+  let event = '';
   let matched = false, level = 0, listeners = [];
 
   const key = () => {
@@ -42,6 +48,7 @@ export function createScenePlayer(audio) {
     }
     const query = new URLSearchParams({ context: String(scene?.context ?? 2) });
     if (kind === 'take' && take) query.set('take', take);
+    if (kind === 'event' && event) query.set('event', event);
     return `${apiUrl(`jobs/${jobId}/preview/${kind}/${index}`)}?${query}${key()}`;
   }
 
@@ -74,12 +81,14 @@ export function createScenePlayer(audio) {
     listeners.forEach(fn => fn(event, detail));
   }
 
-  async function play(nextKind, { keepPosition = true, takeId = '', versionId = '' } = {}) {
+  async function play(nextKind, { keepPosition = true, takeId = '', versionId = '',
+    eventId = '' } = {}) {
     const wasPlaying = !audio.paused && !audio.ended;
     const moment = keepPosition ? sceneTime() : null;
     kind = nextKind;
     if (takeId) take = takeId;
     if (versionId) version = versionId;
+    if (eventId) event = eventId;
     const position = positionIn(nextKind, moment);
     audio.pause();
     emit('loading', { kind });
@@ -122,12 +131,14 @@ export function createScenePlayer(audio) {
   return {
     get kind() { return kind; },
     get take() { return take; },
+    get event() { return event; },
     get version() { return version; },
     get matched() { return matched; },
     attach(nextJobId, nextIndex, nextScene, appliedDb = 0) {
       jobId = nextJobId; index = nextIndex; scene = nextScene;
       level = Number(appliedDb) || 0;
       take = scene?.selection?.take_id || '';
+      event = scene?.events?.find(e => e.playable)?.event_id || '';
     },
     play,
     setVersion(id) { version = id || ''; },
@@ -139,6 +150,9 @@ export function createScenePlayer(audio) {
       audio.load();
     },
     on(fn) { listeners.push(fn); },
-    reset() { listeners = []; kind = 'dub'; take = ''; version = ''; matched = false; },
+    reset() {
+      listeners = []; kind = 'dub'; take = ''; version = ''; event = '';
+      matched = false;
+    },
   };
 }

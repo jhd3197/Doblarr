@@ -26,6 +26,7 @@ from .cues import (
     LEVELED,
     MONTAGE,
     NORMALIZED,
+    PHRASED,
     RAW,
     SOURCE,
     Artifact,
@@ -100,7 +101,22 @@ BOUNDARY_SCENE: tuple[Cue, ...] = tuple(
     for index, cue in enumerate(SCENE)
 )
 
-SCENES = {"default": SCENE, "boundaries": BOUNDARY_SCENE}
+# A scene built for phrase timing and reaction coverage (Plan 04). Every spoken
+# cue has real internal silence, so a planner has padding it may spend and a
+# pause it must not: cues 0 and 2 hold a long beat (protected), cues 1 and 3
+# hold a short one (redistributable). Cue 3 still cannot fit after all of that,
+# which is what exercises the bounded repair path. Cue 4 stays a reaction.
+PHRASE_SCENE: tuple[Cue, ...] = (
+    Cue(1.0, 3.0, "Primera linea", "SPEAKER_00", level=0.30, spoken=1.6, gap=0.50),
+    Cue(3.2, 5.0, "Segunda linea", "SPEAKER_01", level=0.12, lead=0.20, tail=0.20,
+        spoken=1.2, gap=0.35),
+    Cue(5.2, 7.0, "Tercera linea", "SPEAKER_00", level=0.45, spoken=1.5, gap=0.60),
+    Cue(7.2, 8.2, "Cuarta linea larga que no cabe", "SPEAKER_01", level=0.30,
+        spoken=1.8, gap=0.30),
+    Cue(9.0, 10.5, "[laughter]", "SPEAKER_00", level=0.20, spoken=1.0),
+)
+
+SCENES = {"default": SCENE, "boundaries": BOUNDARY_SCENE, "phrases": PHRASE_SCENE}
 
 
 def example_script(root: Path) -> DubJob:
@@ -309,6 +325,16 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
             "level_peak_limited": seg.level.peak_limited,
             "verification": seg.verification.state,
             "verification_checked": seg.verification.checked,
+            # Plan 04 records. Decisions and structure, deliberately not the
+            # measured millisecond: two machines render the same tone to the
+            # same length, and a comparison including raw durations would be
+            # comparing FFmpeg builds rather than behaviour.
+            "timing_mode": seg.phrasing.mode,
+            "timing_state": seg.phrasing.state,
+            "phrases": len(seg.phrasing.phrases),
+            "protected_pauses": sum(1 for p in seg.phrasing.pauses if p.protected),
+            "anchors": sorted((a.kind, a.origin) for a in seg.phrasing.anchors),
+            "timing_conflicts": sorted(c["code"] for c in seg.phrasing.conflicts),
         })
     # `current` is read in the loop above; recompute the role roll-up here.
     roles: set[str] = set()
@@ -321,7 +347,7 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
         "kind": job.kind,
         "segments": len(job.segments),
         "speakers": sorted(job.speakers),
-        "nonverbal": job.nonverbal,
+        "nonverbal": [e.as_dict() for e in job.nonverbal],
         "cue_lineage": job.cue_lineage,
         "tts_requests": len(engine.requests),
         "metrics": {k: v for k, v in sorted(job.metrics.items())
@@ -333,6 +359,11 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
         "edge_fades": job.metrics.get("edge_fades", 0),
         "stretched_lines": job.metrics.get("stretched_lines", 0),
         "levels_applied": job.metrics.get("levels_applied", 0),
+        "phrase_rendered": job.metrics.get("phrase_rendered", 0),
+        "phrase_fallbacks": job.metrics.get("phrase_fallbacks", 0),
+        "phrase_infeasible": job.metrics.get("phrase_infeasible", 0),
+        "coverage": job.metrics.get("coverage", {}),
+        "conversation": job.metrics.get("conversation", {}),
         "verification_checked": sum(1 for line in lines if line["verification_checked"]),
         "dialogue_baseline": {k: v for k, v in (job.dialogue_baseline or {}).items()
                               if k in ("scope", "samples", "method", "units")},
@@ -424,4 +455,4 @@ def roles_present(job: DubJob) -> set[str]:
         if seg.audio.raw():
             found.add(RAW)
         found.update(a.role for a in seg.audio.renders)
-    return found & {RAW, NORMALIZED, FITTED, LEVELED}
+    return found & {RAW, NORMALIZED, PHRASED, FITTED, LEVELED}

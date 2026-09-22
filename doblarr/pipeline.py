@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from . import levels
+from . import background, conversation, levels, phrases, reactions
 from .artifacts import digest, media_work
 from .budget import RequestBudget
 from .clients.translator import build_translator
@@ -31,6 +31,7 @@ from .stages import (
     fit_timing,
     mix,
     mux,
+    phrase_timing,
     prepare,
     quality,
     separate,
@@ -294,6 +295,9 @@ def run_job(
 
     level_options = dict(config.get("levels", {}))
     owns_levels = levels.owns_processing(level_options)
+    timing_options = dict(config.get("timing", {}))
+    owns_phrases = phrases.owns_timing(timing_options)
+    coverage_options = dict(config.get("coverage", {}))
 
     def _quality(segments=None, retry=True):
         target = job if segments is None else replace(job, segments=segments)
@@ -393,7 +397,56 @@ def run_job(
         _synthesize([seg])
         _quality([seg], retry=False)
 
+    def _phrases():
+        # A reviewer's anchors and protected pauses are merged over the
+        # configured map here, exactly as the manual gains are, so the planner
+        # sees one set and a decision made in review survives a resume.
+        options = {**timing_options,
+                   "phrases": {**dict(timing_options.get("phrases") or {}),
+                               **job.timing_edits}}
+        phrase_timing.run(
+            job,
+            work,
+            options=options,
+            dry_run=dry_run,
+            cancel=cancel_event,
+            force=force,
+            translator=translator,
+            regenerate=_regenerate,
+            checkpoint=lambda: save_script(job, effective_work),
+            max_attempts=config["dub"].get("max_fit_attempts", 2),
+            budget=budget,
+        )
+        if not dry_run:
+            save_script(job, effective_work)
+
+    def _conversation():
+        options = {**timing_options,
+                   "phrases": {**dict(timing_options.get("phrases") or {}),
+                               **job.timing_edits}}
+        conversation.check(job, options, cancel=cancel_event, dry_run=dry_run)
+        if not dry_run and job.segments:
+            save_script(job, effective_work)
+
+    def _coverage():
+        reactions.process(job, coverage_options, cancel=cancel_event, dry_run=dry_run,
+                          vb=vb, budget=budget,
+                          engine=config["voicebox"].get("default_engine", ""),
+                          work_dir=work)
+        if not dry_run and job.segments:
+            save_script(job, effective_work)
+
+    def _background():
+        background.check(job, coverage_options, cancel=cancel_event, work_dir=work,
+                         vb=vb, budget=budget, dry_run=dry_run)
+
     def _fit():
+        if owns_phrases:
+            # Two timing owners for one line would compound into a warble; the
+            # phrase owner has already produced this run's timed derivative.
+            if not dry_run:
+                fit_timing.stand_down(job, "phrase timing owns this run")
+            return
         fit_timing.run(
             job,
             work,
@@ -451,6 +504,7 @@ def run_job(
         ("synthesize", _synthesize),
         ("candidates", _candidates),
         ("quality", _quality),
+        ("phrases", _phrases),
         ("fit", _fit),
         ("levels", _levels),
         ("verify", _reverify),
@@ -463,6 +517,8 @@ def run_job(
                 dry_run=dry_run,
             ),
         ),
+        ("conversation", _conversation),
+        ("coverage", _coverage),
         (
             "mix",
             lambda: mix.run(
@@ -484,6 +540,7 @@ def run_job(
             lambda: levels.check_mix(job, level_options, cancel=cancel_event,
                                      work_dir=work, dry_run=dry_run),
         ),
+        ("background", _background),
         (
             "mux",
             lambda: mux.run(
@@ -550,6 +607,17 @@ def run_job(
                 "verification_policy": config["quality"].get("asr", "off"),
                 "candidate_limit": int(config["dub"].get("candidate_limit", 4)),
                 "clone_cleanup": bool(config["dub"].get("clone_cleanup", False)),
+                # Phrase timing and coverage policy, frozen the same way: an old
+                # review must show the policy that produced it, not today's.
+                "timing": {k: timing_options.get(k, default) for k, default in (
+                    ("mode", "whole"), ("max_stretch", 1.3), ("min_stretch", 1.0),
+                    ("protect_pause", 0.45), ("anchor_tolerance", 0.12),
+                    ("repair", True))},
+                "coverage": {k: coverage_options.get(k, default) for k, default in (
+                    ("mode", "off"), ("gain_db", 0.0), ("handle_ms", 80),
+                    ("fade_ms", 25), ("max_seconds", 4.0),
+                    ("leakage_check", False), ("generate", False))},
+                "background": background.kind(job),
             })
     report.finish()
 

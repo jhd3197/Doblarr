@@ -36,6 +36,21 @@ def _cue_provenance(seg) -> dict:
     return {"index": seg.index, **record}
 
 
+def _event_provenance(event) -> dict:
+    """One nonverbal event for a saved manifest, without this machine's paths.
+
+    A supplied replacement asset lives somewhere on one computer. The manifest
+    records *that* an asset was used and its identity, never where to find it,
+    because a version manifest travels and a local sound path is not a fact
+    about the title.
+    """
+    record = event.as_dict()
+    if record.get("artifact"):
+        record["artifact"].pop("path", None)
+    record["asset"] = Path(record["asset"]).name if record.get("asset") else ""
+    return record
+
+
 def preserve_version(job, config, cast=None) -> dict:
     """Copy completed media; never hardlink a file that a later run may replace/edit."""
     if not job.output_file or not job.output_file.is_file():
@@ -65,6 +80,13 @@ def preserve_version(job, config, cast=None) -> dict:
         # So does the level owner, including the per-cue manual gains: two
         # renders that differ only by a reviewer's gain are different dubs.
         "levels": dict(config.get("levels", {})),
+        # Which timing owner ran and what coverage was decided. The per-event
+        # sound *paths* are dropped: a manifest travels, and where a wav file
+        # sits on this machine is not part of what makes this version this
+        # version. Which decision was made is, and it stays.
+        "timing": dict(config.get("timing", {})),
+        "coverage": {k: v for k, v in dict(config.get("coverage", {})).items()
+                     if k != "assets"},
     }
     voices = [{"index": s.index, "speaker": s.speaker,
                "profile": s.voice or (job.speakers[s.speaker].voicebox_profile_id
@@ -99,7 +121,7 @@ def preserve_version(job, config, cast=None) -> dict:
                 "source_reference": (job.source_reference.as_dict()
                                      if job.source_reference else None),
                 "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
-                "nonverbal": job.nonverbal,
+                "nonverbal": [_event_provenance(e) for e in job.nonverbal],
                 "cues": [_cue_provenance(s) for s in job.segments],
                 # What the run measured and what it concluded, outside the
                 # identity digest: evidence about this version, not part of

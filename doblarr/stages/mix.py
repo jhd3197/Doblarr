@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..artifacts import digest, matches, record, stamp
@@ -28,6 +28,41 @@ DUCK_ATTACK_MS = 20
 DUCK_RELEASE_MS = 250
 DUCK_MAKEUP = 1  # unity — ducking should only ever reduce the bed
 DEFAULT_RATIO = 12.0
+
+
+@dataclass
+class Placed:
+    """One piece of audio and where it goes on the dubbed timeline.
+
+    Dialogue and reaction coverage are placed the same way and by the same
+    graph: a retained laugh is a clip at a time, exactly like a line is. Giving
+    them one type is what keeps the ducking key, the bus grouping and the cache
+    receipt from having to know which kind they are looking at.
+    """
+
+    key: str
+    kind: str          # dialogue | event
+    start: float
+    end: float
+    audio_clip: Path
+
+
+def placements(job) -> list[Placed]:
+    """Every clip this mix will place, dialogue and coverage together."""
+    from ..reactions import placements as reaction_placements
+
+    rows = [Placed(key=s.cue_id or str(s.index), kind="dialogue", start=s.start,
+                   end=s.end, audio_clip=Path(s.audio_clip))
+            for s in job.segments if s.audio_clip and Path(s.audio_clip).exists()]
+    for event in reaction_placements(job):
+        # `placed` already guarantees both, but the mix is the last place a
+        # missing one would surface, and it would surface as a crash.
+        if event.target is None or event.artifact is None:
+            continue
+        rows.append(Placed(key=event.event_id, kind="event",
+                           start=event.target.start, end=event.target.end,
+                           audio_clip=Path(event.artifact.path)))
+    return sorted(rows, key=lambda row: (row.start, row.key))
 
 
 def _parse_ratio(text: str) -> float:
@@ -106,13 +141,17 @@ def run(
     if dry_run:
         return dry(f"would place {len(job.segments)} clips and duck the bed")
     hit = cached(out, job.input_file, force)
-    dependencies = [s.audio_clip for s in job.segments]
+    segs = placements(job)
+    dependencies = [row.audio_clip for row in segs]
     dependencies += [p for p in (job.background, job.source_audio) if p]
     request = {
         "inputs": [stamp(p) for p in dependencies],
         "ducking": ducking_ratio,
         "segments": [[s.index, s.start, s.end] for s in job.segments],
-        "version": 2,
+        # Coverage travels in its own key, so adding a retained reaction
+        # invalidates the mix without looking like a dialogue change.
+        "events": [[row.key, row.start, row.end] for row in segs if row.kind == "event"],
+        "version": 3,
         "mix": [background_volume, fallback_volume, threshold, attack, release],
     }
     # The mix has its own cache namespace: a bed level or ducking change must
@@ -121,11 +160,10 @@ def run(
     if hit and matches([out], request, force):
         return hit
 
-    segs = [s for s in job.segments if s.audio_clip and Path(s.audio_clip).exists()]
     if not segs:
         raise RuntimeError("mix: no generated clips to place")
     bed = job.background or job.source_audio
-    if len(segs) != len(job.segments):
+    if sum(1 for row in segs if row.kind == "dialogue") != len(job.segments):
         raise RuntimeError("mix: missing generated dialogue clips")
     if bed is None:
         raise RuntimeError("mix: no background audio")
@@ -154,7 +192,8 @@ def run(
             bus_request = {"clips": [[stamp(s.audio_clip), s.start] for s in group], "version": 1}
             bus = bus_dir / f"bus_{digest(bus_request)[:20]}.wav"
             if matches([bus], bus_request, force):
-                buses.append(replace(group[0], start=start, audio_clip=bus))
+                buses.append(replace(group[0], start=start, audio_clip=bus,
+                                     kind="bus"))
                 job.metrics["mix_bus_cache_hits"] = job.metrics.get("mix_bus_cache_hits", 0) + 1
                 continue
             bus_args = ["-y"]
@@ -183,7 +222,7 @@ def run(
             )
             bus_temp.replace(bus)
             record([bus], bus_request)
-            buses.append(replace(group[0], start=start, audio_clip=bus))
+            buses.append(replace(group[0], start=start, audio_clip=bus, kind="bus"))
         segs = buses
 
     args = ["-y", "-ss", str(win_start), "-t", str(dur), "-i", str(bed)]
@@ -227,5 +266,5 @@ def run(
         )
     temp.replace(out)
     record([out], request)
-    log.info("mix -> %s (%.0fs window, %d lines)", out.name, dur, len(segs))
+    log.info("mix -> %s (%.0fs window, %d placed clips)", out.name, dur, len(segs))
     return None

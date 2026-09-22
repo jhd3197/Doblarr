@@ -12,7 +12,14 @@ import pytest
 from doblarr import benchmarks, levels
 from doblarr.budget import RequestBudget
 from doblarr.config import Config
-from doblarr.cues import FITTED, LEVELED, NORMALIZED, RAW, TRIMMED
+from doblarr.cues import (
+    CUE_SCHEMA_VERSION,
+    FITTED,
+    LEVELED,
+    NORMALIZED,
+    RAW,
+    TRIMMED,
+)
 from doblarr.models import DubJob
 from doblarr.pipeline import run_job
 from doblarr.services import Services
@@ -276,7 +283,7 @@ def test_a_version_one_snapshot_still_loads_and_gains_no_invented_evidence(tmp_p
     # verification anywhere.
     payload["cue_schema"] = 1
     for row in payload["segments"]:
-        for key in ("intent", "measurement", "level", "verification"):
+        for key in ("intent", "measurement", "level", "verification", "phrasing"):
             row["cue"].pop(key, None)
     script.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -291,9 +298,13 @@ def test_a_version_one_snapshot_still_loads_and_gains_no_invented_evidence(tmp_p
         assert seg.measurement.state == "unknown" and seg.measurement.speech_db is None
         assert seg.level.outcome == "unknown"
         assert seg.verification.state == "unknown" and not seg.verification.checked
+        # Plan 04's records are equally empty: that run fitted whole clips and
+        # never planned a phrase, which is what an empty plan says.
+        assert seg.phrasing.mode == "unknown" and not seg.phrasing.phrases
     # And it round-trips forward without inventing anything.
     save_script(restored, script.parent)
-    assert json.loads(script.read_text(encoding="utf-8"))["cue_schema"] == 2
+    assert (json.loads(script.read_text(encoding="utf-8"))["cue_schema"]
+            == CUE_SCHEMA_VERSION)
 
 
 def test_cancelling_stops_the_new_stages_between_cues(tmp_path):

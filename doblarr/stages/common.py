@@ -24,6 +24,7 @@ from pathlib import Path
 from ..artifacts import read_json, stamp
 from ..cues import (
     CUE_SCHEMA_VERSION,
+    NonverbalEvent,
     SourceReference,
     adopt_legacy,
     apply_cue_payload,
@@ -32,6 +33,7 @@ from ..cues import (
     ensure_identity,
     script_ref,
     validate_cues,
+    validate_events,
 )
 
 
@@ -98,18 +100,23 @@ def save_script(job, work_dir: Path) -> Path:
     p = script_path(job, work_dir)
     ensure_identity(job)
     validate_cues(job.segments, job.cue_lineage)
+    validate_events(job.nonverbal, {s.cue_id for s in job.segments})
     payload = {
         "cue_schema": CUE_SCHEMA_VERSION,
         "script_ref": job.script_ref,
         "source_reference": (job.source_reference.as_dict()
                              if job.source_reference else None),
         "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
-        "nonverbal": job.nonverbal,
+        "nonverbal": [e.as_dict() for e in job.nonverbal],
         # The measured dialogue reference is frozen with the script: a resume
         # must compare against the baseline this run established, not one
         # recomputed over whichever cues happen to be measurable next time.
         "dialogue_baseline": job.dialogue_baseline,
         "manual_gains": job.manual_gains,
+        # Reviewer anchors and protected pauses, frozen with the script for the
+        # same reason the manual gains are: a resume must honour a decision a
+        # person made about this run without it becoming a config edit.
+        "timing_edits": job.timing_edits,
         "source_track": str(job.source_track) if job.source_track else None,
         "transcription_options": job.transcription_options,
         "translation_options": job.translation_options,
@@ -207,10 +214,15 @@ def _restore_cues(job, payload: dict) -> None:
         job.source_reference = SourceReference.from_dict(reference)
     job.cue_lineage = {str(k): [str(c) for c in v]
                        for k, v in (payload.get("cue_lineage") or {}).items()}
-    job.nonverbal = list(payload.get("nonverbal") or [])
+    job.nonverbal = [NonverbalEvent.from_dict(e)
+                     for e in (payload.get("nonverbal") or [])]
+    validate_events(job.nonverbal)
     job.dialogue_baseline = dict(payload.get("dialogue_baseline") or {})
     job.manual_gains = {str(k): float(v)
                         for k, v in (payload.get("manual_gains") or {}).items()}
+    job.timing_edits = {str(k): dict(v)
+                        for k, v in (payload.get("timing_edits") or {}).items()
+                        if isinstance(v, dict)}
     track = payload.get("source_track")
     if track and job.source_track is None:
         job.source_track = Path(track)

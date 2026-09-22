@@ -19,6 +19,7 @@ export const FILTERS = [
 ];
 
 const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const seconds = s => (s == null ? '—' : `${Number(s).toFixed(2)}s`);
 
 export function matchesFilter(row, filter) {
   if (filter === 'all') return true;
@@ -32,6 +33,11 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
   audio.preload = 'none';
   const player = createScenePlayer(audio);
   let scene = null, epoch = 0, versions = [], context = 2;
+  // Timing and coverage decisions live here between renders of the panel,
+  // keyed by line and by event, so moving to another line does not quietly
+  // drop one a reviewer already made.
+  const pendingTiming = new Map();
+  const pendingEvents = new Map();
 
   player.on((event, detail) => {
     const status = container.querySelector('#sceneStatus');
@@ -105,6 +111,8 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
       </div>
       ${takes(cue)}
       ${direction(row, cue)}
+      ${timing(row, cue)}
+      ${coverage()}
       ${findings(row, cue)}`;
     wire(row);
   }
@@ -212,6 +220,176 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
     return parts.join(' · ');
   }
 
+  // --- phrase timing ------------------------------------------------------
+  //
+  // A reviewer's unit of work here is a phrase and a pause, not a filter graph.
+  // The panel shows where each phrase landed, lets one be anchored to a moment,
+  // lets a pause be marked as performance so fitting stops spending it, and
+  // offers a bypass for the line where none of that is wanted. Every one of
+  // those re-renders the take that already exists; none generates speech.
+
+  function timing(row, cue) {
+    const plan = scene?.phrasing;
+    if (!plan || plan.mode === 'unknown') return '';
+    if (plan.mode === 'whole') {
+      return `<fieldset class="scene-timing"><legend>Timing</legend>
+        <p class="hint">Whole-clip fitting owns this run: a line that overruns is
+          compressed evenly end to end. Set the timing approach to "by phrase" in
+          settings to fit the parts instead.</p></fieldset>`;
+    }
+    const edit = pendingTiming.get(row.index) || scene?.timing_edit || {};
+    const anchors = new Map((edit.anchors || []).map(a => [a.phrase || '', a]));
+    const pauses = new Map(Object.entries(edit.pauses || {}));
+    return `<fieldset class="scene-timing"><legend>Timing</legend>
+      <p class="hint">${esc(timingNote(plan))}</p>
+      ${plan.conflicts?.length ? `<ul class="scene-conflicts">${plan.conflicts
+        .map(c => `<li>${esc(c.detail || c.code)}</li>`).join('')}</ul>` : ''}
+      <ol class="scene-phrases">${(plan.phrases || []).map(p => `
+        <li data-phrase="${esc(p.phrase_id)}">
+          <span class="m">${seconds(p.at)}</span>
+          <span>${esc(p.text || `phrase ${p.order + 1}`)}</span>
+          <label class="m">Anchor at
+            <input type="number" class="input m scene-anchor" step="0.05" min="0"
+              max="${Number(plan.slot ?? 0).toFixed(2)}"
+              value="${anchors.get(p.phrase_id)?.at ?? ''}"
+              placeholder="${p.at == null ? '' : Number(p.at).toFixed(2)}"
+              aria-label="Anchor this phrase, seconds after the line starts"></label>
+          ${anchorNote(plan, p.phrase_id)}
+        </li>`).join('')}</ol>
+      ${(plan.pauses || []).filter(p => p.origin !== 'boundary').length
+        ? `<div class="scene-pauses"><p class="m">Pauses</p>${(plan.pauses || [])
+          .filter(p => p.origin !== 'boundary').map(p => `
+          <label class="scene-pause"><input type="checkbox" class="scene-protect"
+            data-pause="${esc(p.pause_id)}"
+            ${(pauses.get(p.pause_id)?.protected ?? p.protected) ? 'checked' : ''}>
+            ${esc(pauseNote(p))}</label>`).join('')}</div>` : ''}
+      <label><input type="checkbox" id="sceneBypass" ${edit.bypass ? 'checked' : ''}>
+        Leave this line's timing exactly as generated</label>
+      ${collisions(edit)}
+      <p class="hint">Changing an anchor or a pause re-renders this line from the take it
+        already has. No new speech is generated.</p></fieldset>`;
+  }
+
+  function timingNote(plan) {
+    const state = {
+      applied: 'Fitted by phrase.',
+      fallback: 'Fitted as one bounded whole.',
+      infeasible: 'These words do not fit this window.',
+      bypassed: 'Left exactly as generated.',
+      unavailable: 'No timing plan could be made.',
+      planned: 'Planned, not yet rendered.',
+    }[plan.state] || 'Timing not recorded.';
+    const sizes = plan.actual_duration != null && plan.slot != null
+      ? ` ${plan.actual_duration.toFixed(2)}s in a ${plan.slot.toFixed(2)}s window.` : '';
+    return `${state} ${plan.reason || ''}${sizes}`.trim();
+  }
+
+  function anchorNote(plan, phraseId) {
+    const anchor = (plan.anchors || []).find(a => a.phrase_id === phraseId
+      && a.kind === 'hard' && a.error != null);
+    if (!anchor) return '';
+    const off = Math.abs(anchor.error);
+    if (off <= (anchor.tolerance ?? 0.12)) return '<span class="hint">landed on time</span>';
+    return `<span class="review-marker">landed ${off.toFixed(2)}s `
+      + `${anchor.error > 0 ? 'late' : 'early'}</span>`;
+  }
+
+  function pauseNote(pause) {
+    const length = pause.clip ? (pause.clip.end - pause.clip.start) : 0;
+    const planned = pause.planned == null ? '' : ` to ${pause.planned.toFixed(2)}s`;
+    const kind = pause.protected ? 'kept as performance' : 'available as padding';
+    return `${length.toFixed(2)}s${planned} · ${kind}`;
+  }
+
+  function collisions(edit) {
+    const rows = scene?.collisions || [];
+    if (!rows.length) return '';
+    const accepted = edit.overlap != null ? !!edit.overlap
+      : rows.some(r => r.accepted && !r.accepted.stale);
+    return `<div class="scene-collisions">${rows.map(r => `<p>
+      <strong>${esc(collisionLabel(r.code))}</strong>
+      <span class="m">line ${r.with_line} · ${r.seconds}s</span>
+      <span class="hint">${esc(r.note || '')}</span>
+      ${r.accepted?.stale
+        ? '<span class="review-marker">earlier decision — the audio has changed</span>'
+        : ''}</p>`).join('')}
+      <label><input type="checkbox" id="sceneOverlap" ${accepted ? 'checked' : ''}>
+        This overlap is deliberate</label></div>`;
+  }
+
+  function collisionLabel(code) {
+    return {
+      timing_collision: 'Introduced collision',
+      timing_self_overlap: 'Talking over themselves',
+      timing_overlap_intended: 'Original overlap kept',
+      timing_overlap_accepted: 'Accepted as deliberate',
+    }[code] || code.replaceAll('_', ' ');
+  }
+
+  // --- reaction and background coverage -----------------------------------
+
+  function coverage() {
+    const rows = scene?.events || [];
+    const bed = scene?.available?.bed_note || '';
+    if (!rows.length) {
+      return `<fieldset class="scene-coverage"><legend>Coverage</legend>
+        <p class="hint">No reaction or background event was recorded in this window.
+          ${esc(bed)}</p></fieldset>`;
+    }
+    return `<fieldset class="scene-coverage"><legend>Coverage</legend>
+      <p class="hint">${esc(bed)}</p>
+      ${rows.map(e => `<div class="scene-event" data-event="${esc(e.event_id)}">
+        <p><strong>${esc(e.type)}</strong>
+          <span class="m">${seconds(e.target?.start)} · ${esc(e.category)}</span>
+          <span class="hint">${esc(e.text || '')}</span></p>
+        <p class="hint">${esc(eventNote(e))}</p>
+        ${(e.findings || []).map(f => `<div class="scene-event-finding"
+            data-finding="${esc(f.finding_id)}">
+          <p class="review-flags">${esc(f.code.replaceAll('_', ' '))}:
+            ${esc(f.evidence?.note || '')}
+            ${f.review?.stale
+              ? '<span class="review-marker">earlier verdict — the audio has changed</span>'
+              : ''}</p>
+          <label class="m">Verdict<select class="input scene-event-disposition">
+            ${['open', 'accepted', 'fixed'].map(d => `<option value="${d}"
+              ${f.disposition === d ? 'selected' : ''}>${d}</option>`).join('')}
+          </select></label></div>`).join('')}
+        <div class="review-options">
+          <label>Coverage<select class="input scene-decision">
+            ${['unresolved', 'retain', 'replace', 'omit', 'covered'].map(d =>
+              `<option value="${d}" ${e.decision === d ? 'selected' : ''}>${d}</option>`)
+              .join('')}</select></label>
+          <input class="input scene-asset" maxlength="1000"
+            placeholder="Replacement sound file" value="${esc(e.asset || '')}">
+          <button type="button" class="btn btn-ghost scene-hear-event"
+            data-event="${esc(e.event_id)}" ${e.playable ? '' : 'disabled'}>Hear it</button>
+        </div></div>`).join('')}
+      <p class="hint">Nothing is inserted without a decision. A coverage change re-mixes;
+        it never generates speech.</p>
+      <div class="review-options">
+        <input class="input" id="sceneCoverageNote" maxlength="2000"
+          placeholder="Note about the reactions or the bed in this scene"
+          value="${esc(rows[0]?.decision?.note || '')}">
+        <button type="button" class="btn btn-secondary" id="sceneSaveCoverage">
+          Save coverage notes</button>
+      </div>
+      <p class="hint" id="sceneCoverageStatus" role="status"></p></fieldset>`;
+  }
+
+  function eventNote(event) {
+    const state = {
+      unresolved: 'Not decided. A subtitle tag proves neither that the sound is missing '
+        + 'nor that it survived.',
+      retained: 'The original sound is placed here.',
+      replaced: 'A supplied sound is placed here.',
+      omitted: 'Left out on purpose.',
+      covered: 'Already carried by the background.',
+      unavailable: 'Asked for, but there is nothing to place.',
+      unsupported: 'Asked for, and this engine cannot produce it.',
+    }[event.coverage] || 'Not decided.';
+    return `${state}${event.reason ? ` ${event.reason}.` : ''}`;
+  }
+
   function findings(row, cue) {
     const rows = (cue.findings || []).filter(f => f.disposition !== 'obsolete');
     const verification = cue.verification || {};
@@ -290,6 +468,10 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
       button.onclick = () => player.play('take', { keepPosition: false,
         takeId: button.dataset.take });
     });
+    container.querySelectorAll('.scene-hear-event').forEach(button => {
+      button.onclick = () => player.play('event', { keepPosition: false,
+        eventId: button.dataset.event });
+    });
     const chooser = el('#sceneVersion');
     if (chooser) {
       chooser.value = player.version || chooser.value;
@@ -311,6 +493,8 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
     if (el('#sceneMatch')) el('#sceneMatch').onchange = e => player.setMatched(e.target.checked);
     const verdicts = el('#sceneSaveVerdicts');
     if (verdicts) verdicts.onclick = () => saveVerdicts(row, verdicts);
+    const coverageNotes = el('#sceneSaveCoverage');
+    if (coverageNotes) coverageNotes.onclick = () => saveCoverage(coverageNotes);
   }
 
   async function saveVerdicts(row, button) {
@@ -335,8 +519,104 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
     }
   }
 
+  // What the timing controls are asking for, or nothing when this line has no
+  // phrase plan on screen. Returning the anchors and pauses only when they
+  // differ from what the run already decided keeps an untouched line out of the
+  // re-render entirely.
+  function collectTiming(row) {
+    const plan = scene?.phrasing;
+    if (!plan || plan.mode !== 'phrase') return {};
+    const before = scene?.timing_edit || {};
+    const patch = {};
+    const anchors = [...container.querySelectorAll('.scene-phrases li')]
+      .map(node => ({ phrase: node.dataset.phrase,
+        at: node.querySelector('.scene-anchor')?.value }))
+      .filter(a => a.at !== '' && a.at != null)
+      .map(a => ({ phrase: a.phrase, edge: 'start', at: Number(a.at) }))
+      .filter(a => Number.isFinite(a.at));
+    const wasAnchors = (before.anchors || [])
+      .map(a => `${a.phrase}:${a.at}`).sort().join('|');
+    if (anchors.map(a => `${a.phrase}:${a.at}`).sort().join('|') !== wasAnchors) {
+      patch.anchors = anchors;
+    }
+    const pauses = [...container.querySelectorAll('.scene-protect')].map(node => ({
+      pause: node.dataset.pause, protected: node.checked,
+      kind: node.checked ? 'pause' : 'padding',
+    }));
+    const planned = new Map((plan.pauses || []).map(p => [p.pause_id, p.protected]));
+    const overrides = new Map(Object.entries(before.pauses || {}));
+    const changed = pauses.filter(p => {
+      const current = overrides.has(p.pause) ? overrides.get(p.pause).protected
+        : planned.get(p.pause);
+      return p.protected !== current;
+    });
+    if (changed.length) patch.pauses = pauses.filter(p => p.protected !== planned.get(p.pause));
+    const bypass = container.querySelector('#sceneBypass');
+    if (bypass && bypass.checked !== !!before.bypass) patch.bypass_timing = bypass.checked;
+    const overlap = container.querySelector('#sceneOverlap');
+    if (overlap) {
+      const was = before.overlap != null ? !!before.overlap
+        : (scene?.collisions || []).some(r => r.accepted && !r.accepted.stale);
+      if (overlap.checked !== was) patch.overlap = overlap.checked;
+    }
+    if (Object.keys(patch).length) pendingTiming.set(row.index, {
+      ...(pendingTiming.get(row.index) || {}), ...patch });
+    else pendingTiming.delete(row.index);
+    return patch;
+  }
+
+  // Coverage decisions belong to the run, not to the line on screen: an event
+  // very often has no surviving cue at all. They are collected into their own
+  // map and submitted alongside the line edits.
+  function collectEvents() {
+    const known = new Map((scene?.events || []).map(e => [e.event_id, e]));
+    container.querySelectorAll('.scene-event').forEach(node => {
+      const id = node.dataset.event;
+      const before = known.get(id);
+      if (!before) return;
+      const decision = node.querySelector('.scene-decision').value;
+      const asset = node.querySelector('.scene-asset').value.trim();
+      if (decision === before.decision && asset === (before.asset || '')) {
+        pendingEvents.delete(id);
+        return;
+      }
+      pendingEvents.set(id, { event: id, decision, ...(asset ? { asset } : {}) });
+    });
+    return [...pendingEvents.values()];
+  }
+
+  // A note or a verdict about a reaction is new information about this run, so
+  // it goes to the decisions sidecar exactly as a cue verdict does — not into
+  // the snapshot, and not through a re-render.
+  async function saveCoverage(button) {
+    const status = container.querySelector('#sceneCoverageStatus');
+    const note = container.querySelector('#sceneCoverageNote').value;
+    const nodes = [...container.querySelectorAll('.scene-event')];
+    button.disabled = true;
+    status.textContent = 'Saving…';
+    try {
+      for (const node of nodes) {
+        const dispositions = [...node.querySelectorAll('.scene-event-finding')]
+          .map(row => ({ finding: row.dataset.finding,
+            disposition: row.querySelector('.scene-event-disposition').value }));
+        if (!dispositions.length && !note) continue;
+        await api(`jobs/${getJobId()}/decisions`, { method: 'POST', json: {
+          event: node.dataset.event, base_revision: getData()?.revision,
+          dispositions, note,
+        } });
+      }
+      status.textContent = 'Saved against this version of the audio.';
+      onDecision?.();
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function collect() {
     const el = id => container.querySelector(id);
+    collectEvents();
     if (!el('#sceneMode')) return {};
     const patch = {};
     const mode = el('#sceneMode').value;
@@ -352,15 +632,17 @@ export function createSceneSection({ container, getJobId, getRow, getData, onDec
     if (gain !== '') patch.gain_db = Number(gain);
     if (candidates) patch.candidates = candidates;
     if (chosen && chosen.value !== scene?.selection?.take_id) patch.take = chosen.value;
-    return patch;
+    return { ...patch, ...collectTiming(getRow() || { index: -1 }) };
   }
 
   return {
     load,
     collect,
+    events: () => [...pendingEvents.values()],
     stop() { player.stop(); },
     reset() {
       epoch += 1; scene = null; versions = []; context = 2;
+      pendingTiming.clear(); pendingEvents.clear();
       player.stop(); container.innerHTML = '';
     },
   };

@@ -9,14 +9,16 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .. import preview as scene_preview
 from ..artifacts import read_json
 from ..config import Config
 from ..cues import (
     DISPOSITIONS,
+    EVENT_DECISIONS,
     SPEECH_MODES,
+    NonverbalEvent,
     adopt_legacy,
     apply_cue_payload,
     check_schema,
@@ -42,6 +44,33 @@ class JobCreateIn(BaseModel):
     overrides: dict[str, Any] | None = None  # per-title config overrides
 
 
+class AnchorIn(BaseModel):
+    """One phrase edge a reviewer wants to land at a particular moment."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    phrase: str | None = Field(default=None, max_length=80)
+    order: int | None = Field(default=None, ge=0, le=64)
+    edge: Literal["start", "end"] = "start"
+    at: float = Field(ge=0, le=3600)
+    note: str = Field(default="", max_length=200)
+
+    @field_validator("order")
+    @classmethod
+    def addressable(cls, value, info):
+        if value is None and not (info.data.get("phrase") or "").strip():
+            raise ValueError("an anchor must name a phrase or its position")
+        return value
+
+
+class PauseIn(BaseModel):
+    """Whether one gap inside a line is performance or removable padding."""
+
+    model_config = ConfigDict(extra="forbid")
+    pause: str = Field(min_length=1, max_length=80)
+    protected: bool = True
+    kind: Literal["padding", "pause", "hesitation", "breath", "response"] = "pause"
+
+
 class LineEditIn(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     index: int = Field(ge=0)
@@ -62,6 +91,12 @@ class LineEditIn(BaseModel):
     take: str | None = Field(default=None, max_length=64)
     gain_db: float | None = Field(default=None, ge=-24, le=24)
     candidates: int | None = Field(default=None, ge=0, le=4)
+    # Plan 04: phrase timing decisions. None of them generates speech — they
+    # change how the take that already exists is cut and placed.
+    anchors: list[AnchorIn] | None = Field(default=None, max_length=32)
+    pauses: list[PauseIn] | None = Field(default=None, max_length=32)
+    bypass_timing: bool | None = None
+    overlap: bool | None = None
 
     @field_validator("mode")
     @classmethod
@@ -81,6 +116,29 @@ class LineEditIn(BaseModel):
         return cleaned
 
 
+class EventEditIn(BaseModel):
+    """A coverage decision for one nonverbal event.
+
+    `asset` is a path on this machine. It is accepted here because a local
+    sound file is exactly what a local replacement is, and it is deliberately
+    never carried into a recipe or a version manifest.
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    event: str = Field(min_length=1, max_length=64)
+    decision: str = Field(min_length=1, max_length=32)
+    asset: str | None = Field(default=None, max_length=1000)
+    gain_db: float | None = Field(default=None, ge=-24, le=24)
+    note: str = Field(default="", max_length=2000)
+
+    @field_validator("decision")
+    @classmethod
+    def known(cls, value):
+        if value not in EVENT_DECISIONS:
+            raise ValueError(f"decision must be one of {', '.join(EVENT_DECISIONS)}")
+        return value
+
+
 class DispositionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     finding: str = Field(min_length=1, max_length=64)
@@ -96,20 +154,36 @@ class DispositionIn(BaseModel):
 
 
 class DecisionIn(BaseModel):
-    """A reviewer's verdict on one cue, recorded without re-rendering anything."""
+    """A reviewer's verdict on one cue or one event, recorded without re-rendering.
+
+    `event` addresses a reaction or background event. It is a separate field
+    from `cue` because a reaction's cue is usually the one that was removed
+    from synthesis, and filing the verdict under it would point at a line that
+    is not in the review.
+    """
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
-    cue: str = Field(min_length=1, max_length=64)
+    cue: str | None = Field(default=None, min_length=1, max_length=64)
+    event: str | None = Field(default=None, min_length=1, max_length=64)
     base_revision: str = Field(min_length=1, max_length=64)
     dispositions: list[DispositionIn] = Field(default_factory=list, max_length=50)
     note: str | None = Field(default=None, max_length=2000)
     actor: str = Field(default="", max_length=100)
     reviewed: bool | None = None
 
+    @model_validator(mode="after")
+    def one_subject(self):
+        if bool(self.cue) == bool(self.event):
+            raise ValueError("a decision is about exactly one cue or one event")
+        return self
+
 
 class ReviewEditsIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    edits: list[LineEditIn] = Field(min_length=1, max_length=2000)
+    edits: list[LineEditIn] = Field(default_factory=list, max_length=2000)
+    # Coverage decisions belong to the run, not to one line: an event often has
+    # no surviving cue at all.
+    events: list[EventEditIn] = Field(default_factory=list, max_length=500)
     use_updated_knowledge: bool = False  # default: keep the run's frozen rule snapshot
     # The review snapshot these edits were made against. Omitted by older
     # clients, whose edits are resolved against their own snapshot as before.
@@ -121,7 +195,8 @@ class ReviewEditsIn(BaseModel):
 # speech generation and which one only re-renders the audio that already
 # exists.
 _REGENERATES = ("text", "voice", "delivery", "mode", "traits", "direction")
-_REPROCESSES = ("start", "end", "gain_db", "take")
+_REPROCESSES = ("start", "end", "gain_db", "take", "anchors", "pauses",
+                "bypass_timing")
 
 
 def _versions_root(output: Path) -> Path:
@@ -136,7 +211,7 @@ def _versions_root(output: Path) -> Path:
     return output.parent / "versions"
 
 
-def _rerun_plan(edits, candidate_requests: dict) -> dict:
+def _rerun_plan(edits, candidate_requests: dict, events=()) -> dict:
     """Say plainly what each edited line will cost before it is queued."""
     lines = []
     for patch in edits:
@@ -158,7 +233,12 @@ def _rerun_plan(edits, candidate_requests: dict) -> dict:
         "processing": sum(1 for line in lines
                           if line["work"] == "re-renders existing audio"),
         "candidates": sum(int(n) for n in candidate_requests.values()),
-        "note": "Lines not listed here reuse their existing audio.",
+        # Coverage never generates speech: it retains, replaces or omits a
+        # sound and re-mixes. It is counted separately so nobody reads a
+        # reaction decision as a re-render of the dialogue.
+        "coverage": len(list(events)),
+        "note": "Lines not listed here reuse their existing audio. Coverage "
+                "decisions re-mix without generating speech.",
     }
 
 
@@ -363,6 +443,23 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                        and Path(render["path"]).is_file())
             render.pop("path", None)
 
+    def _redact_events(data: dict) -> list:
+        """Coverage events for the browser: provenance yes, local paths no."""
+        rows = []
+        for raw in (data.get("nonverbal") or []):
+            row = dict(raw)
+            artifact = row.get("artifact")
+            if isinstance(artifact, dict):
+                path = _allowed_path(artifact.get("path") or "")
+                artifact["available"] = bool(path and Path(artifact["path"]).is_file())
+                artifact.pop("path", None)
+            # A replacement sound lives somewhere on this machine. The reviewer
+            # needs to know *which* file was used, not where it is.
+            if row.get("asset"):
+                row["asset"] = Path(row["asset"]).name
+            rows.append(row)
+        return rows
+
     def _media(data: dict) -> dict:
         """Which scene previews this snapshot can actually produce, and why not.
 
@@ -372,12 +469,18 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         """
         media = data.get("media") or {}
         found = {}
-        for key in ("source_track", "source_audio", "dubbed_track", "output"):
+        for key in ("source_track", "source_audio", "dubbed_track", "output",
+                    "vocals", "background"):
             path = _allowed_path(media[key]) if media.get(key) else None
             found[key] = bool(path and path.is_file())
         return {
             "source": found["source_track"] or found["source_audio"],
             "dub": found["dubbed_track"] or found["output"],
+            "vocals": found["vocals"],
+            "bed": found["background"],
+            "bed_note": ((data.get("settings") or {}).get("background") or {}).get(
+                "label", "" if found["background"] else
+                "separation did not run, so the original mix is the bed"),
             "note": ("" if found["source_track"] or found["source_audio"]
                      else "the extracted original audio is no longer on disk"),
         }
@@ -417,6 +520,20 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 "candidate_limit", effective["dub"].get("candidate_limit", 4))),
             "references": sorted(reference_clips),
             "frozen_settings": bool(frozen),
+            # Plan 04. The timing owner and the coverage policy this run used,
+            # the event ledger, and what the bed under the dub actually is.
+            "timing": frozen.get("timing") or {
+                k: effective["timing"].get(k) for k in
+                ("mode", "max_stretch", "min_stretch", "protect_pause",
+                 "anchor_tolerance", "repair")},
+            "coverage": frozen.get("coverage") or {
+                k: effective["coverage"].get(k) for k in
+                ("mode", "gain_db", "handle_ms", "fade_ms", "max_seconds",
+                 "leakage_check", "generate")},
+            "background": frozen.get("background") or {},
+            "nonverbal": _redact_events(data),
+            "coverage_summary": (data.get("metrics") or {}).get("coverage") or {},
+            "conversation": (data.get("metrics") or {}).get("conversation") or {},
         }
         return merge_decisions(payload, load_decisions(config.work_dir, job_id))
 
@@ -449,6 +566,13 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         rebuilt.source_track = resolved("source_track", "source_audio")
         rebuilt.source_audio = rebuilt.source_track
         rebuilt.dubbed_track = resolved("dubbed_track", "output")
+        rebuilt.vocals = resolved("vocals")
+        rebuilt.background = resolved("background")
+        rebuilt.nonverbal = [NonverbalEvent.from_dict(row)
+                             for row in (data.get("nonverbal") or [])]
+        rebuilt.timing_edits = {str(k): dict(v) for k, v
+                                in (data.get("timing_edits") or {}).items()
+                                if isinstance(v, dict)}
         work = _allowed_path(media["work"]) if media.get("work") else None
         rebuilt.artifacts_dir = work or config.work_dir / "previews"
         segments = []
@@ -482,6 +606,38 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 else None)
         return rebuilt, segments
 
+    def _phrasing(seg) -> dict:
+        """One line's timing plan, without repeating the whole render recipe."""
+        plan = seg.phrasing
+        return {
+            "mode": plan.mode, "state": plan.state, "reason": plan.reason,
+            "planner": plan.planner, "slot": plan.slot, "onset": plan.onset,
+            "planned_duration": plan.planned_duration,
+            "actual_duration": plan.actual_duration,
+            "max_stretch": plan.max_stretch, "min_stretch": plan.min_stretch,
+            "moved": plan.moved, "protected_kept": plan.protected_kept,
+            "bypassed": plan.bypassed, "attempts": plan.attempts,
+            "conflicts": [dict(c) for c in plan.conflicts],
+            "phrases": [{**p.as_dict(),
+                         "at": next((piece["at"] for piece in plan.pieces
+                                     if piece.get("phrase") == p.phrase_id), None),
+                         "out": next((piece["out"] for piece in plan.pieces
+                                      if piece.get("phrase") == p.phrase_id), None)}
+                        for p in plan.phrases],
+            "pauses": [p.as_dict() for p in plan.pauses],
+            "anchors": [{**a.as_dict(), "error": a.error} for a in plan.anchors],
+        }
+
+    def _event_row(event, rebuilt) -> dict:
+        row = event.as_dict()
+        artifact = row.get("artifact")
+        if isinstance(artifact, dict):
+            artifact["available"] = bool(event.artifact and event.artifact.exists())
+            artifact.pop("path", None)
+        row["asset"] = Path(row["asset"]).name if row.get("asset") else ""
+        row["playable"] = bool(event.rendered)
+        return row
+
     @api.get("/api/jobs/{job_id}/scene/{index}")
     def job_scene(job_id: str, index: int, context: int = 2):
         """The exchange around one line: which cues, which spans, what can play."""
@@ -499,6 +655,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "available": {
                 **_media(data),
                 "reference": bool((data.get("references") or {}).get(seg.speaker)),
+                "event": any(e.rendered for e in scene_preview.events_in(rebuilt, frame)),
                 "line": bool(seg.audio.current() and seg.audio.current().exists()),
                 "take": bool(seg.audio.selected() and seg.audio.selected().raw
                              and seg.audio.selected().raw.exists()),
@@ -519,12 +676,24 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                (t["checks"] or {}).get("state") == "defective",
                                t["attempt"])),
             "selection": (seg.audio.selection.as_dict() if seg.audio.selection else None),
+            # Plan 04: how this line's internal timing was decided, what it
+            # collides with, and which reactions sit inside the window.
+            "phrasing": _phrasing(seg),
+            "collisions": [
+                {"code": f.code, "severity": f.severity, **dict(f.evidence)}
+                for f in seg.findings
+                if f.code in ("timing_collision", "timing_self_overlap",
+                              "timing_overlap_intended", "timing_overlap_accepted")
+                and f.disposition != "obsolete"],
+            "events": [_event_row(event, rebuilt)
+                       for event in scene_preview.events_in(rebuilt, frame)],
+            "timing_edit": rebuilt.timing_edits.get(seg.cue_id) or {},
         }
 
     @api.get("/api/jobs/{job_id}/preview/{kind}/{index}")
     def job_preview(job_id: str, kind: str, index: int, request: Request,
-                    context: int = 2, take: str = "", start: float | None = None,
-                    end: float | None = None):
+                    context: int = 2, take: str = "", event: str = "",
+                    start: float | None = None, end: float | None = None):
         """Stream one bounded preview: the original scene, the dub, a line or a take."""
         job, data = artifact(job_id, "review_file")
         check_schema(data.get("cue_schema"), "review snapshot")
@@ -532,7 +701,8 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         bounds = (start, end) if start is not None and end is not None else None
         try:
             resolved = scene_preview.resolve(rebuilt, segments, kind, index,
-                                             context=context, bounds=bounds, take=take)
+                                             context=context, bounds=bounds, take=take,
+                                             event=event)
         except scene_preview.PreviewError as exc:
             raise HTTPException(409, str(exc)) from exc
         path = _allowed_path(str(resolved["path"]))
@@ -607,9 +777,15 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 409,
                 "This review has changed since you opened it. Reload it so your "
                 "notes apply to the current lines.")
-        known = {(row.get("cue") or {}).get("cue_id") for row in data["segments"]}
-        if body.cue not in known:
-            raise HTTPException(404, "That line is not part of this review")
+        scope = "cue" if body.cue else "event"
+        subject = body.cue or body.event or ""
+        known = ({(row.get("cue") or {}).get("cue_id") for row in data["segments"]}
+                 if scope == "cue"
+                 else {row.get("event_id") for row in (data.get("nonverbal") or [])})
+        if subject not in known:
+            raise HTTPException(
+                404, "That line is not part of this review" if scope == "cue"
+                else "That event is not part of this review")
         patch: dict[str, Any] = {
             "dispositions": {d.finding: {"disposition": d.disposition, "note": d.note}
                              for d in body.dispositions}}
@@ -618,11 +794,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         if body.reviewed is not None:
             patch["reviewed"] = body.reviewed
         try:
-            entry = record_decision(config.work_dir, job_id, data["revision"], body.cue,
-                                    patch, actor=body.actor)
+            entry = record_decision(config.work_dir, job_id, data["revision"], subject,
+                                    patch, actor=body.actor, scope=scope)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
-        return {"ok": True, "decision": entry}
+        return {"ok": True, "scope": scope, "decision": entry}
 
     @api.get("/api/jobs/{job_id}/clips/{index}")
     def line_audio(job_id: str, index: int, request: Request):
@@ -649,10 +825,37 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 "This review has changed since you opened it. Reload it so your "
                 "edits apply to the current lines.",
             )
+        if not body.edits and not body.events:
+            raise HTTPException(422, "Nothing to change: no line edits and no coverage "
+                                     "decisions were sent")
         rows = {s["index"]: s for s in data["segments"]}
         effective = config.with_overrides(original.overrides or {})
         edits = copy.deepcopy(effective["dub"].get("line_edits", {}))
         candidate_requests = copy.deepcopy(effective["dub"].get("candidates", {}))
+        coverage_events = copy.deepcopy(effective["coverage"].get("events", {}))
+        coverage_assets = copy.deepcopy(effective["coverage"].get("assets", {}))
+        known_events = {row.get("event_id") for row in (data.get("nonverbal") or [])}
+        for choice in body.events:
+            if choice.event not in known_events:
+                raise HTTPException(404, "That event is not part of this review")
+            entry: dict[str, Any] = {"decision": choice.decision}
+            if choice.gain_db is not None:
+                entry["gain_db"] = choice.gain_db
+            if choice.note:
+                entry["note"] = choice.note
+            if choice.asset:
+                # A local sound file. Checked against the same guard the
+                # download routes use: a coverage decision must not become a
+                # way to read an arbitrary path off this machine.
+                asset = _allowed_path(choice.asset)
+                if asset is None or not asset.is_file():
+                    raise HTTPException(
+                        422, "A replacement sound must be a file inside the configured "
+                             "work or output directories")
+                coverage_assets[choice.event] = str(asset)
+            elif choice.decision != "replace":
+                coverage_assets.pop(choice.event, None)
+            coverage_events[choice.event] = entry
         decisions = load_decisions(config.work_dir, job_id)
         seen = set()
         for patch in body.edits:
@@ -665,6 +868,13 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 raise HTTPException(409, "This line has changed identity; reload the review")
             changes = patch.model_dump(
                 exclude_none=True, exclude={"index", "regenerate", "cue", "candidates"})
+            if "pauses" in changes:
+                # The wire form is a list so the order is stable; the edit
+                # record is keyed by pause id so a second decision about the
+                # same gap replaces the first instead of stacking.
+                changes["pauses"] = {row["pause"]: {"protected": row["protected"],
+                                                    "kind": row["kind"]}
+                                     for row in changes["pauses"]}
             if patch.take:
                 takes = {t.get("take_id") for t
                          in (row.get("cue") or {}).get("audio", {}).get("takes", [])}
@@ -679,6 +889,13 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 raise HTTPException(422, "Dialogue cannot be blank; use Exclude instead")
             if changes.get("end", row["end"]) <= changes.get("start", row["start"]):
                 raise HTTPException(422, "End time must be after start time")
+            window = (changes.get("end", row["end"])
+                      - changes.get("start", row["start"]))
+            for anchor in (patch.anchors or []):
+                if anchor.at > window + 1e-6:
+                    raise HTTPException(
+                        422, f"An anchor at {anchor.at:g}s sits past the end of this "
+                             f"line's {window:.2f}s window")
             edit = edits.setdefault(str(patch.index), {})
             # Preserve the reviewed text and timing instead of reviving an earlier script.
             for key, value in {
@@ -727,7 +944,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         overrides["dub.line_edits"] = edits
         overrides["dub.candidates"] = candidate_requests
         overrides["dub.dry_run"] = False
-        rerun = _rerun_plan(body.edits, candidate_requests)
+        if coverage_events:
+            overrides["coverage.events"] = coverage_events
+        if coverage_assets:
+            overrides["coverage.assets"] = coverage_assets
+        rerun = _rerun_plan(body.edits, candidate_requests, body.events)
         updated = store.add(
             title=original.title,
             source=original.source,

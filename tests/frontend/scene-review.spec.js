@@ -65,7 +65,38 @@ const SCENE = {
   boundary_note: 'cues grouped by a 2.5s silence gap; this is a listening window, '
     + 'not a detected scene cut',
   revision: 'rev-7',
-  available: { source: true, dub: true, line: true, take: true, note: '' },
+  available: { source: true, dub: true, line: true, take: true, note: '',
+    vocals: true, bed: true, event: true,
+    bed_note: 'estimated background (separated)' },
+  phrasing: {
+    mode: 'phrase', state: 'applied', planner: 'phrase-timing/1',
+    reason: '2 phrases; 0.18s of padding redistributed; no stretching needed',
+    slot: 2.6, planned_duration: 2.4, actual_duration: 2.42, max_stretch: 1,
+    min_stretch: 1, moved: 0.18, protected_kept: 0.5, bypassed: false,
+    attempts: 0, conflicts: [],
+    phrases: [
+      { phrase_id: 'cue-aaa:p0', order: 0, text: 'Alguien viene', at: 0, out: 0.9 },
+      { phrase_id: 'cue-aaa:p1', order: 1, text: 'hacia nosotros.', at: 1.4, out: 1.0 },
+    ],
+    pauses: [{ pause_id: 'cue-aaa:g0', after: 'cue-aaa:p0', protected: true,
+      kind: 'pause', origin: 'auto', planned: 0.5,
+      clip: { start: 0.9, end: 1.4, domain: 'clip' } }],
+    anchors: [{ anchor_id: 'cue-aaa:ap1s', phrase_id: 'cue-aaa:p1', edge: 'start',
+      kind: 'hard', origin: 'review', at: 1.4, tolerance: 0.12, observed: 1.72,
+      error: 0.32 }],
+  },
+  collisions: [{ code: 'timing_collision', severity: 'warning', with_line: 1,
+    seconds: 0.3, source_overlap: 0,
+    note: 'these two lines did not overlap in the original' }],
+  events: [{ event_id: 'event-1', type: 'laugh', category: 'vocal',
+    text: '[laughter]', decision: 'unresolved', coverage: 'unresolved',
+    reason: 'no coverage decision has been made for this event',
+    target: { start: 195.2, end: 196.0, domain: 'target' }, asset: '',
+    playable: false, findings: [{ finding_id: 'ev-f1',
+      code: 'reaction_uncovered', disposition: 'open', evidence: {
+      note: 'a subtitle tag is not proof the sound is missing, and not proof it is there',
+    } }] }],
+  timing_edit: {},
   takes: [
     { take_id: 't1', origin: 'auto', state: 'generated', attempt: 0, direction: '',
       checks: { state: 'usable', duration: 2.4, rms_db: -18.2 }, selected: true,
@@ -76,7 +107,8 @@ const SCENE = {
   selection: { take_id: 't1', reason: 'auto' },
 };
 
-async function openReview(page, { onDecision, onQueue, previews, versions } = {}) {
+async function openReview(page,
+  { onDecision, onQueue, previews, versions, phrasing } = {}) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/api/library', route => route.fulfill({ json: { items: [], counts: {} } }));
@@ -100,7 +132,7 @@ async function openReview(page, { onDecision, onQueue, previews, versions } = {}
   const scenes = [];
   await page.route('**/api/jobs/review-1/scene/**', route => {
     scenes.push(new URL(route.request().url()).searchParams.get('context'));
-    return route.fulfill({ json: SCENE });
+    return route.fulfill({ json: phrasing ? { ...SCENE, phrasing } : SCENE });
   });
   await page.route('**/api/jobs/review-1/versions', route => route.fulfill({ json: {
     current: 'v-new', versions: versions ?? [
@@ -127,6 +159,10 @@ async function openReview(page, { onDecision, onQueue, previews, versions } = {}
   await page.goto('/dubs');
   await page.getByRole('button', { name: 'Review (1)' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
+  // The scene panel renders twice: once while the exchange is still loading and
+  // again once it has arrived. Typing into the editor between the two would be
+  // overwritten by the second render, so every test starts after it.
+  await expect(page.locator('.scene-timing')).toBeVisible();
   return { errors, served, scenes };
 }
 
@@ -299,5 +335,131 @@ test('the window can be widened and the repair history is visible',
     await expect.poll(() => scenes).toEqual(['2', '5']);
     // What was heard, and that the pipeline already tried to repair it.
     await expect(page.getByText(/Heard: “Viene nadie”/)).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+
+// -- Plan 04: phrase timing and coverage -----------------------------------
+
+test('the timing panel shows the phrases, the kept pause and the anchor that missed',
+  async ({ page }) => {
+    const { errors } = await openReview(page);
+    const timing = page.locator('.scene-timing');
+    await expect(timing).toContainText('Fitted by phrase');
+    await expect(timing).toContainText('padding redistributed');
+    await expect(timing.locator('.scene-phrases li')).toHaveCount(2);
+    await expect(timing).toContainText('Alguien viene');
+    // A protected pause says it is being kept, not that it was removed.
+    await expect(timing.locator('.scene-pause')).toContainText('kept as performance');
+    await expect(timing.locator('.scene-pause input')).toBeChecked();
+    // The anchor reports where it actually landed.
+    await expect(timing).toContainText('landed 0.32s late');
+    expect(errors).toEqual([]);
+  });
+
+test('a collision names the neighbouring line and can be accepted as deliberate',
+  async ({ page }) => {
+    let queued = null;
+    const { errors } = await openReview(page, { onQueue: body => { queued = body; } });
+    const collisions = page.locator('.scene-collisions');
+    await expect(collisions).toContainText('Introduced collision');
+    await expect(collisions).toContainText('line 1');
+    await expect(collisions).toContainText('did not overlap in the original');
+    await page.locator('#sceneOverlap').check();
+    await page.getByRole('button', { name: /^Render/ }).click();
+    await expect.poll(() => queued?.edits?.[0]?.overlap).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+test('an anchor and a protected pause are submitted as a re-render, not a regeneration',
+  async ({ page }) => {
+    let queued = null;
+    const { errors } = await openReview(page, { onQueue: body => { queued = body; } });
+    await page.locator('.scene-phrases li').nth(1).locator('.scene-anchor').fill('1.2');
+    await page.locator('.scene-pause input').uncheck();
+    await page.getByRole('button', { name: /^Render/ }).click();
+    await expect.poll(() => queued?.edits?.[0]?.anchors?.[0]?.at).toBe(1.2);
+    expect(queued.edits[0].anchors[0].phrase).toBe('cue-aaa:p1');
+    expect(queued.edits[0].pauses).toEqual([
+      { pause: 'cue-aaa:g0', protected: false, kind: 'padding' }]);
+    // None of the fields that would cost new speech is present.
+    expect(queued.edits[0].text).toBe('Alguien viene hacia nosotros.');
+    expect(queued.edits[0].regenerate).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+test('a line can be left exactly as generated', async ({ page }) => {
+  let queued = null;
+  await openReview(page, { onQueue: body => { queued = body; } });
+  await page.locator('#sceneBypass').check();
+  await page.getByRole('button', { name: /^Render/ }).click();
+  await expect.poll(() => queued?.edits?.[0]?.bypass_timing).toBe(true);
+});
+
+test('an undecided reaction is shown as undecided and says why that is not proof',
+  async ({ page }) => {
+    const { errors } = await openReview(page);
+    const coverage = page.locator('.scene-coverage');
+    await expect(coverage).toContainText('laugh');
+    await expect(coverage).toContainText('Not decided');
+    await expect(coverage).toContainText('not proof');
+    await expect(coverage).toContainText('estimated background (separated)');
+    // Nothing to hear yet, so the control is disabled rather than absent.
+    await expect(coverage.getByRole('button', { name: 'Hear it' })).toBeDisabled();
+    expect(errors).toEqual([]);
+  });
+
+test('a coverage decision is submitted on its own without editing any line',
+  async ({ page }) => {
+    let queued = null;
+    const { errors } = await openReview(page, { onQueue: body => { queued = body; } });
+    await page.locator('.scene-event .scene-decision').selectOption('retain');
+    const submit = page.getByRole('button', { name: /^Render/ });
+    await expect(submit).toContainText('1 reaction');
+    await submit.click();
+    await expect.poll(() => queued?.events?.[0]).toEqual(
+      { event: 'event-1', decision: 'retain' });
+    expect(queued.edits).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+test('a note about a reaction is recorded against this version of the audio',
+  async ({ page }) => {
+    let decision = null;
+    const { errors } = await openReview(page, { onDecision: p => { decision = p; } });
+    await page.locator('#sceneCoverageNote').fill('the laugh is a beat late');
+    await page.locator('.scene-event-disposition').selectOption('accepted');
+    await page.getByRole('button', { name: 'Save coverage notes' }).click();
+    await expect(page.locator('#sceneCoverageStatus'))
+      .toContainText('Saved against this version of the audio');
+    expect(decision).toMatchObject({
+      event: 'event-1', base_revision: 'rev-7',
+      note: 'the laugh is a beat late',
+      dispositions: [{ finding: 'ev-f1', disposition: 'accepted' }],
+    });
+    expect(errors).toEqual([]);
+  });
+
+test('the bed and the separated voices are offered as their own sources',
+  async ({ page }) => {
+    const { errors, served } = await openReview(page);
+    await page.getByRole('tab', { name: 'Background bed' }).click();
+    await page.getByRole('tab', { name: 'Original voices' }).click();
+    // Loading two excerpts back to back is slower than the default poll window
+    // on a busy machine; the point of the test is that both are requested.
+    await expect.poll(() => served.some(p => p.includes('/preview/bed/')),
+      { timeout: 15000 }).toBe(true);
+    await expect.poll(() => served.some(p => p.includes('/preview/vocals/')),
+      { timeout: 15000 }).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+test('whole-clip fitting says so instead of showing an empty phrase list',
+  async ({ page }) => {
+    const { errors } = await openReview(page, { phrasing: {
+      mode: 'whole', state: 'bypassed', reason: 'whole-clip fitting owns this run',
+      phrases: [], pauses: [], anchors: [], conflicts: [] } });
+    await expect(page.locator('.scene-timing')).toContainText('Whole-clip fitting owns');
+    await expect(page.locator('.scene-phrases')).toHaveCount(0);
     expect(errors).toEqual([]);
   });

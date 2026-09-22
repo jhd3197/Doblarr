@@ -46,7 +46,10 @@ def test_baseline_runs_offline_through_every_layer(observed):
 def test_baseline_keeps_nonspoken_evidence_without_synthesizing_it(observed):
     assert [e["text"] for e in observed["nonverbal"]] == ["[laughter]"]
     event = observed["nonverbal"][0]
-    assert event["coverage"] == "uncovered" and event["type"] == "unknown"
+    # Typed, decided-about, and still not spoken: the cue is a laugh whose
+    # coverage nobody has resolved, which is the honest default.
+    assert (event["type"], event["category"]) == ("laugh", "vocal")
+    assert event["decision"] == "unresolved" and event["coverage"] == "unresolved"
     assert event["source"][0]["domain"] == SOURCE
     assert event["cue_id"] not in {line["cue_id"] for line in observed["lines"]}
 

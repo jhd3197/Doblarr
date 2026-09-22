@@ -101,6 +101,28 @@ const TABS = [
     T("dub.locale_direction", "Accent direction", "Blank derives it from the target locale. A per-line direction replaces only its own part of the instruction."),
     N("dub.candidate_limit", "Most alternative takes per line"),
     B("dub.clone_cleanup", "Clean the voice reference sample", "A restrained high-pass and denoise. The original sample is always kept, and turning this on builds a different voice profile."),
+  ]), group("Phrase timing", [
+    C("timing.mode", "Timing approach", ["whole", "phrase"], "Whole compresses an overrunning line evenly end to end. By phrase gives back the padding between phrases first, keeps a pause that is performance, and compresses speech only where it still has to. Only one of the two runs."),
+    N("timing.max_stretch", "Most to compress a phrase", "1.3 means up to 30% faster."),
+    N("timing.min_stretch", "Slowest a phrase may be played", "1 never slows speech down; only an anchor you set can."),
+    N("timing.protect_pause", "A pause this long is performance (seconds)", "Longer gaps are kept. Shorter ones are the breathing a synthesizer puts around punctuation and may be tightened."),
+    N("timing.min_pause", "Shortest a tightened gap may become (seconds)"),
+    N("timing.handle_ms", "Phrase margin (ms)", "Kept each side of a phrase so a join does not clip a consonant."),
+    N("timing.tail_handle_ms", "Trailing silence kept (ms)"),
+    N("timing.anchor_tolerance", "Anchor tolerance (seconds)", "How close a phrase has to land before it counts as on time."),
+    N("timing.min_phrase_seconds", "Shortest run that counts as a phrase (seconds)"),
+    N("timing.threshold_db", "Speech threshold above noise (dB)"),
+    N("timing.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the phrase boundaries are not knowable and the line is fitted as one whole."),
+    N("timing.collision_gap", "Overlap slack before two turns collide (seconds)"),
+    B("timing.repair", "Allow a bounded rewrite when a line cannot fit", "Tries an existing take first; a rewrite is charged to the shared request budget."),
+  ]), group("Reactions and background", [
+    C("coverage.mode", "Reaction coverage", ["off", "review", "retain"], "Off still lists every laugh, gasp and door the subtitles recorded, and changes no audio. Review prepares the sound so you can hear it next to the scene without it entering the dub. Retain also places it. Nothing is ever inserted without a decision."),
+    N("coverage.gain_db", "Level of a placed sound (dB)"),
+    N("coverage.handle_ms", "Margin when cutting from the original (ms)"),
+    N("coverage.fade_ms", "Fade on a placed sound (ms)"),
+    N("coverage.max_seconds", "Longest sound to place (seconds)", "A longer window is a scene, not a reaction."),
+    B("coverage.leakage_check", "Screen for source-language words", "Listens to retained sounds and to dialogue-free windows of the bed. Music vocals and reverberation cause false positives, so a hit is a suspicion to listen to."),
+    B("coverage.generate", "Ask the engine for a reaction where it supports one", "An engine that cannot is recorded as unsupported, never as applied."),
   ]), group("Clip boundaries", [
     B("boundaries.trim", "Trim generator padding", "Removes dead air outside the detected speech before timing correction. Internal pauses are never removed and the raw take is kept."),
     N("boundaries.handle_ms", "Protective margin (ms)", "Kept on each side of the detected speech."),
@@ -141,7 +163,10 @@ const PLAN_FIELDS = [
     "dub.version_name", "dub.preserve_versions",
     "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run",
     // Per-title bypass for boundary preparation; the detector thresholds stay global.
-    "boundaries.trim", "boundaries.edge_fade_ms"]
+    "boundaries.trim", "boundaries.edge_fade_ms",
+    // Which timing owner and whether coverage may place a sound are per-title
+    // choices; the thresholds behind them stay global.
+    "timing.mode", "coverage.mode"]
     .map(k => ({ ...FIELD_BY_KEY[k], t: isBoolField(FIELD_BY_KEY[k]) ? "bool" : FIELD_BY_KEY[k].t })),
 ];
 

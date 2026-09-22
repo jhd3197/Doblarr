@@ -33,10 +33,7 @@ from pathlib import Path
 
 from .artifacts import digest, matches, record, stamp
 from .cues import (
-    FITTED,
     LEVELED,
-    NORMALIZED,
-    TRIMMED,
     Artifact,
     LevelDecision,
     SourceMeasurement,
@@ -195,7 +192,8 @@ def _layout(path: Path) -> tuple[int, int]:
         return 2, 48000
 
 
-def _extract(source: Path, start: float, end: float, dest: Path, cancel=None) -> Path:
+def extract_window(source: Path, start: float, end: float, dest: Path,
+                   cancel=None) -> Path:
     """Pull one source interval as 16-bit mono PCM for measurement."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     run_ffmpeg(["-y", "-ss", f"{max(0.0, start):g}", "-i", str(source),
@@ -304,7 +302,7 @@ def _measure_cue(job, seg, stream: Path, origin: str, contaminated: bool,
     clip = root / f"cue-{seg.cue_id or seg.index}-{inputs}.wav"
     try:
         if not clip.is_file():
-            _extract(stream, start, end, clip, cancel)
+            extract_window(stream, start, end, clip, cancel)
         stats = analyze(clip, config["min_separation_db"])
     except (OSError, wave.Error, EOFError) as exc:
         return SourceMeasurement(state="missing", method=METHOD, source=origin,
@@ -592,9 +590,9 @@ def check_mix(job, options: dict | None = None, cancel=None, work_dir: Path | No
         if seg.level.outcome in ("bypassed", "unavailable") or seg.duration <= 0:
             continue
         try:
-            speech = analyze(_extract(Path(mixed), seg.start, seg.end,
+            speech = analyze(extract_window(Path(mixed), seg.start, seg.end,
                                       root / f"mix-{seg.cue_id or seg.index}.wav", cancel))
-            under = analyze(_extract(Path(bed), seg.start, seg.end,
+            under = analyze(extract_window(Path(bed), seg.start, seg.end,
                                      root / f"bed-{seg.cue_id or seg.index}.wav", cancel))
         except (OSError, wave.Error, EOFError):
             continue
@@ -626,7 +624,9 @@ def _forget(seg) -> None:
         return
     seg.audio.drop_renders((LEVELED,))
     seg.audio.invalidate_after(LEVELED)
-    upstream = (seg.audio.render(FITTED) or seg.audio.render(NORMALIZED)
-                or seg.audio.render(TRIMMED) or seg.audio.raw())
+    # Whichever timing owner ran, and whichever preparation preceded it: ask
+    # the ordering rather than naming the roles, so a role added later cannot
+    # be silently skipped here.
+    upstream = seg.audio.upstream_of(LEVELED)
     if upstream is not None and upstream.path:
         seg.audio_clip = Path(upstream.path)

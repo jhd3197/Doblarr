@@ -208,6 +208,51 @@ class LevelsModel(_Section):
     gains: dict[str, float] = {}    # per-cue manual gain in dB, keyed by cue id
 
 
+class TimingModel(_Section):
+    """Phrase timing and conversation checks (Plan 04).
+
+    `mode` defaults to `whole`, which is whole-clip fitting exactly as earlier
+    releases ran it. `phrase` hands timing to the phrase owner; only one of the
+    two ever runs, because two stretches of one line compound.
+    """
+
+    mode: Literal["whole", "phrase"] = "whole"
+    max_stretch: float = 1.3
+    min_stretch: float = 1.0        # 1.0 = never slow speech down
+    handle_ms: float = 40           # margin kept each side of a phrase
+    min_pause: float = 0.12         # floor for a redistributable gap
+    protect_pause: float = 0.45     # a gap at least this long is performance
+    tail_handle_ms: float = 60
+    anchor_tolerance: float = 0.12
+    min_phrase_seconds: float = 0.15
+    threshold_db: float = 12
+    min_separation_db: float = 10
+    collision_gap: float = 0.0
+    repair: bool = True
+    phrases: dict[str, dict] = {}   # per-cue anchors/pauses set in review
+    overlaps: dict[str, dict] = {}  # per-cue accepted intentional overlaps
+
+
+class CoverageModel(_Section):
+    """Reaction and background coverage (Plan 04).
+
+    `off` keeps the event ledger and changes no audio. Nothing is ever inserted
+    without an explicit decision, and an unsupported engine capability is
+    recorded as asked-for rather than applied.
+    """
+
+    mode: Literal["off", "review", "retain"] = "off"
+    gain_db: float = 0.0
+    handle_ms: float = 80
+    fade_ms: float = 25
+    max_seconds: float = 4.0
+    leakage_check: bool = False
+    generate: bool = False
+    events: dict[str, dict] = {}    # per-event decisions set in review
+    assets: dict[str, str] = {}     # machine-local replacement sounds
+    extra: list[dict] = []          # events a person added by hand
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -225,6 +270,8 @@ class ConfigModel(_Section):
     quality: QualityModel = QualityModel()
     boundaries: BoundariesModel = BoundariesModel()
     levels: LevelsModel = LevelsModel()
+    timing: TimingModel = TimingModel()
+    coverage: CoverageModel = CoverageModel()
 
 
 def validate_config(data: dict) -> None:

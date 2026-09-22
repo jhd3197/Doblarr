@@ -38,7 +38,12 @@ from .errors import DoblarrError
 # measurement, level decision and content-verification records. A version-1
 # payload is read unchanged — the new records simply stay empty, which is their
 # honest state for a run that never produced them.
-CUE_SCHEMA_VERSION = 2
+#
+# 3 (Plan 04): the `phrased` artifact role and the phrase timing plan, plus
+# typed nonverbal events. Older payloads load unchanged: their timing plan is
+# empty (that run fitted whole clips) and their nonverbal rows are migrated
+# from the plain dictionaries Plan 01 wrote.
+CUE_SCHEMA_VERSION = 3
 
 # Time domains. Never mix them in one number.
 SOURCE = "source"    # the original media timeline
@@ -52,17 +57,24 @@ DOMAINS = (SOURCE, TARGET, CLIP, MONTAGE)
 RAW = "raw"
 TRIMMED = "trimmed"        # reversible boundary preparation (Plan 02)
 NORMALIZED = "normalized"  # legacy pre-fit loudness pass (levels.mode="legacy")
-FITTED = "fitted"
+PHRASED = "phrased"        # per-phrase timing recipe (timing.mode="phrase", Plan 04)
+FITTED = "fitted"          # whole-clip timing (timing.mode="whole")
 LEVELED = "leveled"        # post-fit baseline level + performance gain (Plan 03)
 EDGED = "edged"            # protected final edges (Plan 02)
 UNKNOWN = "unknown"
-ROLES = (RAW, TRIMMED, NORMALIZED, FITTED, LEVELED, EDGED, UNKNOWN)
+ROLES = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED, UNKNOWN)
 # Later plans append their own role here; order defines "most processed last".
 # `normalized` stays where Plan 02 put it so a legacy run keeps reproducing
 # exactly what it rendered before; Plan 03's level owner sits after fitting,
 # because a loudness decision made before time-stretching is a decision about
 # audio that no longer exists. Only one of the two ever runs.
-RENDER_ORDER = (RAW, TRIMMED, NORMALIZED, FITTED, LEVELED, EDGED)
+#
+# `phrased` and `fitted` are the same kind of pair for *timing*: whole-clip
+# fitting stretches the line evenly, phrase fitting moves its internal silence
+# and stretches only where it has to, and exactly one of them owns a run. The
+# phrase role sits first so that, in phrase mode, everything downstream reads
+# it through `upstream_of` without knowing which owner produced the timing.
+RENDER_ORDER = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED)
 
 ORIGINS = ("import", "legacy", "split", "merge", "manual")
 DISPOSITIONS = ("open", "accepted", "fixed", "obsolete")
@@ -87,6 +99,38 @@ VERIFY_STATES = ("match", "mismatch", "uncertain", "empty", "unsupported",
 # How a line is meant to be performed. A mode is not a character and never
 # mandates a fixed dB change on its own.
 SPEECH_MODES = ("normal", "thought", "whisper", "shout", "call", "broadcast", "unknown")
+
+# Which owner produced a line's timing, and how the plan ended up.
+TIMING_MODES = ("whole", "phrase", "bypassed", "unknown")
+# `planned` means a recipe exists; `applied` means it was rendered and the
+# output measured. `fallback` is the honest state for a line whose phrase
+# evidence was not good enough and was fitted as one bounded whole.
+TIMING_STATES = ("applied", "planned", "fallback", "infeasible", "bypassed",
+                 "unavailable", "unknown")
+# How a phrase boundary was established. `whole` is the single-phrase fallback.
+PHRASE_METHODS = ("acoustic", "aligned", "manual", "whole", "unknown")
+# A reviewer's anchor is `hard`; anything Doblarr derived on its own is `soft`
+# and may be missed without that being a failure.
+ANCHOR_KINDS = ("hard", "soft")
+ANCHOR_EDGES = ("start", "end")
+# What a gap between two phrases is. Only `padding` may be redistributed.
+PAUSE_KINDS = ("padding", "pause", "hesitation", "breath", "response", "unknown")
+
+# Nonverbal events. `type` is what the evidence says was heard; `unknown` is a
+# real and common answer, because a subtitle tag is not a detector.
+EVENT_TYPES = ("laugh", "sigh", "gasp", "cry", "scream", "cough", "breath",
+               "effort", "applause", "music", "footsteps", "door", "silence",
+               "inaudible", "unknown")
+# A vocal reaction belongs to a person; a background event belongs to the bed.
+EVENT_CATEGORIES = ("vocal", "background", "unknown")
+# What was decided about covering an event. `unresolved` is the default and is
+# never silently upgraded: nothing is injected on a guess.
+EVENT_DECISIONS = ("unresolved", "retain", "replace", "omit", "covered")
+# What actually happened. `covered` means existing audio already carries it.
+EVENT_COVERAGE = ("unresolved", "retained", "replaced", "omitted", "covered",
+                  "unavailable", "unsupported")
+# Where the evidence for an event came from.
+EVENT_EVIDENCE = ("subtitle", "manual", "detector", "unknown")
 
 
 class SchemaError(DoblarrError):
@@ -777,6 +821,427 @@ class Artifact:
 
 
 @dataclass
+class Phrase:
+    """One spoken run inside a take, between two silences it did not invent.
+
+    `clip` is where the phrase sits in the *prepared* take (CLIP domain), which
+    is the only timeline a generated utterance actually has. `source` is the
+    original interval or intervals this phrase is believed to correspond to —
+    it may name several, and it is very often empty, because translated word
+    order does not map onto the original one to one. An empty `source` is
+    "unknown correspondence", never "no correspondence".
+
+    A reviewer's own edits to a line's phrasing live on `Pause.origin` and
+    `Anchor.origin`, not here: they protect a pause or anchor an edge, and
+    drawing phrase boundaries by hand is explicitly outside this plan.
+    """
+
+    phrase_id: str = ""
+    order: int = 0
+    text: str = ""                 # the words believed to be spoken here, when known
+    clip: Span | None = None       # CLIP domain, inside the prepared take
+    source: list[Span] = field(default_factory=list)   # SOURCE domain, possibly empty
+    method: str = "unknown"        # PHRASE_METHODS
+    confidence: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.method not in PHRASE_METHODS:
+            raise SchemaError(f"unknown phrase method {self.method!r}")
+
+    def as_dict(self) -> dict:
+        return {
+            "phrase_id": self.phrase_id,
+            "order": self.order,
+            "text": self.text,
+            "clip": self.clip.as_dict() if self.clip else None,
+            "source": [s.as_dict() for s in self.source],
+            "method": self.method,
+            "confidence": self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Phrase:
+        data = _mapping(data, "phrase")
+        clip = data.get("clip")
+        return cls(
+            phrase_id=_text(data.get("phrase_id")),
+            order=_opt_int(data.get("order"), "phrase order") or 0,
+            text=_text(data.get("text")),
+            clip=Span.from_dict(clip) if clip else None,
+            source=_spans(data.get("source"), "phrase source"),
+            method=_text(data.get("method")) or "unknown",
+            confidence=_opt_float(data.get("confidence"), "phrase confidence"),
+        )
+
+
+@dataclass
+class Anchor:
+    """A time a phrase edge is meant to land on, in the cue's own target window.
+
+    `at` is seconds after the cue start, on the TARGET timeline. A `hard`
+    anchor is a reviewer's instruction and a plan that cannot honour it is
+    infeasible; a `soft` anchor is Doblarr's own suggestion and missing it is
+    reported, not treated as a failure.
+    """
+
+    anchor_id: str = ""
+    phrase_id: str = ""
+    edge: str = "start"            # ANCHOR_EDGES
+    at: float = 0.0                # seconds after the cue start, TARGET domain
+    kind: str = "soft"             # ANCHOR_KINDS
+    tolerance: float = 0.12
+    origin: str = "auto"           # auto | source | review
+    note: str = ""
+    observed: float | None = None  # where the edge actually landed once rendered
+
+    def __post_init__(self) -> None:
+        if self.kind not in ANCHOR_KINDS:
+            raise SchemaError(f"unknown anchor kind {self.kind!r}")
+        if self.edge not in ANCHOR_EDGES:
+            raise SchemaError(f"unknown anchor edge {self.edge!r}")
+        self.at = _finite(self.at, "anchor time")
+        if self.at < 0:
+            raise SchemaError("an anchor must not sit before the cue starts")
+        self.tolerance = abs(_finite(self.tolerance, "anchor tolerance"))
+
+    @property
+    def error(self) -> float | None:
+        """How far the rendered edge missed this anchor, once it is known."""
+        return None if self.observed is None else round(self.observed - self.at, 4)
+
+    def as_dict(self) -> dict:
+        return {"anchor_id": self.anchor_id, "phrase_id": self.phrase_id,
+                "edge": self.edge, "at": self.at, "kind": self.kind,
+                "tolerance": self.tolerance, "origin": self.origin,
+                "note": self.note, "observed": self.observed}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Anchor:
+        data = _mapping(data, "anchor")
+        return cls(
+            anchor_id=_text(data.get("anchor_id")),
+            phrase_id=_text(data.get("phrase_id")),
+            edge=_text(data.get("edge")) or "start",
+            at=_finite(data.get("at", 0.0), "anchor time"),
+            kind=_text(data.get("kind")) or "soft",
+            tolerance=_finite(data.get("tolerance", 0.12), "anchor tolerance"),
+            origin=_text(data.get("origin")) or "auto",
+            note=_text(data.get("note")),
+            observed=_opt_float(data.get("observed"), "observed anchor"),
+        )
+
+
+@dataclass
+class Pause:
+    """A gap between two phrases, and whether it may be shortened.
+
+    Only `padding` is redistributable. A hesitation, a breath and the beat
+    before a reply are performance: they keep their measured length unless a
+    reviewer says otherwise, because removing them is exactly how a fitted line
+    starts sounding rushed.
+    """
+
+    pause_id: str = ""
+    after: str = ""                # phrase_id this gap follows
+    clip: Span | None = None       # the measured gap in the prepared take (CLIP)
+    kind: str = "padding"          # PAUSE_KINDS
+    protected: bool = False
+    origin: str = "auto"           # auto | review
+    planned: float | None = None   # seconds this gap is given in the recipe
+
+    def __post_init__(self) -> None:
+        if self.kind not in PAUSE_KINDS:
+            raise SchemaError(f"unknown pause kind {self.kind!r}")
+
+    @property
+    def measured(self) -> float:
+        return self.clip.duration if self.clip else 0.0
+
+    def as_dict(self) -> dict:
+        return {"pause_id": self.pause_id, "after": self.after,
+                "clip": self.clip.as_dict() if self.clip else None,
+                "kind": self.kind, "protected": self.protected,
+                "origin": self.origin, "planned": self.planned}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Pause:
+        data = _mapping(data, "pause")
+        clip = data.get("clip")
+        return cls(
+            pause_id=_text(data.get("pause_id")),
+            after=_text(data.get("after")),
+            clip=Span.from_dict(clip) if clip else None,
+            kind=_text(data.get("kind")) or "padding",
+            protected=bool(data.get("protected", False)),
+            origin=_text(data.get("origin")) or "auto",
+            planned=_opt_float(data.get("planned"), "planned pause"),
+        )
+
+
+@dataclass
+class TimingPlan:
+    """The recipe that turned one prepared take into its timed derivative.
+
+    It is a *plan plus what happened*: `pieces` is the ordered instruction the
+    renderer followed, and `actual_duration` is what came back out, measured
+    rather than assumed — an atempo factor is a request, not a guarantee.
+
+    `state` separates a rendered plan from one that could not be satisfied.
+    `infeasible` is a real, reviewable outcome: the words do not fit the slot
+    within the bounds, and the answer is a repair or a human decision, not a
+    silently dropped clause.
+    """
+
+    mode: str = "unknown"                 # TIMING_MODES
+    state: str = "unknown"                # TIMING_STATES
+    reason: str = ""
+    planner: str = ""                     # planner name and version
+    phrases: list[Phrase] = field(default_factory=list)
+    anchors: list[Anchor] = field(default_factory=list)
+    pauses: list[Pause] = field(default_factory=list)
+    pieces: list[dict] = field(default_factory=list)   # ordered render instruction
+    onset: float | None = None            # intended audible onset inside the slot
+    slot: float | None = None             # the target window this was planned for
+    planned_duration: float | None = None
+    actual_duration: float | None = None  # measured from the rendered output
+    max_stretch: float = 1.0
+    min_stretch: float = 1.0
+    moved: float = 0.0                    # seconds of padding redistributed
+    protected_kept: float = 0.0           # seconds of protected pause preserved
+    speech_in: float = 0.0                # speech seconds entering the renderer
+    speech_out: float = 0.0               # speech seconds leaving it
+    conflicts: list[dict] = field(default_factory=list)
+    inputs: str = ""                      # processing fingerprint of the exact inputs
+    attempts: int = 0                     # bounded repairs already spent here
+    bypassed: bool = False                # a reviewer asked for no timing edit
+    at: str = ""
+
+    def __post_init__(self) -> None:
+        if self.mode not in TIMING_MODES:
+            raise SchemaError(f"unknown timing mode {self.mode!r}")
+        if self.state not in TIMING_STATES:
+            raise SchemaError(f"unknown timing state {self.state!r}")
+
+    @property
+    def planned(self) -> bool:
+        """Whether this plan describes real work, as opposed to a bypass."""
+        return self.state in ("applied", "planned", "fallback")
+
+    def phrase(self, phrase_id: str) -> Phrase | None:
+        return next((p for p in self.phrases if p.phrase_id == phrase_id), None)
+
+    def as_dict(self) -> dict:
+        return {
+            "mode": self.mode,
+            "state": self.state,
+            "reason": self.reason,
+            "planner": self.planner,
+            "phrases": [p.as_dict() for p in self.phrases],
+            "anchors": [a.as_dict() for a in self.anchors],
+            "pauses": [p.as_dict() for p in self.pauses],
+            "pieces": [dict(piece) for piece in self.pieces],
+            "onset": self.onset,
+            "slot": self.slot,
+            "planned_duration": self.planned_duration,
+            "actual_duration": self.actual_duration,
+            "max_stretch": self.max_stretch,
+            "min_stretch": self.min_stretch,
+            "moved": self.moved,
+            "protected_kept": self.protected_kept,
+            "speech_in": self.speech_in,
+            "speech_out": self.speech_out,
+            "conflicts": [dict(c) for c in self.conflicts],
+            "inputs": self.inputs,
+            "attempts": self.attempts,
+            "bypassed": self.bypassed,
+            "at": self.at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> TimingPlan:
+        data = _mapping(data, "timing plan")
+        return cls(
+            mode=_text(data.get("mode")) or "unknown",
+            state=_text(data.get("state")) or "unknown",
+            reason=_text(data.get("reason")),
+            planner=_text(data.get("planner")),
+            phrases=[Phrase.from_dict(p) for p in _sequence(data.get("phrases"), "phrases")],
+            anchors=[Anchor.from_dict(a) for a in _sequence(data.get("anchors"), "anchors")],
+            pauses=[Pause.from_dict(p) for p in _sequence(data.get("pauses"), "pauses")],
+            pieces=[_mapping(piece, "timing piece")
+                    for piece in _sequence(data.get("pieces"), "timing pieces")],
+            onset=_opt_float(data.get("onset"), "timing onset"),
+            slot=_opt_float(data.get("slot"), "timing slot"),
+            planned_duration=_opt_float(data.get("planned_duration"), "planned duration"),
+            actual_duration=_opt_float(data.get("actual_duration"), "actual duration"),
+            max_stretch=_finite(data.get("max_stretch", 1.0), "max stretch"),
+            min_stretch=_finite(data.get("min_stretch", 1.0), "min stretch"),
+            moved=_finite(data.get("moved", 0.0), "redistributed silence"),
+            protected_kept=_finite(data.get("protected_kept", 0.0), "protected pause"),
+            speech_in=_finite(data.get("speech_in", 0.0), "speech in"),
+            speech_out=_finite(data.get("speech_out", 0.0), "speech out"),
+            conflicts=[_mapping(c, "timing conflict")
+                       for c in _sequence(data.get("conflicts"), "timing conflicts")],
+            inputs=_text(data.get("inputs")),
+            attempts=_opt_int(data.get("attempts"), "timing attempts") or 0,
+            bypassed=bool(data.get("bypassed", False)),
+            at=_text(data.get("at")),
+        )
+
+
+@dataclass
+class NonverbalEvent:
+    """A laugh, a gasp, a door — something heard that nobody says.
+
+    Dropping a cue from synthesis is not the same as knowing nothing was heard
+    there, so every non-spoken cue becomes one of these. The record keeps the
+    original cue text verbatim, because a parser that decided `[gasps]` is a
+    gasp can be wrong and the words are the evidence.
+
+    `decision` is what a person (or a configured policy) asked for; `coverage`
+    is what actually happened. They are separate on purpose: asking for a
+    replacement whose asset is missing leaves `decision="replace"` and
+    `coverage="unavailable"`, which is a visible gap rather than a silent one.
+    """
+
+    event_id: str = ""
+    cue_id: str = ""                # the cue this evidence came from, if any
+    in_mix: bool = False            # whether this event's audio reaches the dub
+    type: str = "unknown"           # EVENT_TYPES
+    category: str = "unknown"       # EVENT_CATEGORIES
+    speaker: str | None = None      # possible speaker; never a proven one
+    text: str = ""                  # the original cue text, unedited
+    source: list[Span] = field(default_factory=list)
+    target: Span | None = None      # where it would be placed in the dub
+    evidence: str = "subtitle"      # EVENT_EVIDENCE
+    confidence: float | None = None
+    decision: str = "unresolved"    # EVENT_DECISIONS
+    coverage: str = "unresolved"    # EVENT_COVERAGE
+    reason: str = ""
+    artifact: Artifact | None = None      # the audio actually placed, if any
+    asset: str = ""                 # a supplied local replacement/patch, if any
+    gain_db: float = 0.0
+    fade_in: float = 0.0
+    fade_out: float = 0.0
+    handle: float = 0.0
+    checks: dict = field(default_factory=dict)   # contamination / duplication evidence
+    findings: list[Finding] = field(default_factory=list)
+    origin: str = "auto"            # auto | manual
+    inputs: str = ""
+    at: str = ""
+
+    def __post_init__(self) -> None:
+        if self.type not in EVENT_TYPES:
+            raise SchemaError(f"unknown nonverbal event type {self.type!r}")
+        if self.category not in EVENT_CATEGORIES:
+            raise SchemaError(f"unknown nonverbal event category {self.category!r}")
+        if self.decision not in EVENT_DECISIONS:
+            raise SchemaError(f"unknown nonverbal decision {self.decision!r}")
+        if self.coverage not in EVENT_COVERAGE:
+            raise SchemaError(f"unknown nonverbal coverage {self.coverage!r}")
+        if self.evidence not in EVENT_EVIDENCE:
+            raise SchemaError(f"unknown nonverbal evidence {self.evidence!r}")
+
+    @property
+    def rendered(self) -> bool:
+        """Whether this event has audio on disk that review can play."""
+        return (self.coverage in ("retained", "replaced") and self.artifact is not None
+                and self.artifact.exists())
+
+    @property
+    def placed(self) -> bool:
+        """Whether this event contributes audio to the dub right now.
+
+        Separate from `rendered` on purpose: `coverage.mode = review`
+        prepares the sound so it can be auditioned next to the scene and
+        leaves it out of the mix until somebody switches the run to
+        `retain`. Hearing a candidate reaction and shipping it are
+        different decisions.
+        """
+        return self.rendered and self.in_mix
+
+    @property
+    def span(self) -> Span | None:
+        return self.source[0] if self.source else None
+
+    def as_dict(self) -> dict:
+        return {
+            "event_id": self.event_id,
+            "cue_id": self.cue_id,
+            "in_mix": self.in_mix,
+            "type": self.type,
+            "category": self.category,
+            "speaker": self.speaker,
+            "text": self.text,
+            "source": [s.as_dict() for s in self.source],
+            "target": self.target.as_dict() if self.target else None,
+            "evidence": self.evidence,
+            "confidence": self.confidence,
+            "decision": self.decision,
+            "coverage": self.coverage,
+            "reason": self.reason,
+            "artifact": self.artifact.as_dict() if self.artifact else None,
+            "asset": self.asset,
+            "gain_db": self.gain_db,
+            "fade_in": self.fade_in,
+            "fade_out": self.fade_out,
+            "handle": self.handle,
+            "checks": dict(self.checks),
+            "findings": [f.as_dict() for f in self.findings],
+            "origin": self.origin,
+            "inputs": self.inputs,
+            "at": self.at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> NonverbalEvent:
+        """Read an event, migrating the plain dictionaries Plan 01 wrote.
+
+        Those rows carried `cue_id`, `type`, `speaker`, `text`, `source` and
+        `coverage="uncovered"`. The old `uncovered` becomes `unresolved`, which
+        is the same claim in this record's vocabulary: nothing was decided, and
+        nothing is known about whether the sound survived.
+        """
+        data = _mapping(data, "nonverbal event")
+        target = data.get("target")
+        artifact = data.get("artifact")
+        kind = _text(data.get("type")) or "unknown"
+        coverage = _text(data.get("coverage")) or "unresolved"
+        cue = _text(data.get("cue_id"))
+        return cls(
+            # A Plan 01 row has no id at all. It gets the one the parser would
+            # derive for the same cue, so the migrated event and a freshly
+            # parsed one are the same event rather than two.
+            event_id=_text(data.get("event_id")) or (event_id(cue, 0) if cue else ""),
+            cue_id=cue,
+            in_mix=bool(data.get("in_mix", False)),
+            type=kind if kind in EVENT_TYPES else "unknown",
+            category=_text(data.get("category")) or "unknown",
+            speaker=_optional_text(data.get("speaker")),
+            text=_text(data.get("text")),
+            source=_spans(data.get("source"), "event source"),
+            target=Span.from_dict(target) if target else None,
+            evidence=_text(data.get("evidence")) or "subtitle",
+            confidence=_opt_float(data.get("confidence"), "event confidence"),
+            decision=_text(data.get("decision")) or "unresolved",
+            coverage="unresolved" if coverage == "uncovered" else coverage,
+            reason=_text(data.get("reason")),
+            artifact=Artifact.from_dict(artifact) if artifact else None,
+            asset=_text(data.get("asset")),
+            gain_db=_finite(data.get("gain_db", 0.0), "event gain"),
+            fade_in=_finite(data.get("fade_in", 0.0), "event fade in"),
+            fade_out=_finite(data.get("fade_out", 0.0), "event fade out"),
+            handle=_finite(data.get("handle", 0.0), "event handle"),
+            checks=_mapping(data.get("checks"), "event checks"),
+            findings=[Finding.from_dict(f)
+                      for f in _sequence(data.get("findings"), "event findings")],
+            origin=_text(data.get("origin")) or "auto",
+            inputs=_text(data.get("inputs")),
+            at=_text(data.get("at")),
+        )
+
+
+@dataclass
 class Take:
     """One generation of a cue. Raw audio is never overwritten by processing."""
 
@@ -1077,6 +1542,31 @@ def derived_cue_id(parents, origin: str, ordinal: int = 0) -> str:
                    "ordinal": int(ordinal)})[:16]
 
 
+def phrase_id(cue: str, order: int) -> str:
+    """Identity of one phrase inside a cue. Stable across re-planning."""
+    return f"{cue}:p{int(order)}"
+
+
+def pause_id(cue: str, order: int) -> str:
+    return f"{cue}:g{int(order)}"
+
+
+def anchor_id(cue: str, phrase: str, edge: str) -> str:
+    return f"{cue}:a{phrase.rsplit(':', 1)[-1]}{edge[:1]}"
+
+
+def event_id(cue: str, ordinal: int = 0) -> str:
+    """Identity of a nonverbal event: where the evidence was found, nothing else.
+
+    Deliberately excludes the cue's text *and* the type it was classified as.
+    Re-parsing the same subtitle must produce the same id, so a coverage
+    decision made in review survives a rerun — and improving the parser, so
+    that `[chuckles]` stops reading as `unknown` and starts reading as a laugh,
+    must not mint a second event and orphan the decision on the first.
+    """
+    return digest({"cue": cue, "ordinal": int(ordinal)})[:16]
+
+
 def take_id(fingerprint: str, attempt: int = 0) -> str:
     return digest({"generation": fingerprint, "attempt": int(attempt)})[:16]
 
@@ -1198,6 +1688,7 @@ def cue_payload(seg) -> dict:
         "measurement": seg.measurement.as_dict(),
         "level": seg.level.as_dict(),
         "verification": seg.verification.as_dict(),
+        "phrasing": seg.phrasing.as_dict(),
         "findings": [f.as_dict() for f in seg.findings],
     }
 
@@ -1221,6 +1712,10 @@ def apply_cue_payload(seg, data: Any) -> None:
     seg.measurement = SourceMeasurement.from_dict(data.get("measurement"))
     seg.level = LevelDecision.from_dict(data.get("level"))
     seg.verification = Verification.from_dict(data.get("verification"))
+    # A version-1 or version-2 payload has no timing plan. Empty is honest: that
+    # run fitted whole clips, and inventing phrases for it would claim evidence
+    # nobody gathered.
+    seg.phrasing = TimingPlan.from_dict(data.get("phrasing"))
     seg.findings = [Finding.from_dict(f) for f in _sequence(data.get("findings"), "findings")]
 
 
@@ -1271,6 +1766,66 @@ def adopt_legacy(seg, script: str) -> None:
     register_unknown_clip(seg)
 
 
+def validate_plan(plan: TimingPlan, where: str = "cue") -> list[dict]:
+    """Structural conflicts in a timing plan, as actionable findings.
+
+    Returns the conflicts rather than raising: contradictory anchors are a
+    review problem with a fix, not a corrupt record. A dangling reference is
+    different — that is a malformed plan and it raises.
+    """
+    known = {p.phrase_id for p in plan.phrases}
+    if len(known) != len(plan.phrases):
+        raise SchemaError(f"{where} has two phrases with the same id")
+    for anchor in plan.anchors:
+        if anchor.phrase_id and anchor.phrase_id not in known:
+            raise SchemaError(
+                f"{where} anchors phrase {anchor.phrase_id}, which it does not have")
+    for pause in plan.pauses:
+        if pause.after and pause.after not in known:
+            raise SchemaError(
+                f"{where} has a pause after phrase {pause.after}, which it does not have")
+    order = {p.phrase_id: p.order for p in plan.phrases}
+    conflicts: list[dict] = []
+    hard = sorted((a for a in plan.anchors if a.kind == "hard"),
+                  key=lambda a: (order.get(a.phrase_id, 0), a.edge != "start"))
+    for previous, current in zip(hard, hard[1:], strict=False):
+        if current.at < previous.at:
+            conflicts.append({
+                "code": "anchor_order",
+                "detail": (f"phrase {current.phrase_id} is anchored at "
+                           f"{current.at:.3f}s, before {previous.phrase_id} at "
+                           f"{previous.at:.3f}s"),
+                "anchors": [previous.anchor_id, current.anchor_id]})
+    if plan.slot:
+        for anchor in hard:
+            if anchor.at > plan.slot:
+                conflicts.append({
+                    "code": "anchor_outside_slot",
+                    "detail": (f"phrase {anchor.phrase_id} is anchored at "
+                               f"{anchor.at:.3f}s, past the {plan.slot:.3f}s window"),
+                    "anchors": [anchor.anchor_id]})
+    return conflicts
+
+
+def validate_events(events, cues=None) -> None:
+    """Fail loudly on duplicate event ids or a reference to a cue that is gone."""
+    seen: set[str] = set()
+    for event in events:
+        if not event.event_id:
+            raise SchemaError("a nonverbal event needs an id")
+        if event.event_id in seen:
+            raise SchemaError(f"duplicate nonverbal event id {event.event_id}")
+        seen.add(event.event_id)
+        if event.artifact is not None and event.coverage == "unresolved":
+            raise SchemaError(
+                f"event {event.event_id} has audio but no coverage decision")
+        if cues is not None and event.cue_id and event.cue_id not in cues:
+            # The cue a reaction was found on is often removed from synthesis —
+            # that is the whole point. The reference is kept as provenance and
+            # is not required to resolve.
+            continue
+
+
 def validate_cues(segments, lineage: dict | None = None) -> None:
     """Fail loudly on duplicate IDs, impossible times or dangling references."""
     seen: set[str] = set()
@@ -1296,6 +1851,12 @@ def validate_cues(segments, lineage: dict | None = None) -> None:
         roles = [a.role for a in seg.audio.renders]
         if len(roles) != len(set(roles)):
             raise SchemaError(f"cue {seg.cue_id} has two artifacts for one role")
+        if seg.audio.render(PHRASED) is not None and seg.audio.render(FITTED) is not None:
+            # Two timing owners for one line means one of them rendered audio
+            # the other then reprocessed. Exactly one owns a run.
+            raise SchemaError(
+                f"cue {seg.cue_id} has both a phrase-fitted and a whole-fitted render")
+        validate_plan(seg.phrasing, f"cue {seg.cue_id}")
     for retired, successors in (lineage or {}).items():
         if retired in seen:
             raise SchemaError(f"cue {retired} is both live and retired")

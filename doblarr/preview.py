@@ -39,7 +39,9 @@ SCENE_GAP_SECONDS = 2.5
 MAX_WINDOW_SECONDS = 90.0
 # Context kept outside the first and last cue so a line does not start abruptly.
 PAD_SECONDS = 0.6
-KINDS = ("source", "dub", "line", "take", "reference")
+# Plan 04 adds the three the coverage review needs: the separated dialogue
+# stem on its own, the bed the dub sits over, and one reaction's own audio.
+KINDS = ("source", "dub", "line", "take", "reference", "vocals", "bed", "event")
 
 
 class PreviewError(RuntimeError):
@@ -111,6 +113,26 @@ def _source_span(chosen) -> dict | None:
     return {"start": round(start, 3), "end": round(end, 3), "domain": "source"}
 
 
+def events_in(job, frame: dict) -> list:
+    """The nonverbal events that fall inside one preview window.
+
+    Matched on *target* time, because the window is what the reviewer is about
+    to hear. An event with no recorded placement is left out of the window
+    rather than pinned to its start: an unplaced event is not at a time yet.
+    """
+    span = frame.get("target") or {}
+    start, end = float(span.get("start", 0.0)), float(span.get("end", 0.0))
+    found = []
+    for event in job.nonverbal:
+        target = event.target
+        if target is None:
+            continue
+        if min(target.end, end) - max(target.start, start) <= 0:
+            continue
+        found.append(event)
+    return sorted(found, key=lambda e: e.target.start)
+
+
 def excerpt(source: Path, start: float, end: float, dest: Path, cancel=None) -> Path:
     """Cut one bounded, browser-playable excerpt, reusing an identical one.
 
@@ -142,7 +164,7 @@ def excerpt(source: Path, start: float, end: float, dest: Path, cancel=None) -> 
 
 
 def resolve(job, segments, kind: str, index: int, *, context: int = 2,
-            bounds=None, take: str = "", root: Path | None = None,
+            bounds=None, take: str = "", event: str = "", root: Path | None = None,
             cancel=None) -> dict:
     """Produce one preview and say exactly what it is.
 
@@ -179,6 +201,37 @@ def resolve(job, segments, kind: str, index: int, *, context: int = 2,
             raise PreviewError("no clone reference was kept for this character")
         return {**frame, "kind": kind, "path": Path(clip), "role": "reference",
                 "label": f"clone reference for {seg.speaker}", "whole_file": True}
+    if kind == "event":
+        # One reaction's own audio, so "does this play once, at the right
+        # moment, at the right level" can be answered without hunting for it
+        # inside the finished mix.
+        found = next((e for e in job.nonverbal if e.event_id == event), None)
+        if found is None:
+            raise PreviewError("that event is not part of this review")
+        if not found.rendered:
+            raise PreviewError(
+                f"this event has no audio: {found.reason or 'nothing was placed for it'}")
+        return {**frame, "kind": kind, "path": Path(found.artifact.path),
+                "role": found.coverage, "event": found.event_id,
+                "label": f"{found.type} ({found.coverage})", "whole_file": True}
+    if kind in ("vocals", "bed"):
+        # The two halves of the separation, over the *target* window, so the
+        # bed under the dub and the voices taken out of it can be heard against
+        # the finished mix at the same position.
+        track = job.vocals if kind == "vocals" else job.background
+        if kind == "bed" and track is not None and track == job.source_audio:
+            raise PreviewError(
+                "separation did not run for this job, so there is no separated bed — "
+                "the original mix is playing under the dub")
+        if not track or not Path(track).is_file():
+            raise PreviewError("that separated stem is not on disk for this job")
+        span = frame["target"]
+        path = excerpt(Path(track), span["start"], span["end"],
+                       root / f"{kind}_{index:04d}", cancel)
+        return {**frame, "kind": kind, "path": path, "domain": "target",
+                "label": ("separated dialogue stem" if kind == "vocals"
+                          else "separated background (estimated)"),
+                "whole_file": False}
     if kind == "source":
         track = job.source_track or job.source_audio
         if not track:
