@@ -7,8 +7,10 @@ import logging
 import threading
 from pathlib import Path
 
-from ..artifacts import read_json, stamp
+from ..artifacts import digest, read_json, stamp
+from ..cues import SOURCE, SourceReference, Span
 from ..discovery import ISO3_TO_ISO2
+from ..errors import DoblarrError
 from ..ffmpeg import run_ffmpeg, run_ffprobe
 from ..models import DubJob
 from ..telemetry import write_json
@@ -46,6 +48,51 @@ def _select_audio_stream(job: DubJob, cancel=None) -> int:
     raise RuntimeError(f"no unambiguous {wanted} audio track in {job.input_file.name}")
 
 
+def _stream_layout(job: DubJob, index: int, cancel=None) -> tuple[str, int | None]:
+    """Channel layout of the selected stream; unknown rather than guessed."""
+    try:
+        data = json.loads(
+            run_ffprobe(
+                [
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a",
+                    "-show_entries",
+                    "stream=index,channels,channel_layout",
+                    "-of",
+                    "json",
+                    str(job.input_file),
+                ],
+                cancel=cancel,
+            )
+        )
+    except (DoblarrError, OSError, ValueError):
+        return "", None
+    for stream in data.get("streams", []):
+        if stream.get("index") == index:
+            channels = stream.get("channels")
+            return str(stream.get("channel_layout") or ""), (
+                int(channels) if isinstance(channels, int) else None)
+    return "", None
+
+
+def _reference(job: DubJob, index: int, duration: int | None, identity: dict,
+               cancel=None) -> SourceReference:
+    layout, channels = _stream_layout(job, index, cancel)
+    return SourceReference(
+        media_key=digest(identity)[:16],
+        media_path=str(job.input_file.resolve()),
+        stream_index=index,
+        language=job.source_lang,
+        channel_layout=layout,
+        channels=channels,
+        extraction_revision=digest({"identity": identity, "version": 1})[:16],
+        time_base=SOURCE,
+        cut=Span(0.0, float(duration), SOURCE) if duration else None,
+    )
+
+
 @stage("extract")
 def run(
     job: DubJob,
@@ -67,6 +114,9 @@ def run(
     index = _select_audio_stream(job, cancel)
     receipt = out.with_suffix(".json")
     identity = {"input": stamp(job.input_file), "stream": index, "duration": duration}
+    # Recorded on every run, cached or not: later stages must be able to say
+    # which track the source evidence came from, not only that a file exists.
+    job.source_reference = _reference(job, index, duration, identity, cancel)
     hit = cached(out, job.input_file, force)
     if hit and read_json(receipt) == identity:
         return hit

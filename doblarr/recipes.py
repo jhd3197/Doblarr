@@ -39,6 +39,7 @@ SETTING_KEYS = (
     "quality.dialogue_lufs",
     "quality.asr",
     "quality.max_retries",
+    "quality.request_budget",
 )
 ENGINE = Literal[
     "chatterbox", "chatterbox_turbo", "qwen", "qwen_custom_voice", "kokoro", "luxtts", "tada"
@@ -202,6 +203,7 @@ class DubRecipe(StrictModel):
         ranges = {
             "dub.max_fit_attempts": (0, 10),
             "quality.max_retries": (0, 10),
+            "quality.request_budget": (0, 10000),
             "dub.background_volume": (0, 4),
             "dub.fallback_volume": (0, 4),
             "dub.duck_threshold": (0, 1),

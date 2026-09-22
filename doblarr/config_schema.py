@@ -151,6 +151,10 @@ class QualityModel(_Section):
     dialogue_lufs: float = -18
     asr: str = "off"
     max_retries: int = 1
+    # Extra provider requests one job may spend across quality retries, timing
+    # repairs and later candidate takes. 0 = counted but never capped, which is
+    # exactly the behavior before the budget existed.
+    request_budget: int = 0
 
 
 class ConfigModel(_Section):

@@ -85,6 +85,7 @@ const TABS = [
     N("quality.dialogue_lufs", "Dialogue loudness (LUFS)"),
     C("quality.asr", "Verify generated words", ["off", "suspicious", "all"], "Speech recognition adds processing time; mismatches are review suggestions."),
     N("quality.max_retries", "Quality retry attempts"),
+    N("quality.request_budget", "Extra speech requests per job", "Shared cap across quality retries and timing repairs. 0 means no cap."),
   ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),

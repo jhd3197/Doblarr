@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..artifacts import digest, matches, record, stamp
 from ..ffmpeg import FFmpegError, run_ffmpeg
+from ..fingerprints import mix as mix_fingerprint
 from ..models import DubJob
 from .common import Plan, cached, dry, stage, work_stem
 from .fit_timing import _duration
@@ -114,6 +115,9 @@ def run(
         "version": 2,
         "mix": [background_volume, fallback_volume, threshold, attack, release],
     }
+    # The mix has its own cache namespace: a bed level or ducking change must
+    # not look like a dialogue-generation change.
+    job.metrics["mix_fingerprint"] = mix_fingerprint(request)
     if hit and matches([out], request, force):
         return hit
 

@@ -11,11 +11,57 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from ..artifacts import digest, matches, read_json, record, stamp
+from ..cues import NORMALIZED, RAW, Artifact, Finding, finding_id, now
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
+from ..fingerprints import processing as processing_fingerprint
+from ..fingerprints import verification as verification_fingerprint
 from ..telemetry import write_json
 
 ACOUSTIC_ISSUES = {"silence", "clipping", "unexpected_duration", "text_mismatch", "repetition"}
+
+# Structured classification for the legacy issue strings. Severity is about
+# consequence; confidence (where a detector can state one) is separate.
+DETECTOR = "clip-checks/1"
+ISSUE_KINDS = {
+    "silence": ("technical", "error"),
+    "clipping": ("technical", "error"),
+    "unexpected_duration": ("timing", "warning"),
+    "text_mismatch": ("content", "warning"),
+    "repetition": ("content", "warning"),
+}
+
+
+def apply_findings(seg, detector: str, inputs: str, observed: list[tuple]) -> None:
+    """Merge this detector's observations into the cue's structured findings.
+
+    A finding is never silently resolved by new audio: when the inputs change,
+    an accepted finding reopens with its history intact, and a code that is no
+    longer reported becomes `obsolete` rather than disappearing.
+    """
+    codes = {code for code, *_ in observed}
+    for found in seg.findings:
+        if found.detector != detector:
+            continue
+        if found.code in codes:
+            if found.inputs != inputs and found.disposition != "open":
+                found.history.append({"at": now(), "from": found.disposition,
+                                      "to": "open", "reason": "inputs changed"})
+                found.disposition = "open"
+            found.inputs = inputs
+        elif found.disposition != "obsolete":
+            found.history.append({"at": now(), "from": found.disposition,
+                                  "to": "obsolete", "reason": "no longer detected"})
+            found.disposition = "obsolete"
+    known = {f.code for f in seg.findings if f.detector == detector}
+    for code, kind, severity, confidence, evidence in observed:
+        if code in known:
+            continue
+        seg.findings.append(Finding(
+            finding_id=finding_id(seg.cue_id, code, detector),
+            code=code, kind=kind, severity=severity, confidence=confidence,
+            scope="render", target=RAW, detector=detector, inputs=inputs,
+            evidence=evidence))
 
 
 def inspect_pcm(path: Path) -> dict:
@@ -67,7 +113,7 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
     receipt = source.with_suffix(".quality.json")
     saved = read_json(receipt)
     if saved.get("request") == request:
-        return saved["issues"], saved["stats"], True
+        return saved["issues"], saved["stats"], True, verification_fingerprint(request)
     try:
         stats = inspect_pcm(source)
     except (wave.Error, EOFError):
@@ -102,13 +148,17 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
         def clean(value):
             return re.sub(r"[\W_]", "", value.casefold())
 
-        if SequenceMatcher(None, clean(text), clean(heard)).ratio() < 0.55:
+        # A low similarity is evidence of a mismatch, not proof of an omission;
+        # the ratio is kept so review can weigh it.
+        ratio = SequenceMatcher(None, clean(text), clean(heard)).ratio()
+        stats["asr_similarity"] = ratio
+        if ratio < 0.55:
             issues.append("text_mismatch")
         words = heard.casefold().split()
         if len(words) > 12 and len(set(words)) / len(words) < 0.3:
             issues.append("repetition")
     write_json(receipt, {"request": request, "issues": issues, "stats": stats})
-    return issues, stats, False
+    return issues, stats, False, verification_fingerprint(request)
 
 
 def run(
@@ -124,6 +174,7 @@ def run(
     pronunciations=None,
     cancel=None,
     dry_run=False,
+    budget=None,
 ):
     if dry_run or not enabled:
         return
@@ -134,12 +185,25 @@ def run(
         for attempt in range(attempts + 1):
             if cancel is not None and cancel.is_set():
                 raise JobCancelled("cancelled during clip checks")
-            issues, stats, hit = check_clip(seg, job.target_lang, vb, asr, pronunciations, cancel)
+            issues, stats, hit, checked = check_clip(
+                seg, job.target_lang, vb, asr, pronunciations, cancel)
             key = "quality_cache_hits" if hit else "quality_checked"
             job.metrics[key] = job.metrics.get(key, 0) + 1
             seg.issues = [i for i in seg.issues if i not in ACOUSTIC_ISSUES] + issues
+            apply_findings(seg, DETECTOR, checked, [
+                (code, *ISSUE_KINDS.get(code, ("technical", "warning")),
+                 stats.get("asr_similarity") if code == "text_mismatch" else None,
+                 dict(stats))
+                for code in issues
+            ])
             retryable = set(issues) - {"unexpected_duration"}
             if not retryable or attempt >= attempts or regenerate is None:
+                break
+            # Retries share one budget with timing repairs and (later) extra
+            # candidates, so nested stages cannot multiply provider requests.
+            if budget is not None and not budget.charge("quality_retry"):
+                job.metrics["quality_retries_refused"] = (
+                    job.metrics.get("quality_retries_refused", 0) + 1)
                 break
             seg.revision += 1
             if checkpoint:
@@ -147,7 +211,10 @@ def run(
             regenerate(seg)
             job.metrics["quality_retries"] = job.metrics.get("quality_retries", 0) + 1
         if normalize and "silence" not in issues:
-            source = Path(seg.audio_clip)
+            # Always normalize from the immutable raw take: reprocessing an
+            # already normalized file would accumulate gain run after run.
+            raw = seg.audio.raw()
+            source = Path(raw.path) if raw and raw.exists() else Path(seg.audio_clip)
             request = {"source": stamp(source), "lufs": float(dialogue_lufs), "version": 1}
             dest = source.parent / "normalized" / f"{source.stem}.{digest(request)[:12]}.wav"
             if not matches([dest], request):
@@ -172,5 +239,17 @@ def run(
                 )
                 temp.replace(dest)
                 record([dest], request)
+            seg.audio.put_render(Artifact(
+                role=NORMALIZED,
+                path=str(dest),
+                # Identity of the processing, not of this machine's copy of it:
+                # the generation it came from plus the settings applied. The
+                # on-disk receipt still keys on the file, as it always has.
+                fingerprint=processing_fingerprint({
+                    "input": raw.fingerprint if raw else "",
+                    "lufs": float(dialogue_lufs), "version": 1}),
+                derived_from=RAW if raw else "",
+                bytes=dest.stat().st_size if dest.exists() else None,
+            ))
             seg.audio_clip = dest
     job.metrics["quality_flags"] = sum(bool(s.issues) for s in job.segments)

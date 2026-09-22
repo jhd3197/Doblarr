@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..artifacts import read_json
 from ..config import Config
+from ..cues import check_schema
 from ..errors import ForbiddenError, NotFoundError
 from ..events import EventBus
 from ..jobs import JobStore, Worker
@@ -35,6 +36,7 @@ class JobCreateIn(BaseModel):
 class LineEditIn(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     index: int = Field(ge=0)
+    cue: str | None = Field(default=None, max_length=64)  # stable cue id, when known
     text: str | None = Field(default=None, min_length=1, max_length=10000)
     start: float | None = Field(default=None, ge=0)
     end: float | None = Field(default=None, gt=0)
@@ -48,6 +50,9 @@ class ReviewEditsIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     edits: list[LineEditIn] = Field(min_length=1, max_length=2000)
     use_updated_knowledge: bool = False  # default: keep the run's frozen rule snapshot
+    # The review snapshot these edits were made against. Omitted by older
+    # clients, whose edits are resolved against their own snapshot as before.
+    base_revision: str | None = Field(default=None, max_length=64)
 
 
 def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus) -> APIRouter:
@@ -219,14 +224,46 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
     def job_report(job_id: str):
         return artifact(job_id, "report_file")[1]
 
+    def _redact_cue(row):
+        """Keep provenance, drop machine-local paths, exactly as for audio_clip."""
+        cue = row.get("cue")
+        if not isinstance(cue, dict):
+            # A pre-schema review snapshot. It is shown as what it is — a legacy
+            # row with one clip of unproven role — and is never given a
+            # fabricated cue id, so an edit from it still resolves by index
+            # against its own snapshot.
+            row["cue"] = {
+                "cue_id": "",
+                "lineage": {"origin": "legacy", "legacy_index": row.get("index")},
+                "source": {"spans": []},
+                "placement": {},
+                "audio": {"takes": [], "selection": None,
+                          "renders": [{"role": "unknown", "proven": False,
+                                       "available": bool(row.get("has_audio"))}]},
+                "findings": [],
+            }
+            return
+        for take in cue.get("audio", {}).get("takes", []):
+            raw = take.get("raw")
+            if isinstance(raw, dict):
+                raw["available"] = bool(_allowed_path(raw.get("path") or "")
+                                        and Path(raw["path"]).is_file())
+                raw.pop("path", None)
+        for render in cue.get("audio", {}).get("renders", []):
+            render["available"] = bool(_allowed_path(render.get("path") or "")
+                                       and Path(render["path"]).is_file())
+            render.pop("path", None)
+
     @api.get("/api/jobs/{job_id}/review")
     def job_review(job_id: str):
         job, data = artifact(job_id, "review_file")
+        check_schema(data.get("cue_schema"), "review snapshot")
         for row in data["segments"]:
             clip = _allowed_path(row["audio_clip"]) if row.get("audio_clip") else None
             row["has_audio"] = bool(clip and clip.is_file())
             row.pop("audio_clip", None)
             row.pop("words", None)
+            _redact_cue(row)
         effective = config.with_overrides(job.overrides or {})
         return {
             **data,
@@ -252,8 +289,15 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
     @api.post("/api/jobs/{job_id}/review")
     def queue_review(job_id: str, body: ReviewEditsIn):
         original, data = artifact(job_id, "review_file")
+        check_schema(data.get("cue_schema"), "review snapshot")
         if original.status in {"queued", "running"}:
             raise HTTPException(409, "Wait for the job to stop before editing")
+        if body.base_revision and body.base_revision != data.get("revision"):
+            raise HTTPException(
+                409,
+                "This review has changed since you opened it. Reload it so your "
+                "edits apply to the current lines.",
+            )
         rows = {s["index"]: s for s in data["segments"]}
         effective = config.with_overrides(original.overrides or {})
         edits = copy.deepcopy(effective["dub"].get("line_edits", {}))
@@ -263,7 +307,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 raise HTTPException(422, "Unknown or duplicate line index")
             seen.add(patch.index)
             row = rows[patch.index]
-            changes = patch.model_dump(exclude_none=True, exclude={"index", "regenerate"})
+            cue_id = (row.get("cue") or {}).get("cue_id") or ""
+            if patch.cue and cue_id and patch.cue != cue_id:
+                raise HTTPException(409, "This line has changed identity; reload the review")
+            changes = patch.model_dump(
+                exclude_none=True, exclude={"index", "regenerate", "cue"})
             if "text" in changes and not changes["text"].strip():
                 raise HTTPException(422, "Dialogue cannot be blank; use Exclude instead")
             if changes.get("end", row["end"]) <= changes.get("start", row["start"]):
@@ -278,6 +326,10 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 "revision": row.get("revision", 0),
             }.items():
                 edit.setdefault(key, value)
+            if cue_id:
+                # Pin the edit to the cue, not the position: a later split or
+                # merge must raise a conflict instead of moving the edit.
+                edit["cue"] = cue_id
             edit.update(changes)
             if patch.regenerate:
                 edit["revision"] = max(edit.get("revision", 0), row.get("revision", 0)) + 1

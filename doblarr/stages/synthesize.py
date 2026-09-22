@@ -15,8 +15,19 @@ from pathlib import Path
 
 from ..artifacts import digest, read_json, stamp
 from ..clients.voicebox import GenerationFailed, VoiceboxClient
+from ..cues import (
+    FITTED,
+    NORMALIZED,
+    RAW,
+    Artifact,
+    Selection,
+    Take,
+    now,
+    take_id,
+)
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
+from ..fingerprints import generation as generation_fingerprint
 from ..models import DubJob, Speaker
 from ..telemetry import write_json
 from .common import Plan, dry, stage, work_stem
@@ -131,6 +142,50 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel):
         spk.voicebox_profile_id = pid
         return
     raise RuntimeError(f"no clean single-speaker reference for {spk.label}; assign a preset voice")
+
+
+def _register_take(seg, signature: dict, dest: Path, state: str) -> Take:
+    """Record the raw generation for this cue and select it.
+
+    The raw file is the one immutable input every later stage reprocesses from;
+    normalization and timing register their own derivatives instead of
+    overwriting it. Selecting a different take invalidates those derivatives so
+    a resume cannot mix a new take with an old cue's processed audio.
+    """
+    fingerprint = generation_fingerprint(signature)
+    identifier = take_id(fingerprint)
+    take = seg.audio.take(identifier)
+    raw = Artifact(
+        role=RAW,
+        path=str(dest),
+        fingerprint=fingerprint,
+        duration=None,
+        bytes=dest.stat().st_size if dest.exists() else None,
+    )
+    if take is None:
+        take = Take(
+            take_id=identifier,
+            fingerprint=fingerprint,
+            engine=signature.get("engine") or "",
+            model=signature.get("model_size"),
+            profile=signature.get("profile"),
+            voice_revision=str(signature.get("revision") or ""),
+            text=signature.get("text") or "",
+            direction=signature.get("delivery") or "",
+            seed=signature.get("seed"),
+            line_revision=int(signature.get("line_revision") or 0),
+            created_at=now(),
+        )
+        seg.audio.takes.append(take)
+    take.state = state
+    take.raw = raw
+    previous = seg.audio.selection.take_id if seg.audio.selection else None
+    if previous != identifier:
+        seg.audio.selection = Selection(take_id=identifier, reason="auto",
+                                        previous=previous, at=now())
+        # Derived audio belonged to the previous take; the raw takes stay.
+        seg.audio.drop_renders((NORMALIZED, FITTED))
+    return take
 
 
 @stage("synthesize")
@@ -266,6 +321,7 @@ def run(
             and saved.get("request") == signature
             and saved.get("sha256") == hashlib.sha256(dest.read_bytes()).hexdigest()
         ):
+            _register_take(seg, signature, dest, "reused")
             seg.audio_clip = dest
             count("tts_cache_hits")
             log.info("  line %d/%d kept (already synthesized)", position, total)
@@ -313,6 +369,7 @@ def run(
             )
         )
         temp.replace(receipt)
+        _register_take(seg, signature, dest, "generated")
         seg.audio_clip = dest
         log.info("  line %d/%d done", position, total)
 

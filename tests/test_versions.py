@@ -57,3 +57,34 @@ def test_modified_saved_media_is_never_silently_overwritten(tmp_path):
     job.output_file = working_output
     with pytest.raises(ValueError, match="refusing to overwrite"):
         preserve_version(job, config)
+
+
+def test_cue_provenance_is_recorded_without_changing_existing_version_ids(tmp_path):
+    from doblarr.artifacts import digest
+    from doblarr.cues import RAW, Artifact, Selection, Take
+    from doblarr.versions import file_hash as hash_file
+
+    job, config, _ = setup_job(tmp_path)
+    seg = job.segments[0]
+    seg.audio.takes.append(Take(take_id="t1", fingerprint="gen-1", engine="tone",
+                                raw=Artifact(role=RAW, path=str(tmp_path / "raw.wav"),
+                                             fingerprint="gen-1")))
+    seg.audio.selection = Selection(take_id="t1")
+    manifest = preserve_version(job, config)
+
+    # The identity digest keeps its pre-Plan-01 shape, so versions already on
+    # disk are not reinterpreted or forked by the new provenance.
+    identity = {k: manifest[k] for k in
+                ("schema_version", "translation_id", "output_sha256", "source_sha256",
+                 "settings", "voices", "kind", "cast")}
+    assert manifest["version_id"] == digest(identity)
+    assert "cues" not in identity and "cue_schema" not in identity
+
+    assert manifest["cue_schema"] == 1
+    cue = manifest["cues"][0]
+    assert cue["index"] == 0 and cue["cue_id"] == seg.cue_id
+    assert cue["audio"]["selection"]["take_id"] == "t1"
+    # Manifests travel: they carry roles and fingerprints, never local paths.
+    assert "path" not in cue["audio"]["takes"][0]["raw"]
+    assert cue["audio"]["takes"][0]["raw"]["fingerprint"] == "gen-1"
+    assert hash_file(job.output_file) == manifest["output_sha256"]

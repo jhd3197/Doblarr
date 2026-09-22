@@ -121,3 +121,6 @@ quality:
   dialogue_lufs: -18
   asr: "off"                     # off | suspicious | all (adds recognition cost)
   max_retries: 1
+  # Extra speech requests one job may spend in total across quality retries and
+  # timing repairs. 0 = no cap (counted only), which matches earlier releases.
+  request_budget: 0

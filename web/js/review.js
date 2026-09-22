@@ -48,10 +48,25 @@ export function createReview({ onQueued }) {
       <button type="button" class="btn btn-ghost" id="reviewFixTerm">Improve regional wording</button>
       <button type="button" class="btn btn-ghost" id="reviewSaveMemory">Save translation for reuse</button></div>
       <p class="hint">Translation: ${esc(row.translation_provenance?.method || 'legacy')} · ${esc(row.translation_provenance?.reason || 'No recorded provenance')}</p>
+      <p class="hint">${provenance(row)}</p>
       <div id="reviewCorrection" class="review-correction"></div>`;
     editor.querySelectorAll('input,textarea,select').forEach(f => { f.disabled = !data.editable; });
     wireCorrection(row);
     renderList();
+  }
+
+  // What this line actually is and what it was rendered from. Unknown stays
+  // visible as unknown; it is not the same as "nothing to report".
+  function provenance(row) {
+    const cue = row.cue || {};
+    const source = (cue.source?.spans || [])
+      .map(s => `${clock(s.start)}–${clock(s.end)}`).join(', ') || 'unrecorded';
+    const takes = cue.audio?.takes?.length || 0;
+    const rendered = (cue.audio?.renders || []).slice(-1)[0];
+    const role = rendered ? rendered.role : (cue.audio?.takes?.length ? 'raw' : 'none');
+    const proven = rendered && rendered.proven === false ? ' (unverified role)' : '';
+    return `Cue ${esc(cue.cue_id || 'unassigned')} · source ${esc(source)} · `
+      + `${takes} take${takes === 1 ? '' : 's'} · rendered from ${esc(role)}${proven}`;
   }
 
   function wireCorrection(row) {
@@ -76,7 +91,7 @@ export function createReview({ onQueued }) {
             try {
               await api(`jobs/${jobId}/review`, { method: 'POST', json: {
                 edits: affected.map(index => ({ index, regenerate: true })),
-                use_updated_knowledge: true,
+                use_updated_knowledge: true, base_revision: data.revision,
               } });
               data.editable = false;
               box.innerHTML = '<p class="hint">Queued with the updated knowledge. Unchanged clips will be reused.</p>';
@@ -121,7 +136,7 @@ export function createReview({ onQueued }) {
   function collect() {
     const row = data.segments.find(s => s.index === selected);
     if (!row) return;
-    const patch = { index: selected, text: $('reviewText').value,
+    const patch = { index: selected, cue: row.cue?.cue_id || undefined, text: $('reviewText').value,
       start: Number($('reviewStart').value), end: Number($('reviewEnd').value),
       voice: $('reviewVoice').value, delivery: $('reviewDelivery').value,
       regenerate: $('reviewRegenerate').checked, exclude: $('reviewExclude').checked };
@@ -157,6 +172,7 @@ export function createReview({ onQueued }) {
     try {
       await api(`jobs/${jobId}/review`, { method: 'POST', json: {
         edits, use_updated_knowledge: $('reviewUpdatedKnowledge').checked,
+        base_revision: data.revision,
       } });
       pending.clear(); data.editable = false; select(selected);
       status.textContent = 'Queued. Unchanged clips will be reused. Close to follow progress.';

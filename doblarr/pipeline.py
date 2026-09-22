@@ -8,8 +8,10 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from .artifacts import digest, media_work
+from .budget import RequestBudget
 from .clients.translator import build_translator
 from .config import Config
+from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
@@ -131,6 +133,10 @@ def run_job(
     )
     seg_limit = config["dub"].get("segment_limit")
     teaser_s = int(config["dub"].get("teaser_minutes", 10)) * 60 if job.kind == "tease" else None
+    # One allowance for every stage that may ask the provider for more audio —
+    # quality retries, timing repairs and, later, extra candidate takes. 0 keeps
+    # the historical behavior (counted, never capped).
+    budget = RequestBudget(config["quality"].get("request_budget", 0), cancel_event)
 
     log.info("=== Doblarr %s job: %s ===", job.kind, job.summary())
 
@@ -195,7 +201,7 @@ def run_job(
         if dry_run or not edits:
             return
         if not load_script(job, effective_work, force):
-            apply_edits(job, edits)
+            apply_edits(job, edits, lineage=job.cue_lineage)
             save_script(job, effective_work)
 
     def _synthesize(segments=None):
@@ -244,6 +250,7 @@ def run_job(
     def _quality(segments=None, retry=True):
         target = job if segments is None else replace(job, segments=segments)
         options = dict(config.get("quality", {}))
+        options.pop("request_budget", None)  # owned by the shared budget above
         options["max_retries"] = options.get("max_retries", 1) if retry else 0
         quality.run(
             target,
@@ -253,6 +260,7 @@ def run_job(
             regenerate=lambda seg: _synthesize([seg]),
             checkpoint=lambda: save_script(job, effective_work),
             pronunciations=pronunciations,
+            budget=budget,
             **options,
         )
 
@@ -272,6 +280,7 @@ def run_job(
             regenerate=_regenerate,
             checkpoint=lambda: save_script(job, effective_work),
             max_attempts=config["dub"].get("max_fit_attempts", 2),
+            budget=budget,
         )
         if not dry_run:
             save_script(job, effective_work)
@@ -379,13 +388,17 @@ def run_job(
             with report.stage("save_version"):
                 preserve_version(job, config, cast=cast_holder["cast"])
     except JobCancelled:
+        job.metrics["request_budget"] = budget.snapshot()
         report.finish("cancelled")
         raise
     except BaseException:
         report.finish("failed")
         raise
     finally:
+        job.metrics["request_budget"] = budget.snapshot()
         if not dry_run and job.segments:
+            ensure_identity(job)
+            validate_cues(job.segments, job.cue_lineage)
             write_review(job, config.work_dir)
     report.finish()
 

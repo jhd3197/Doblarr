@@ -13,6 +13,7 @@ import logging
 import os
 from typing import Any
 
+from ..cues import SOURCE, Span, split_cue
 from ..model_pool import model as pooled_model
 from ..models import DubJob, Segment, Speaker
 from .common import DryRunPlan, dry, stage
@@ -84,17 +85,28 @@ def _assign_speakers(job: DubJob, diarization) -> None:
                     groups.append((label, []))
                 groups[-1][1].append(word)
             if len(groups) > 1:
-                for label, words in groups:
-                    split.append(
-                        Segment(
-                            0,
-                            words[0]["start"],
-                            words[-1]["end"],
-                            " ".join(w["word"].strip() for w in words),
-                            speaker=label,
-                            words=words,
-                        )
+                # A real split: children get fresh IDs with the parent recorded
+                # as lineage, and the parent is retired so a stale edit naming
+                # it raises a conflict instead of landing on one arbitrary half.
+                children = [
+                    Segment(
+                        0,
+                        words[0]["start"],
+                        words[-1]["end"],
+                        " ".join(w["word"].strip() for w in words),
+                        speaker=label,
+                        words=words,
                     )
+                    for label, words in groups
+                ]
+                for child in children:
+                    child.source.spans = [Span(child.start, child.end, SOURCE)]
+                    child.source.speaker = child.speaker
+                    child.source.method = seg.source.method
+                    child.source.word_domain = SOURCE
+                    child.source.word_method = seg.source.word_method
+                split_cue(job, seg, children)
+                split.extend(children)
                 continue
         split.append(seg)
     if len(split) != len(job.segments):

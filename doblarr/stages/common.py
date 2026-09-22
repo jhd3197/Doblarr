@@ -22,6 +22,17 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ..artifacts import read_json, stamp
+from ..cues import (
+    CUE_SCHEMA_VERSION,
+    SourceReference,
+    adopt_legacy,
+    apply_cue_payload,
+    check_schema,
+    cue_payload,
+    ensure_identity,
+    script_ref,
+    validate_cues,
+)
 
 
 class DryRunPlan:
@@ -85,7 +96,15 @@ def save_script(job, work_dir: Path) -> Path:
     them by profile name, so a reset voicebox server can't poison the cache.
     """
     p = script_path(job, work_dir)
+    ensure_identity(job)
+    validate_cues(job.segments, job.cue_lineage)
     payload = {
+        "cue_schema": CUE_SCHEMA_VERSION,
+        "script_ref": job.script_ref,
+        "source_reference": (job.source_reference.as_dict()
+                             if job.source_reference else None),
+        "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
+        "nonverbal": job.nonverbal,
         "transcription_options": job.transcription_options,
         "translation_options": job.translation_options,
         "audio": stamp(job.source_audio),
@@ -105,7 +124,8 @@ def save_script(job, work_dir: Path) -> Path:
              "tts_text": s.tts_text, "applied_rules": s.applied_rules,
              "translation_provenance": s.translation_provenance,
              "memory_context": s.memory_context,
-             "text_translated": s.text_translated}
+             "text_translated": s.text_translated,
+             "cue": cue_payload(s)}
             for s in job.segments
         ],
     }
@@ -124,6 +144,7 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     if cached(p, job.input_file, force) is None:
         return None
     payload = read_json(p)
+    check_schema(payload.get("cue_schema"), "script cache")
     if payload.get("transcription_options", {}) != job.transcription_options:
         return None
     if payload.get("audio") != stamp(job.source_audio):
@@ -151,12 +172,47 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
     job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}
     job.script_is_target = bool(payload.get("script_is_target"))
     job.script_lang = payload.get("script_lang")
+    _restore_cues(job, payload)
     if payload.get("translation_options", {}) != job.translation_options:
         for seg in job.segments:
             if not job.script_is_target or job.translation_options.get("adapt_region"):
                 seg.text_translated = None
                 seg.translation_provenance = {}
     return p
+
+
+def _restore_cues(job, payload: dict) -> None:
+    """Restore typed cue records, migrating a pre-schema snapshot deterministically.
+
+    A snapshot without cue records gets identities derived from the script it
+    was made from, so repeating the migration always produces the same cue IDs.
+    Its stored clip is registered as an `unknown` artifact: a saved clip may
+    already be normalized or time-fitted, and labelling it the raw generation
+    would let a later stage reprocess processed audio.
+    """
+    saved = payload.get("identity") or {}
+    job.script_ref = payload.get("script_ref") or script_ref(
+        saved.get("input") or job.input_file,
+        saved.get("source_lang") or job.source_lang,
+        saved.get("subtitles"),
+    )
+    reference = payload.get("source_reference")
+    if reference:
+        job.source_reference = SourceReference.from_dict(reference)
+    job.cue_lineage = {str(k): [str(c) for c in v]
+                       for k, v in (payload.get("cue_lineage") or {}).items()}
+    job.nonverbal = list(payload.get("nonverbal") or [])
+    for seg, row in zip(job.segments, payload["segments"], strict=True):
+        record = row.get("cue")
+        if record:
+            apply_cue_payload(seg, record)
+        else:
+            adopt_legacy(seg, job.script_ref)
+        current = seg.audio.current()
+        if current and current.path:
+            seg.audio_clip = Path(current.path)
+    ensure_identity(job)
+    validate_cues(job.segments, job.cue_lineage)
 
 
 def stage(name: str):

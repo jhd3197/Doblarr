@@ -18,9 +18,12 @@ import threading
 import wave
 from pathlib import Path
 
+from ..cues import FITTED, NORMALIZED, Artifact
 from ..ffmpeg import run_ffmpeg, run_ffprobe
+from ..fingerprints import processing as processing_fingerprint
 from ..models import DubJob, Segment
 from .common import Plan, cached, dry, stage
+from .quality import apply_findings
 
 log = logging.getLogger("doblarr.fit_timing")
 
@@ -65,6 +68,34 @@ def _atempo_chain(factor: float) -> str:
     return ",".join(parts)
 
 
+DETECTOR = "fit-timing/1"
+
+
+def _register_fit(seg, dest: Path, actual: float, factor: float) -> None:
+    """Record the time-fitted derivative and the immutable input it came from."""
+    upstream = seg.audio.render(NORMALIZED) or seg.audio.raw()
+    request = {"input": upstream.fingerprint if upstream else "",
+               "factor": round(factor, 4), "slot": seg.duration, "version": 1}
+    seg.audio.put_render(Artifact(
+        role=FITTED,
+        path=str(dest),
+        fingerprint=processing_fingerprint(request),
+        derived_from=upstream.role if upstream else "",
+        duration=actual / factor if factor else actual,
+        bytes=dest.stat().st_size if dest.exists() else None,
+    ))
+
+
+def _record_timing_findings(seg, actual: float, factor: float) -> None:
+    observed = []
+    for code in ("timing_overflow", "timing_repair_failed"):
+        if code in seg.issues:
+            observed.append((code, "timing", "warning", None,
+                             {"clip_seconds": actual, "slot_seconds": seg.duration,
+                              "stretch": round(factor, 4)}))
+    apply_findings(seg, DETECTOR, f"{actual:.4f}/{seg.duration:.4f}/{factor:.4f}", observed)
+
+
 @stage("fit_timing")
 def run(
     job: DubJob,
@@ -77,6 +108,7 @@ def run(
     regenerate=None,
     checkpoint=None,
     max_attempts=2,
+    budget=None,
 ) -> Plan | None:
     if not enabled:
         log.info("fit_timing disabled")
@@ -95,6 +127,7 @@ def run(
         return None
 
     plan: list[tuple[Segment, Path, float, float]] = []  # seg, dest, actual, factor
+    measured: list[tuple[Segment, float, float]] = []     # seg, actual, factor
     for s, src in clips:
         s.issues = [i for i in s.issues if i not in {"timing_overflow", "timing_repair_failed"}]
         if s.duration <= 0:
@@ -106,11 +139,17 @@ def run(
             for _ in range(max(0, min(5, int(max_attempts)))):
                 if actual <= s.duration * 1.15:
                     break
+                # One charge covers the rewrite request and the regeneration it
+                # triggers; the budget is shared with quality retries.
+                if budget is not None and not budget.charge("timing_repair"):
+                    job.metrics["timing_repairs_refused"] = (
+                        job.metrics.get("timing_repairs_refused", 0) + 1)
+                    break
                 current = s.text_translated or s.text_src
-                budget = max(1, int(len(current) * s.duration / actual * 0.95))
+                char_budget = max(1, int(len(current) * s.duration / actual * 0.95))
                 try:
                     calls_before = getattr(translator, "provider_calls", None)
-                    shorter = translator.shorten(current, job.target_lang, budget)
+                    shorter = translator.shorten(current, job.target_lang, char_budget)
                 except TranslationError:
                     s.issues.append("timing_repair_failed")
                     break
@@ -136,12 +175,19 @@ def run(
                 src = Path(s.audio_clip)
                 actual = _duration(src, cancel=cancel)
         if actual <= s.duration * FIT_SLACK:
+            measured.append((s, actual, 1.0))
             continue
         factor = min(actual / s.duration, MAX_STRETCH)
         if actual / factor > s.duration * FIT_SLACK:
             s.issues.append("timing_overflow")
         dest = src.parent / "fit" / f"{src.stem}.{factor:.4f}.wav"
+        measured.append((s, actual, factor))
         plan.append((s, dest, actual, factor))
+
+    # Every measured clip updates its findings, so a cue that now fits retires
+    # its old overflow instead of leaving a stale one open.
+    for s, actual, factor in measured:
+        _record_timing_findings(s, actual, factor)
 
     if not plan:
         log.info("fit_timing: every clip fits its slot")
@@ -152,6 +198,7 @@ def run(
     for s, dest, actual, factor in plan:
         assert s.audio_clip is not None
         if cached(dest, Path(s.audio_clip), force):
+            _register_fit(s, dest, actual, factor)
             s.audio_clip = dest
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -174,6 +221,7 @@ def run(
             cancel=cancel,
         )
         temp.replace(dest)
+        _register_fit(s, dest, actual, factor)
         if actual > s.duration * MAX_STRETCH * FIT_SLACK:
             over = actual / MAX_STRETCH - s.duration
             nxt = next((t for t in by_start if t.start >= s.end), None)

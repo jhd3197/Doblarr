@@ -15,18 +15,24 @@ test('review edits one line, validates timing, and queues only the change', asyn
       queued = route.request().postDataJSON();
       return route.fulfill({ json: { ok: true, job: { id: 'next' } } });
     }
-    return route.fulfill({ json: { title: 'The Green Gathering', flagged: 1, editable: true, segments: [
-      { index: 0, start: 192.1, end: 194.7, speaker: 'Ginko', text_src: 'Someone is coming.',
-        text_translated: 'Alguien viene hacia nosotros.', has_audio: true, issues: ['timing_overflow'] },
-      { index: 1, start: 197, end: 199.4, speaker: 'Shinra', text_src: 'I see.',
-        text_translated: 'Entiendo.', has_audio: false, issues: [] },
-    ] } });
+    return route.fulfill({ json: { title: 'The Green Gathering', flagged: 1, editable: true,
+      cue_schema: 1, revision: 'rev-1', segments: [
+        { index: 0, start: 192.1, end: 194.7, speaker: 'Ginko', text_src: 'Someone is coming.',
+          text_translated: 'Alguien viene hacia nosotros.', has_audio: true, issues: ['timing_overflow'],
+          cue: { cue_id: 'cue-aaa', source: { spans: [{ start: 192.1, end: 194.7, domain: 'source' }] },
+            audio: { takes: [{ take_id: 't1' }], renders: [{ role: 'fitted', proven: true, available: true }] } } },
+        { index: 1, start: 197, end: 199.4, speaker: 'Shinra', text_src: 'I see.',
+          text_translated: 'Entiendo.', has_audio: false, issues: [],
+          cue: { cue_id: 'cue-bbb', source: { spans: [] }, audio: { takes: [], renders: [] } } },
+      ] } });
   });
   await page.goto('/dubs');
   const open = page.getByRole('button', { name: 'Review (1)' });
   await open.click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Line 1' })).toBeVisible();
+  // Provenance is visible: which cue this is, its source interval and what was rendered.
+  await expect(page.getByText(/Cue cue-aaa .* 1 take .* rendered from fitted/)).toBeVisible();
   await page.getByLabel('Dubbed dialogue').fill('Alguien viene.');
   await page.getByLabel('Generate a new take').check();
   await page.getByLabel('Start (seconds)').fill('200');
@@ -43,7 +49,9 @@ test('review edits one line, validates timing, and queues only the change', asyn
   await page.getByRole('button', { name: 'Render 1 changed line', exact: true }).click();
   await expect(page.locator('#reviewStatus')).toContainText('Queued.');
   expect(queued.edits).toHaveLength(1);
-  expect(queued.edits[0]).toMatchObject({ index: 0, text: 'Alguien viene.', regenerate: true });
+  expect(queued.edits[0]).toMatchObject({ index: 0, cue: 'cue-aaa', text: 'Alguien viene.', regenerate: true });
+  // Edits carry the snapshot they were made against, so a moved-on review is rejected.
+  expect(queued.base_revision).toBe('rev-1');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(open).toBeFocused();
   expect(errors).toEqual([]);

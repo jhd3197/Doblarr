@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .artifacts import digest, read_json
+from .cues import CUE_SCHEMA_VERSION, cue_payload, ensure_identity
 from .telemetry import write_json
 
 
@@ -20,10 +21,26 @@ def file_hash(path: Path) -> str:
     return result.hexdigest()
 
 
+def _cue_provenance(seg) -> dict:
+    """One line's identity and audio provenance for a saved version manifest.
+
+    Machine-local paths are left out on purpose: a manifest travels, and a
+    recipe or an exported version must not carry this machine's work dir.
+    """
+    record = cue_payload(seg)
+    for take in record["audio"]["takes"]:
+        if take.get("raw"):
+            take["raw"].pop("path", None)
+    for render in record["audio"]["renders"]:
+        render.pop("path", None)
+    return {"index": seg.index, **record}
+
+
 def preserve_version(job, config, cast=None) -> dict:
     """Copy completed media; never hardlink a file that a later run may replace/edit."""
     if not job.output_file or not job.output_file.is_file():
         raise ValueError("A completed output is required to save a dub version")
+    ensure_identity(job)
     script = {
         "source_language": job.script_lang or job.source_lang,
         "target_language": job.target_lang,
@@ -48,6 +65,9 @@ def preserve_version(job, config, cast=None) -> dict:
                                       if s.speaker in job.speakers else None),
                "delivery": s.delivery, "revision": s.revision}
               for s in job.segments]
+    # The identity digest is deliberately unchanged: adding cue provenance to it
+    # would fork every version already on disk. Wording and placement still move
+    # translation_id; any audible change moves output_sha256 and so version_id.
     identity = {"schema_version": 1, "translation_id": translation_id,
                 "output_sha256": file_hash(job.output_file),
                 "source_sha256": file_hash(job.input_file),
@@ -66,6 +86,15 @@ def preserve_version(job, config, cast=None) -> dict:
     manifest = {**identity, "version_id": version_id, "name": name,
                 "created_at": datetime.now(UTC).isoformat(), "output": str(output),
                 "script": script,
+                # Provenance, outside the identity digest: which cue each line
+                # is, which source interval it came from, which take was
+                # selected, and which processed artifact was actually rendered.
+                "cue_schema": CUE_SCHEMA_VERSION,
+                "source_reference": (job.source_reference.as_dict()
+                                     if job.source_reference else None),
+                "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
+                "nonverbal": job.nonverbal,
+                "cues": [_cue_provenance(s) for s in job.segments],
                 # Knowledge provenance for this version; outside the identity digest
                 # so an unrelated rule edit never forks an identical render.
                 "knowledge": job.knowledge_snapshot,
