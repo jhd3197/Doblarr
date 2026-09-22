@@ -115,7 +115,11 @@ def run(
         "-map",
         "0",  # everything from the original
         "-map",
+        "-0:t?",  # put attachments after all timed streams, including the new dub
+        "-map",
         "1:a",  # plus the new dub audio
+        "-map",
+        "0:t?",
         "-c",
         "copy",
         f"-c:a:{audio_index}",
