@@ -31,3 +31,125 @@ filtering:
   hidden_collection_name: Not in your language
   kometa_handoff: true
   auto_label: false
+
+# Source-relative dynamics. `legacy` keeps the pre-timing loudness pass exactly
+# as earlier releases ran it. The other modes move loudness ownership to a
+# single pass *after* timing, so a whisper that the original actor played
+# quietly stays quieter than the line next to it instead of being normalized
+# back to ordinary speech. Only one of the two ever runs.
+#
+# `follow_source` needs trustworthy evidence: a separated dialogue stem, a long
+# enough source interval, and no second speaker across it. Where that is
+# missing the line falls back to the plain target level and says why, rather
+# than amplifying a guess.
+levels:
+  mode: legacy                   # legacy | off | consistent | follow_source | manual
+  target_db: -20.0               # baseline speech-active RMS target, dBFS
+  strength: 0.7                  # how much of the original contrast to follow, 0..1
+  max_boost_db: 4.0              # never push a loud line further than this
+  max_cut_db: 8.0                # never bury a quiet line further than this
+  min_seconds: 0.30              # shorter source evidence is not a measurement
+  min_separation_db: 8.0         # speech this close to its bed is not measurable
+  peak_ceiling: 0.89             # hard peak this pass will not cross
+  measure_source: false          # measure the original even outside follow_source
+
+# Phrase timing (Plan 04). `whole` is the long-standing behaviour: a line that
+# overruns its slot is time-compressed evenly end to end. `phrase` fits the
+# parts instead — it gives back the padding between phrases first, protects a
+# pause that is performance, and compresses speech only where it still has to.
+#
+# Default stays `whole`: phrase fitting changes how every fitted line sounds,
+# and no default that changes audio moves before listening supports it.
+timing:
+  mode: whole                    # whole | phrase
+  max_stretch: 1.3               # most a phrase is ever compressed
+  min_stretch: 1.0               # 1.0 = never slow speech down; only a hard anchor can
+  handle_ms: 40                  # margin kept each side of a phrase, so joins keep consonants
+  min_pause: 0.12                # a redistributable gap never shrinks below this
+  protect_pause: 0.45            # a gap at least this long is performance, and is kept
+  tail_handle_ms: 60             # trailing silence never trimmed below this
+  anchor_tolerance: 0.12         # how close a phrase has to land to count as on time
+  min_phrase_seconds: 0.15       # shorter runs are stop consonants, not phrases
+  threshold_db: 12               # dB above the noise floor that counts as speech
+  min_separation_db: 10          # below this, phrase boundaries are not knowable
+  collision_gap: 0.0             # extra slack before two turns count as colliding
+  repair: true                   # allow a bounded rewrite when a line cannot fit
+  phrases: {}                    # per-cue anchors and protected pauses, set in review
+  overlaps: {}                   # per-cue accepted intentional overlaps, set in review
+
+# Reaction and background coverage (Plan 04). Laughs, gasps and doors that the
+# subtitle cleanup removes stay in an explicit ledger with a retain / replace /
+# omit / unresolved decision each.
+#
+#   off     the ledger is built and no audio is touched at all
+#   review  a decision's sound is prepared so it can be auditioned in review,
+#           and is deliberately left out of the dub
+#   retain  the same, and the sound is placed in the dub
+#
+# Nothing is ever inserted on a guess: an event with no decision stays
+# unresolved, and an engine that cannot generate a laugh is recorded as
+# unsupported rather than as applied.
+coverage:
+  mode: "off"                    # off | review | retain
+  gain_db: 0.0                   # level applied to a retained or replaced sound
+  handle_ms: 80                  # margin kept each side when cutting from the original
+  fade_ms: 25                    # fade in/out on a placed sound
+  max_seconds: 4.0               # a longer window is a scene, not a reaction
+  leakage_check: false           # screen retained sounds and the bed for source words
+  generate: false                # ask the engine for a reaction where it supports one
+  events: {}                     # per-event decisions, set in review
+  assets: {}                     # per-event local replacement sound files (machine-local)
+  extra: []                      # events a person added that no subtitle recorded
+
+# Scene space and device voice treatments (Plan 05). The same actor, in a room,
+# across the space, or on a phone — never a different performance. Acting
+# direction stays in `translate`/`dub`, loudness stays in `levels`, and a
+# treatment is neither of them wearing a different hat.
+#
+#   dry       nothing is applied; the explicit "leave it alone" answer
+#   room      a few early reflections, as if there were walls
+#   distant   duller, wetter and genuinely quieter, because distance is level
+#   phone     a narrow band and a firm compressor; no tail, a phone is not a room
+#   radio     a wider band, evened out, with a little presence pushed up
+#
+# Default stays `off`. A treatment changes every treated line's audio, and no
+# default that changes audio moves before listening supports it. A preset this
+# FFmpeg build cannot render is recorded as asked-for and unsupported — never
+# as applied — and the line stays dry.
+treatments:
+  mode: "off"                    # off | on
+  default: dry                   # the run-wide preset when no rule matches
+  intensity: 1.0                 # 0..1; interpolates the preset's own parameters
+  max_tail: 1.5                  # hard bound on effect ring-out, in seconds
+  # Scene rules, on the target timeline. A line belongs to the scene its start
+  # is in; a line that straddles the boundary is treated whole and reported,
+  # because half a sentence in a room is a defect, not a treatment.
+  scenes: []                     # [{start: 120.0, end: 186.5, preset: phone}]
+  lines: {}                      # per-cue {preset, intensity, bypass}, set in review
+
+# Checks on the file that was actually exported (Plan 05). Everything upstream
+# measured its own output; none of it has heard what the encoder and the muxer
+# produced. This opens the finished container and looks.
+#
+#   off      no export checks at all
+#   measure  every check runs and is reported; nothing is ever blocked
+#   enforce  a structural failure withholds the saved version and the library
+#            refresh, and leaves the rendered file in place for diagnosis
+#
+# `target_lufs` and `true_peak_db` left unset mean loudness and true peak are
+# *measured and reported*, never graded. A number with no stated target is
+# evidence; calling it a pass against an unspecified standard would not be.
+# No broadcast, platform, surround or ADM compliance is claimed by any of this.
+delivery:
+  mode: measure                  # off | measure | enforce
+  profile: local                 # recorded on every report this profile grades
+  sample_rate: 0                 # 0 accepts whatever the encoder produced
+  channels: 0                    # 0 accepts any layout
+  duration_tolerance: 1.0        # seconds the dub may differ from the container
+  start_tolerance: 0.10          # encoder-delay allowance on the stream start time
+  target_lufs: null              # null = measure only, never a fabricated pass
+  lufs_tolerance: 2.0
+  true_peak_db: null             # null = measure only; meter is ffmpeg ebur128
+  placement_samples: 3           # head/middle/tail cue windows decoded and checked
+  silence_db: -50.0              # below this a placed window counts as silent
+  check_original_streams: true   # the dub is added; nothing it went in with is dropped

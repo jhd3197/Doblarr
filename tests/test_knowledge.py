@@ -574,7 +574,7 @@ def test_queue_freezes_and_legacy_jobs_snapshot_on_first_run(client_factory, mon
 
 
 def test_review_rerender_inherits_the_original_snapshot(client_factory, tmp_path):
-    from test_review import review_job
+    from tests.test_review import review_job
 
     client = client_factory()
     queued, _, _ = review_job(client, tmp_path)

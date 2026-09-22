@@ -23,7 +23,7 @@ def wav(path, amplitude=0, duration=1):
 
 def test_pcm_checks_silence_and_cache(tmp_path):
     seg = Segment(0, 0, 1, "hello", audio_clip=wav(tmp_path / "silent.wav"))
-    issues, stats, cached = quality.check_clip(seg, "en")
+    issues, stats, cached, checked = quality.check_clip(seg, "en")
     assert "silence" in issues and not cached
     assert stats["duration"] == 1
     assert quality.check_clip(seg, "en")[2]

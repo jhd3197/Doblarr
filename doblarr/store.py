@@ -159,6 +159,27 @@ def _v7_memory(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _v8_title_drafts(conn: sqlite3.Connection) -> None:
+    # Deliberately separate from active knowledge, recipes and job snapshots.
+    conn.executescript("""
+        CREATE TABLE title_drafts (
+            id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            title_ref TEXT NOT NULL,
+            document TEXT NOT NULL,
+            PRIMARY KEY (id, revision)
+        );
+        CREATE INDEX title_drafts_title ON title_drafts(title_ref, id, revision);
+        CREATE TABLE title_draft_reviews (
+            draft_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            document TEXT NOT NULL,
+            PRIMARY KEY (draft_id, candidate_id, revision)
+        );
+    """)
+
+
 # Ordered migrations; MIGRATIONS[i] brings a db from version i to i+1.
 MIGRATIONS = [
     _v1_initial,
@@ -168,6 +189,7 @@ MIGRATIONS = [
     _v5_knowledge,
     _v6_packs,
     _v7_memory,
+    _v8_title_drafts,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

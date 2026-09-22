@@ -93,6 +93,15 @@ test('title plans save and accompany queued jobs from a deep link', async ({ pag
   await expect(page.locator('#tpQueue')).toHaveText('Queued ✓');
   await page.reload();
   await expect(field.getByRole('button', { name: 'preset', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  // Numeric per-title overrides (boundary preparation) round-trip too.
+  const fade = page.locator('#planFields .frow').filter({ hasText: 'Edge fade (ms)' });
+  const savedFade = page.waitForResponse(r => r.url().endsWith('/api/plan') && r.request().method() === 'PUT');
+  await fade.locator('input[type="number"]').fill('8');
+  await fade.locator('input[type="number"]').blur();
+  expect((await savedFade).ok()).toBe(true);
+  await page.reload();
+  await expect(fade.locator('input[type="number"]')).toHaveValue('8');
   expect(errors).toEqual([]);
 });
 

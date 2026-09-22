@@ -11,13 +11,21 @@ from doblarr.stages import mux
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
-def test_mux_two_original_audio_tracks(tmp_path):
+@pytest.mark.parametrize("attachment", [False, True])
+def test_mux_two_original_audio_tracks(tmp_path, attachment):
     src = tmp_path / "input.mkv"
+    attachment_args = []
+    if attachment:
+        font = tmp_path / "font.ttf"
+        font.write_bytes(b"test attachment preserved by remux")
+        attachment_args = ["-attach", str(font),
+                           "-metadata:s:t:0", "mimetype=application/x-truetype-font"]
     subprocess.run([
         "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:d=1",
         "-f", "lavfi", "-i", "sine=frequency=220:duration=1", "-map", "0:v",
         "-map", "1:a", "-map", "1:a", "-c:v", "libx264", "-c:a", "pcm_s16le",
-        "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=jpn", str(src)],
+        "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=jpn",
+        *attachment_args, str(src)],
         check=True, capture_output=True)
     dub = tmp_path / "dub.wav"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
@@ -31,6 +39,10 @@ def test_mux_two_original_audio_tracks(tmp_path):
     assert [s["tags"]["language"] for s in data["streams"]] == ["eng", "jpn", "spa"]
     assert data["streams"][2]["tags"]["title"] == "Spanish AI"
     assert src.exists()
+    if attachment:
+        all_streams = json.loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_streams", "-of", "json", str(job.output_file)]))
+        assert all_streams["streams"][-1]["codec_type"] == "attachment"
     assert not list((tmp_path / "out").glob("*.partial.mkv"))
 
     from scripts.finish_episode import export_mp4

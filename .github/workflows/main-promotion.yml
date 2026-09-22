@@ -1,0 +1,24 @@
+name: Main Promotion
+
+on:
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  source-branch:
+    name: Require dev source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify promotion source
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$HEAD_BRANCH" != "dev" ] || [ "$HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::main/master only accepts promotion PRs from this repository's dev branch."
+            exit 1
+          fi

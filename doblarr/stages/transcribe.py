@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 from .. import subtitles
+from ..cues import SOURCE, Span, ensure_identity
 from ..discovery import ISO3_TO_ISO2
 from ..model_pool import model as pooled_model
 from ..models import DubJob, Segment
@@ -96,10 +97,20 @@ def run(
         segs = [s for s in segs if s.start < max_seconds]  # tease window
     if segment_limit:
         segs = segs[:segment_limit]
-    # Re-index after limiting so clip names stay 0..N.
+    # Re-index after limiting so clip names stay 0..N. The cue's ordinal keeps
+    # its position in the ORIGINAL document, so a tease and a full dub of the
+    # same media agree on which cue is which.
+    method = "asr" if source == "whisper" else "subtitle"
     for n, s in enumerate(segs):
+        s.lineage.ordinal = s.index
         s.index = n
+        s.source.method = method
+        s.source.word_domain = SOURCE
+        s.source.word_method = method if s.words else "unknown"
+        if s.end > s.start >= 0:
+            s.source.spans = [Span(s.start, s.end, SOURCE)]
     job.segments = segs
+    ensure_identity(job)
     job.script_lang = ISO3_TO_ISO2.get(used_lang, used_lang) if used_lang else job.source_lang
     if source != "whisper" and (options or {}).get("align_subtitles"):
         if job.script_lang == job.source_lang:

@@ -6,6 +6,7 @@ from array import array
 from dataclasses import replace
 
 from ..artifacts import matches, record, stamp
+from ..cues import MONTAGE, SOURCE, Placement, Span
 from ..ffmpeg import run_ffmpeg
 from .common import work_stem
 from .fit_timing import _duration
@@ -97,17 +98,25 @@ def run(job, work, count=8, cancel=None, force=False, dry_run=False):
     remapped = []
     offset = 0.0
     for seg, (start, end) in zip(chosen, windows, strict=True):
-        remapped.append(
-            replace(
-                seg,
-                source_start=seg.start,
-                start=seg.start - start + offset,
-                end=seg.end - start + offset,
-                words=[],
-            )
+        copy = replace(
+            seg,
+            source_start=seg.start,
+            start=seg.start - start + offset,
+            end=seg.end - start + offset,
+            words=[],
         )
+        # The montage is its own timeline. The cue keeps its original source
+        # interval, so a montage never becomes the record of where the line is.
+        copy.placement = Placement(montage=Span(copy.start, copy.end, MONTAGE))
+        if not copy.source.spans and seg.end > seg.start >= 0:
+            copy.source.spans = [Span(seg.start, seg.end, SOURCE)]
+        remapped.append(copy)
         offset += end - start
     job.segments = remapped
+    # Deliberately not touching job.source_reference or job.source_track: the
+    # montage replaces the working audio, never the record of which original
+    # track this came from or where the original performance can be heard.
+    job.source_track = job.source_track or source
     job.source_audio = dest
     job.speakers = {s.speaker: job.speakers[s.speaker] for s in remapped}
     job.metrics["audition_seconds"] = offset

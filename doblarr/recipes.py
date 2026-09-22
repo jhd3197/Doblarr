@@ -39,6 +39,78 @@ SETTING_KEYS = (
     "quality.dialogue_lufs",
     "quality.asr",
     "quality.max_retries",
+    "quality.asr_sample",
+    "quality.request_budget",
+    # Level policy travels; the measured numbers and the per-cue manual gains
+    # do not. A gain someone set after hearing one line of one episode is not
+    # a reusable setting, and `levels.gains` is deliberately absent here.
+    "levels.mode",
+    "levels.target_db",
+    "levels.strength",
+    "levels.max_boost_db",
+    "levels.max_cut_db",
+    "levels.min_seconds",
+    "levels.min_separation_db",
+    "levels.peak_ceiling",
+    "levels.measure_source",
+    "dub.locale_direction",
+    "dub.candidate_limit",
+    "dub.clone_cleanup",
+    "boundaries.trim",
+    "boundaries.handle_ms",
+    "boundaries.max_trim_seconds",
+    "boundaries.min_trim_ms",
+    "boundaries.threshold_db",
+    "boundaries.min_separation_db",
+    "boundaries.edge_fade_ms",
+    "boundaries.edge_threshold_db",
+    # Timing and coverage policy travels; the per-cue anchors, the per-event
+    # decisions and the local sound files deliberately do not. An anchor
+    # somebody set after hearing one line of one episode is a decision about
+    # that episode, and `coverage.assets` names files on one computer.
+    "timing.mode",
+    "timing.max_stretch",
+    "timing.min_stretch",
+    "timing.handle_ms",
+    "timing.min_pause",
+    "timing.protect_pause",
+    "timing.tail_handle_ms",
+    "timing.anchor_tolerance",
+    "timing.min_phrase_seconds",
+    "timing.threshold_db",
+    "timing.min_separation_db",
+    "timing.collision_gap",
+    "timing.repair",
+    "coverage.mode",
+    "coverage.gain_db",
+    "coverage.handle_ms",
+    "coverage.fade_ms",
+    "coverage.max_seconds",
+    "coverage.leakage_check",
+    "coverage.generate",
+    # Treatment policy travels — the preset catalogue and how hard to apply it
+    # are choices about a show. `treatments.scenes` and `treatments.lines` do
+    # not: a scene range in seconds and a per-cue override are facts about one
+    # episode's timeline, and carrying them to the next one would put a phone
+    # call in the middle of an unrelated conversation.
+    "treatments.mode",
+    "treatments.default",
+    "treatments.intensity",
+    "treatments.max_tail",
+    # Delivery expectations travel; they are a statement about what this
+    # library wants out of an export, not about one file.
+    "delivery.mode",
+    "delivery.profile",
+    "delivery.sample_rate",
+    "delivery.channels",
+    "delivery.duration_tolerance",
+    "delivery.start_tolerance",
+    "delivery.target_lufs",
+    "delivery.lufs_tolerance",
+    "delivery.true_peak_db",
+    "delivery.placement_samples",
+    "delivery.silence_db",
+    "delivery.check_original_streams",
 )
 ENGINE = Literal[
     "chatterbox", "chatterbox_turbo", "qwen", "qwen_custom_voice", "kokoro", "luxtts", "tada"
@@ -202,6 +274,14 @@ class DubRecipe(StrictModel):
         ranges = {
             "dub.max_fit_attempts": (0, 10),
             "quality.max_retries": (0, 10),
+            "quality.request_budget": (0, 10000),
+            "boundaries.handle_ms": (0, 1000),
+            "boundaries.max_trim_seconds": (0, 30),
+            "boundaries.min_trim_ms": (0, 1000),
+            "boundaries.threshold_db": (1, 60),
+            "boundaries.min_separation_db": (0, 60),
+            "boundaries.edge_fade_ms": (0, 50),
+            "boundaries.edge_threshold_db": (-90, 0),
             "dub.background_volume": (0, 4),
             "dub.fallback_volume": (0, 4),
             "dub.duck_threshold": (0, 1),
@@ -209,6 +289,21 @@ class DubRecipe(StrictModel):
             "dub.duck_release_ms": (0, 10000),
             "translate.chars_per_second": (1, 100),
             "quality.dialogue_lufs": (-70, 0),
+            "timing.max_stretch": (1, 3),
+            "timing.min_stretch": (0.5, 1),
+            "timing.handle_ms": (0, 500),
+            "timing.min_pause": (0, 2),
+            "timing.protect_pause": (0, 5),
+            "timing.tail_handle_ms": (0, 1000),
+            "timing.anchor_tolerance": (0.01, 2),
+            "timing.min_phrase_seconds": (0.05, 5),
+            "timing.threshold_db": (1, 60),
+            "timing.min_separation_db": (0, 60),
+            "timing.collision_gap": (0, 2),
+            "coverage.gain_db": (-24, 24),
+            "coverage.handle_ms": (0, 1000),
+            "coverage.fade_ms": (0, 500),
+            "coverage.max_seconds": (0.1, 6),
         }
         for key, value in settings.items():
             if key in choices and value not in choices[key]:

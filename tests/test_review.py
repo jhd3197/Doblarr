@@ -96,3 +96,39 @@ def test_character_reuse_requires_explicit_mapping(client_factory, tmp_path):
     assert not character_cast(job, db, "Mushishi", {})
     cast = character_cast(job, db, "Mushishi", {"SPEAKER_03": "Ginko"})
     assert cast[0]["speaker_id"] == "SPEAKER_03" and cast[0]["voice"] == "ginko"
+
+
+def test_stale_review_edits_are_rejected_and_fresh_ones_pin_the_cue(client_factory, tmp_path):
+    client = client_factory()
+    queued, job, _ = review_job(client, tmp_path)
+    data = client.get(f"/api/jobs/{queued.id}/review").json()
+    revision = data["revision"]
+    cue_id = data["segments"][0]["cue"]["cue_id"]
+    assert cue_id and revision
+
+    stale = client.post(
+        f"/api/jobs/{queued.id}/review",
+        json={"edits": [{"index": 0, "text": "buenas"}], "base_revision": "outdated"},
+    )
+    assert stale.status_code == 409 and "Reload" in stale.json()["error"]
+
+    fresh = client.post(
+        f"/api/jobs/{queued.id}/review",
+        json={"edits": [{"index": 0, "cue": cue_id, "text": "buenas"}],
+              "base_revision": revision},
+    )
+    assert fresh.status_code == 200
+    assert fresh.json()["job"]["overrides"]["dub.line_edits"]["0"]["cue"] == cue_id
+
+
+def test_review_response_keeps_provenance_without_local_paths(client_factory, tmp_path):
+    client = client_factory()
+    queued, job, raw = review_job(client, tmp_path)
+    data = client.get(f"/api/jobs/{queued.id}/review").json()
+    row = data["segments"][0]
+    assert row["cue"]["cue_id"]
+    rendered = row["cue"]["audio"]["renders"]
+    assert [r["role"] for r in rendered] == ["unknown"]  # a hand-built job proves nothing more
+    assert rendered[0]["proven"] is False
+    assert "path" not in rendered[0] and rendered[0]["available"] is True
+    assert "audio_clip" not in row

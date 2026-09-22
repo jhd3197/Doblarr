@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .artifacts import digest, read_json
+from .cues import CUE_SCHEMA_VERSION, cue_payload, ensure_identity
 from .telemetry import write_json
 
 
@@ -20,10 +21,41 @@ def file_hash(path: Path) -> str:
     return result.hexdigest()
 
 
+def _cue_provenance(seg) -> dict:
+    """One line's identity and audio provenance for a saved version manifest.
+
+    Machine-local paths are left out on purpose: a manifest travels, and a
+    recipe or an exported version must not carry this machine's work dir.
+    """
+    record = cue_payload(seg)
+    for take in record["audio"]["takes"]:
+        if take.get("raw"):
+            take["raw"].pop("path", None)
+    for render in record["audio"]["renders"]:
+        render.pop("path", None)
+    return {"index": seg.index, **record}
+
+
+def _event_provenance(event) -> dict:
+    """One nonverbal event for a saved manifest, without this machine's paths.
+
+    A supplied replacement asset lives somewhere on one computer. The manifest
+    records *that* an asset was used and its identity, never where to find it,
+    because a version manifest travels and a local sound path is not a fact
+    about the title.
+    """
+    record = event.as_dict()
+    if record.get("artifact"):
+        record["artifact"].pop("path", None)
+    record["asset"] = Path(record["asset"]).name if record.get("asset") else ""
+    return record
+
+
 def preserve_version(job, config, cast=None) -> dict:
     """Copy completed media; never hardlink a file that a later run may replace/edit."""
     if not job.output_file or not job.output_file.is_file():
         raise ValueError("A completed output is required to save a dub version")
+    ensure_identity(job)
     script = {
         "source_language": job.script_lang or job.source_lang,
         "target_language": job.target_lang,
@@ -42,12 +74,32 @@ def preserve_version(job, config, cast=None) -> dict:
         "voicebox": {k: config["voicebox"].get(k) for k in
                      ("default_engine", "model_size", "seed")},
         "quality": dict(config["quality"]),
+        # Boundary preparation and edge fades change the rendered audio, so a
+        # saved version has to record which settings produced it.
+        "boundaries": dict(config.get("boundaries", {})),
+        # So does the level owner, including the per-cue manual gains: two
+        # renders that differ only by a reviewer's gain are different dubs.
+        "levels": dict(config.get("levels", {})),
+        # Which timing owner ran and what coverage was decided. The per-event
+        # sound *paths* are dropped: a manifest travels, and where a wav file
+        # sits on this machine is not part of what makes this version this
+        # version. Which decision was made is, and it stays.
+        "timing": dict(config.get("timing", {})),
+        "coverage": {k: v for k, v in dict(config.get("coverage", {})).items()
+                     if k != "assets"},
+        # Which acoustic space each line was played through is part of what
+        # makes this version this version: two renders differing only by a
+        # preset are different dubs and must not share an identity.
+        "treatments": dict(config.get("treatments", {})),
     }
     voices = [{"index": s.index, "speaker": s.speaker,
                "profile": s.voice or (job.speakers[s.speaker].voicebox_profile_id
                                       if s.speaker in job.speakers else None),
                "delivery": s.delivery, "revision": s.revision}
               for s in job.segments]
+    # The identity digest is deliberately unchanged: adding cue provenance to it
+    # would fork every version already on disk. Wording and placement still move
+    # translation_id; any audible change moves output_sha256 and so version_id.
     identity = {"schema_version": 1, "translation_id": translation_id,
                 "output_sha256": file_hash(job.output_file),
                 "source_sha256": file_hash(job.input_file),
@@ -66,6 +118,26 @@ def preserve_version(job, config, cast=None) -> dict:
     manifest = {**identity, "version_id": version_id, "name": name,
                 "created_at": datetime.now(UTC).isoformat(), "output": str(output),
                 "script": script,
+                # Provenance, outside the identity digest: which cue each line
+                # is, which source interval it came from, which take was
+                # selected, and which processed artifact was actually rendered.
+                "cue_schema": CUE_SCHEMA_VERSION,
+                "source_reference": (job.source_reference.as_dict()
+                                     if job.source_reference else None),
+                "cue_lineage": {k: list(v) for k, v in job.cue_lineage.items()},
+                "nonverbal": [_event_provenance(e) for e in job.nonverbal],
+                "cues": [_cue_provenance(s) for s in job.segments],
+                # What the run measured and what it concluded, outside the
+                # identity digest: evidence about this version, not part of
+                # what makes it this version.
+                "dialogue_baseline": job.dialogue_baseline,
+                "manual_gains": job.manual_gains,
+                "treatment_edits": job.treatment_edits,
+                # What the exported track was measured to be. Outside the
+                # identity digest on purpose: it is evidence *about* this
+                # version, produced after the bytes that define it, and
+                # folding it in would fork a version on a re-check.
+                "delivery": job.delivery,
                 # Knowledge provenance for this version; outside the identity digest
                 # so an unrelated rule edit never forks an identical render.
                 "knowledge": job.knowledge_snapshot,

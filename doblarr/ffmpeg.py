@@ -30,8 +30,14 @@ def _run(binary: str, args: list[str],
          cancel: threading.Event | None = None) -> subprocess.CompletedProcess:
     cmd = [binary, *args]
     log.debug("%s", " ".join(cmd))
+    # UTF-8, explicitly. ffmpeg and ffprobe write UTF-8 whatever the console
+    # code page is, and `text=True` alone would decode them with the locale
+    # encoding — which on a Windows machine turns every non-ASCII track title,
+    # language name and file path in a probe into mojibake. The container is
+    # fine; only the reading of it was wrong, which is the worst kind of bug to
+    # have underneath a check that exists to verify track metadata.
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True)
+                            text=True, encoding="utf-8", errors="replace")
     while True:
         try:
             out, err = proc.communicate(timeout=POLL_SECONDS)
@@ -57,6 +63,16 @@ def _run(binary: str, args: list[str],
 def run_ffmpeg(args: list[str], cancel: threading.Event | None = None) -> None:
     """Run ffmpeg with `args` (no binary name), raising FFmpegError on failure."""
     _run("ffmpeg", args, cancel=cancel)
+
+
+def run_ffmpeg_stderr(args: list[str], cancel: threading.Event | None = None) -> str:
+    """Run ffmpeg with `args` and return its stderr.
+
+    FFmpeg's measurement filters — `ebur128`, `astats`, `silencedetect` — all
+    report on stderr rather than producing a file, so a caller that wants a
+    measurement needs the text and not just the exit code.
+    """
+    return _run("ffmpeg", ["-hide_banner", *args], cancel=cancel).stderr
 
 
 def run_ffprobe(args: list[str], cancel: threading.Event | None = None) -> str:

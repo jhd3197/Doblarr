@@ -68,6 +68,12 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
         class: "input m", type: "text", value: v, style: "max-width: 420px;",
         onchange: e => setPlanValue(f.k, e.target.value),
       }));
+    } else if (f.t === "number") {
+      right.append(el("input", {
+        class: "input m", type: "number", step: "any", value: v, style: "max-width: 200px;",
+        // A blank field means "inherit", not "zero"; only a real number overrides.
+        onchange: e => { if (e.target.value !== "") setPlanValue(f.k, Number(e.target.value)); },
+      }));
     } else {
       const opts = el("div", { class: "opts" });
       const options = f.t === "bool" ? ["On", "Off"] : (f.dyn ? targetChoices(library.targets || ["en"], v) : f.o);

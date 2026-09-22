@@ -84,7 +84,72 @@ const TABS = [
     B("quality.enabled", "Check generated clips"), B("quality.normalize", "Normalize dialogue"),
     N("quality.dialogue_lufs", "Dialogue loudness (LUFS)"),
     C("quality.asr", "Verify generated words", ["off", "suspicious", "all"], "Speech recognition adds processing time; mismatches are review suggestions."),
+    N("quality.asr_sample", "Also verify this fraction of clean lines", "Between 0 and 1. The same lines are picked on every run, so coverage is comparable."),
     N("quality.max_retries", "Quality retry attempts"),
+    N("quality.request_budget", "Extra speech requests per job", "Shared cap across recognition, quality retries, timing repairs and alternative takes. 0 means no cap."),
+  ]), group("Performance levels", [
+    C("levels.mode", "Dialogue level approach", ["legacy", "off", "consistent", "follow_source", "manual"], "Legacy keeps the loudness pass before timing correction. The others move it after timing, so a quiet performance stays quiet. Only one of the two runs."),
+    N("levels.target_db", "Dialogue level target (dBFS)", "Speech-active RMS, not LUFS: short interjections need a measure that works on short audio."),
+    N("levels.strength", "Follow the original by", "Between 0 and 1. How much of the original quiet/loud contrast to reproduce."),
+    N("levels.max_boost_db", "Most to raise a loud line (dB)"),
+    N("levels.max_cut_db", "Most to lower a quiet line (dB)"),
+    N("levels.min_seconds", "Least source speech to measure (seconds)", "Shorter source evidence is recorded as insufficient rather than used."),
+    N("levels.min_separation_db", "Least speech-to-background separation (dB)", "Below this the original cannot be measured apart from its bed."),
+    N("levels.peak_ceiling", "Peak ceiling", "0 to 1. The level pass never crosses this; the contrast is kept and the line sits lower."),
+    B("levels.measure_source", "Measure the original even when not following it", "Records how loud each line was without changing any audio."),
+  ]), group("Delivery and takes", [
+    T("dub.locale_direction", "Accent direction", "Blank derives it from the target locale. A per-line direction replaces only its own part of the instruction."),
+    N("dub.candidate_limit", "Most alternative takes per line"),
+    B("dub.clone_cleanup", "Clean the voice reference sample", "A restrained high-pass and denoise. The original sample is always kept, and turning this on builds a different voice profile."),
+  ]), group("Phrase timing", [
+    C("timing.mode", "Timing approach", ["whole", "phrase"], "Whole compresses an overrunning line evenly end to end. By phrase gives back the padding between phrases first, keeps a pause that is performance, and compresses speech only where it still has to. Only one of the two runs."),
+    N("timing.max_stretch", "Most to compress a phrase", "1.3 means up to 30% faster."),
+    N("timing.min_stretch", "Slowest a phrase may be played", "1 never slows speech down; only an anchor you set can."),
+    N("timing.protect_pause", "A pause this long is performance (seconds)", "Longer gaps are kept. Shorter ones are the breathing a synthesizer puts around punctuation and may be tightened."),
+    N("timing.min_pause", "Shortest a tightened gap may become (seconds)"),
+    N("timing.handle_ms", "Phrase margin (ms)", "Kept each side of a phrase so a join does not clip a consonant."),
+    N("timing.tail_handle_ms", "Trailing silence kept (ms)"),
+    N("timing.anchor_tolerance", "Anchor tolerance (seconds)", "How close a phrase has to land before it counts as on time."),
+    N("timing.min_phrase_seconds", "Shortest run that counts as a phrase (seconds)"),
+    N("timing.threshold_db", "Speech threshold above noise (dB)"),
+    N("timing.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the phrase boundaries are not knowable and the line is fitted as one whole."),
+    N("timing.collision_gap", "Overlap slack before two turns collide (seconds)"),
+    B("timing.repair", "Allow a bounded rewrite when a line cannot fit", "Tries an existing take first; a rewrite is charged to the shared request budget."),
+  ]), group("Reactions and background", [
+    C("coverage.mode", "Reaction coverage", ["off", "review", "retain"], "Off still lists every laugh, gasp and door the subtitles recorded, and changes no audio. Review prepares the sound so you can hear it next to the scene without it entering the dub. Retain also places it. Nothing is ever inserted without a decision."),
+    N("coverage.gain_db", "Level of a placed sound (dB)"),
+    N("coverage.handle_ms", "Margin when cutting from the original (ms)"),
+    N("coverage.fade_ms", "Fade on a placed sound (ms)"),
+    N("coverage.max_seconds", "Longest sound to place (seconds)", "A longer window is a scene, not a reaction."),
+    B("coverage.leakage_check", "Screen for source-language words", "Listens to retained sounds and to dialogue-free windows of the bed. Music vocals and reverberation cause false positives, so a hit is a suspicion to listen to."),
+    B("coverage.generate", "Ask the engine for a reaction where it supports one", "An engine that cannot is recorded as unsupported, never as applied."),
+  ]), group("Scene space and devices", [
+    C("treatments.mode", "Acoustic treatment", ["off", "on"], "Off places every line dry, exactly as earlier releases did. On lets a scene rule or a line put a room, a distance or a device around the voice. It never changes the acting or the level: the effect's own effect on loudness is measured and corrected."),
+    C("treatments.default", "Default space", ["dry", "room", "distant", "phone", "radio"], "Used where no scene rule and no line override applies. Dry means no treatment at all."),
+    N("treatments.intensity", "Intensity", "Between 0 and 1. Changes how strong the preset is, not how long its tail is."),
+    N("treatments.max_tail", "Longest effect tail (seconds)", "A hard bound on ring-out past the words."),
+    J("treatments.scenes", "Scene rules", 'A list, for example [{"start": 120, "end": 186.5, "preset": "phone"}]. A line belongs to the scene its start is in.'),
+  ]), group("Export checks", [
+    C("delivery.mode", "Check the exported track", ["off", "measure", "enforce"], "Measure reports everything and blocks nothing. Enforce lets a structural failure withhold the saved version and the library refresh, leaving the rendered file in place for diagnosis."),
+    T("delivery.profile", "Delivery profile name", "Recorded on every report this profile grades."),
+    N("delivery.sample_rate", "Expected sample rate", "0 accepts whatever the encoder produced."),
+    N("delivery.channels", "Expected channels", "0 accepts any layout."),
+    N("delivery.duration_tolerance", "Duration tolerance (seconds)", "How far the decoded dub may differ from the container before it counts as truncated."),
+    N("delivery.start_tolerance", "Start-time tolerance (seconds)", "Encoder delay allowance on the added stream."),
+    N("delivery.target_lufs", "Loudness target (LUFS)", "Leave blank to measure only. A number with no target is evidence; it is never reported as a pass against an unspecified standard."),
+    N("delivery.lufs_tolerance", "Loudness tolerance (LU)"),
+    N("delivery.true_peak_db", "True-peak ceiling (dBFS)", "Leave blank to measure only. Measured with ffmpeg's ebur128 meter; no broadcast or platform compliance is claimed."),
+    N("delivery.placement_samples", "Cue windows to decode", "Head, middle and tail lines are decoded out of the finished file and checked for content."),
+    B("delivery.check_original_streams", "Check nothing was dropped", "The dub is added; every track the source went in with must still be there."),
+  ]), group("Clip boundaries", [
+    B("boundaries.trim", "Trim generator padding", "Removes dead air outside the detected speech before timing correction. Internal pauses are never removed and the raw take is kept."),
+    N("boundaries.handle_ms", "Protective margin (ms)", "Kept on each side of the detected speech."),
+    N("boundaries.max_trim_seconds", "Most to remove per side (seconds)"),
+    N("boundaries.min_trim_ms", "Smallest trim worth doing (ms)"),
+    N("boundaries.threshold_db", "Speech threshold above noise (dB)"),
+    N("boundaries.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the boundary is not knowable and the clip is left alone."),
+    N("boundaries.edge_fade_ms", "Edge fade (ms)", "0 disables it. Applied only where a clip would otherwise start or end on a click."),
+    N("boundaries.edge_threshold_db", "Edge already smooth below (dB)"),
   ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),
@@ -114,7 +179,15 @@ const PLAN_FIELDS = [
     "translate.locale", "translate.adaptation", "translate.direction", "translate.character_notes",
     "translate.adapt_region", "translate.reuse_memory",
     "dub.version_name", "dub.preserve_versions",
-    "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run"]
+    "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run",
+    // Per-title bypass for boundary preparation; the detector thresholds stay global.
+    "boundaries.trim", "boundaries.edge_fade_ms",
+    // Which timing owner and whether coverage may place a sound are per-title
+    // choices; the thresholds behind them stay global.
+    "timing.mode", "coverage.mode",
+    // Which space a show is played in, and how hard its exports are checked,
+    // are per-title choices; the thresholds behind them stay global.
+    "treatments.mode", "treatments.default", "delivery.mode"]
     .map(k => ({ ...FIELD_BY_KEY[k], t: isBoolField(FIELD_BY_KEY[k]) ? "bool" : FIELD_BY_KEY[k].t })),
 ];
 

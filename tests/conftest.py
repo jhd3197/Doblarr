@@ -1,11 +1,28 @@
 """Shared isolated API clients; workers start only in explicit lifespan tests."""
 
+import sys
+
 import pytest
 import yaml
 from fastapi.testclient import TestClient
 
 from doblarr.config import Config
 from doblarr.server import create_app
+
+
+@pytest.fixture(scope="session", autouse=True)
+def offline_dependencies():
+    """Isolate even module-scoped tone fixtures from local models and API keys.
+
+    Separation unit tests explicitly inject their fake Demucs modules after
+    this fixture; pipeline tests exercise the same fallback as the CI dev extra.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("ANTHROPIC_API_KEY", raising=False)
+        patch.delenv("CLAUDE_API_KEY", raising=False)
+        patch.setitem(sys.modules, "demucs", None)
+        patch.setitem(sys.modules, "demucs.separate", None)
+        yield
 
 
 @pytest.fixture

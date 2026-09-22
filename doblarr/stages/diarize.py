@@ -13,6 +13,7 @@ import logging
 import os
 from typing import Any
 
+from ..cues import SOURCE, Span, split_cue
 from ..model_pool import model as pooled_model
 from ..models import DubJob, Segment, Speaker
 from .common import DryRunPlan, dry, stage
@@ -84,17 +85,28 @@ def _assign_speakers(job: DubJob, diarization) -> None:
                     groups.append((label, []))
                 groups[-1][1].append(word)
             if len(groups) > 1:
-                for label, words in groups:
-                    split.append(
-                        Segment(
-                            0,
-                            words[0]["start"],
-                            words[-1]["end"],
-                            " ".join(w["word"].strip() for w in words),
-                            speaker=label,
-                            words=words,
-                        )
+                # A real split: children get fresh IDs with the parent recorded
+                # as lineage, and the parent is retired so a stale edit naming
+                # it raises a conflict instead of landing on one arbitrary half.
+                children = [
+                    Segment(
+                        0,
+                        words[0]["start"],
+                        words[-1]["end"],
+                        " ".join(w["word"].strip() for w in words),
+                        speaker=label,
+                        words=words,
                     )
+                    for label, words in groups
+                ]
+                for child in children:
+                    child.source.spans = [Span(child.start, child.end, SOURCE)]
+                    child.source.speaker = child.speaker
+                    child.source.method = seg.source.method
+                    child.source.word_domain = SOURCE
+                    child.source.word_method = seg.source.word_method
+                split_cue(job, seg, children)
+                split.extend(children)
                 continue
         split.append(seg)
     if len(split) != len(job.segments):
@@ -108,6 +120,14 @@ def _assign_speakers(job: DubJob, diarization) -> None:
 @stage("diarize")
 def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan | None:
     if not enabled:
+        if job.speakers:
+            # Turning diarization off means "do not run the model", not "throw
+            # away the cast". A restored script, an imported run or a saved
+            # review already knows who speaks each line, and flattening that to
+            # one voice would silently recast the episode on a resume.
+            log.info("diarize disabled -> keeping the %d speaker(s) already assigned",
+                     len(job.speakers))
+            return None
         # Single-speaker fallback: everyone is SPEAKER_00.
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
         for seg in job.segments:

@@ -398,7 +398,7 @@ def test_mux_titles_and_tags_use_the_locale(tmp_path, caplog):
 
 
 def test_series_routes_accept_and_deduplicate_regional_locales(client_factory, tmp_path):
-    from test_series import setup_series
+    from tests.test_series import setup_series
 
     client = client_factory()
     first, second = setup_series(client, tmp_path)

@@ -2,6 +2,7 @@
 import pytest
 
 from doblarr.config import Config
+from doblarr.cues import CUE_SCHEMA_VERSION
 from doblarr.models import DubJob, Segment, Speaker
 from doblarr.versions import file_hash, preserve_version
 
@@ -57,3 +58,50 @@ def test_modified_saved_media_is_never_silently_overwritten(tmp_path):
     job.output_file = working_output
     with pytest.raises(ValueError, match="refusing to overwrite"):
         preserve_version(job, config)
+
+
+def test_cue_provenance_is_recorded_without_changing_existing_version_ids(tmp_path):
+    from doblarr.artifacts import digest
+    from doblarr.cues import RAW, Artifact, Selection, Take
+    from doblarr.versions import file_hash as hash_file
+
+    job, config, _ = setup_job(tmp_path)
+    seg = job.segments[0]
+    seg.audio.takes.append(Take(take_id="t1", fingerprint="gen-1", engine="tone",
+                                raw=Artifact(role=RAW, path=str(tmp_path / "raw.wav"),
+                                             fingerprint="gen-1")))
+    seg.audio.selection = Selection(take_id="t1")
+    manifest = preserve_version(job, config)
+
+    # The identity digest keeps its pre-Plan-01 shape, so versions already on
+    # disk are not reinterpreted or forked by the new provenance.
+    identity = {k: manifest[k] for k in
+                ("schema_version", "translation_id", "output_sha256", "source_sha256",
+                 "settings", "voices", "kind", "cast")}
+    assert manifest["version_id"] == digest(identity)
+    assert "cues" not in identity and "cue_schema" not in identity
+
+    assert manifest["cue_schema"] == CUE_SCHEMA_VERSION
+    cue = manifest["cues"][0]
+    assert cue["index"] == 0 and cue["cue_id"] == seg.cue_id
+    assert cue["audio"]["selection"]["take_id"] == "t1"
+    # Manifests travel: they carry roles and fingerprints, never local paths.
+    assert "path" not in cue["audio"]["takes"][0]["raw"]
+    assert cue["audio"]["takes"][0]["raw"]["fingerprint"] == "gen-1"
+    assert hash_file(job.output_file) == manifest["output_sha256"]
+
+
+def test_boundary_settings_are_part_of_a_saved_version(tmp_path):
+    """A fade-only change is a different render, and must not look like a
+    different translation."""
+    job, config, working_output = setup_job(tmp_path)
+    plain = preserve_version(job, config)
+    assert plain["settings"]["boundaries"]["trim"] is False
+
+    working_output.write_bytes(b"same script, softened edges")
+    job.output_file = working_output
+    faded = preserve_version(
+        job, config.with_overrides({"boundaries.edge_fade_ms": 8}))
+    assert faded["settings"]["boundaries"]["edge_fade_ms"] == 8
+    assert faded["version_id"] != plain["version_id"]
+    assert faded["translation_id"] == plain["translation_id"]
