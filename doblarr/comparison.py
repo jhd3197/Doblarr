@@ -32,11 +32,14 @@ listener's, and the results sheet it writes is empty on purpose.
 
 from __future__ import annotations
 
+import array
 import hashlib
 import json
 import logging
 import shutil
+import sys
 import time
+import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -62,6 +65,7 @@ from .services import Services
 from .stages import extract
 from .stages.common import save_script
 from .telemetry import write_json
+from . import vocalization
 
 log = logging.getLogger("doblarr.comparison")
 
@@ -385,6 +389,7 @@ def cut_references(media: Path, scene: Scene, scene_dir: Path, chosen: dict,
                      "another localisation of the same scene. Useful for comparison, "
                      "and not evidence about the original performance"),
             "measured": measure(path),
+            "peaks": envelope(path),
         })
     return rows
 
@@ -767,23 +772,82 @@ def check_takes(scene: Scene, vb, language: str) -> list[dict]:
         result = content.compare(asked, heard, language)
         entry.update(state=result.get("state", "unknown"), heard=heard,
                      reason=result.get("reason", ""))
+        # Recognition leaves laughter and hums out, so a take that opens with
+        # a giggle nobody asked for still "matches". The edges are heard
+        # separately when there is far more sound than the words explain.
+        try:
+            extra = vocalization.check(Path(row["clip"]), asked, language, vb)
+        except Exception as exc:  # noqa: BLE001 - an unmeasured take is not clean
+            extra = {"state": "unchecked", "reason": str(exc)[:200]}
+        entry["extra_sound"] = extra
+        if extra.get("state") == "extra":
+            entry["extra"] = vocalization.describe(extra)
         rows.append(entry)
     return rows
 
 
-def take_findings(scene_rows: list[dict]) -> list[str]:
-    """The takes a recognizer disagreed with, as sentences for the results sheet."""
+def take_findings(scene_rows: list[dict], labels: dict | None = None) -> list[str]:
+    """The takes a recognizer disagreed with, as sentences for the results sheet.
+
+    When versions carry their own takes, each finding is named by the version's
+    blind label — never its variant name, which would unblind the listener.
+    """
+    letters = {name: letter for letter, name in (labels or {}).items()}
     found = []
     for scene in scene_rows:
-        for row in scene.get("takes") or []:
-            if row["state"] != "mismatch":
-                continue
-            found.append(
-                f"scene {scene['scene']['index']} line {row['line']} "
-                f"({row['speaker']}): asked “{row['asked']}”, heard "
-                f"“{row['heard'][:70]}{'…' if len(row['heard']) > 70 else ''}” — "
-                f"{row['reason']}")
+        sets = scene.get("takes_by_variant")
+        groups = ([(f"Version {letters.get(name, '?')}: ", rows)
+                   for name, rows in sorted(sets.items(),
+                                            key=lambda item: letters.get(item[0], ""))]
+                  if sets else [("", scene.get("takes") or [])])
+        for prefix, rows in groups:
+            for row in rows:
+                where = (f"{prefix}scene {scene['scene']['index']} line {row['line']} "
+                         f"({row['speaker']})")
+                if row["state"] == "mismatch":
+                    found.append(
+                        f"{where}: asked “{row['asked']}”, heard "
+                        f"“{row['heard'][:70]}{'…' if len(row['heard']) > 70 else ''}” — "
+                        f"{row['reason']}")
+                if row.get("extra"):
+                    found.append(f"{where}: asked “{row['asked']}” — {row['extra']}")
     return found
+
+
+def envelope(path: Path, buckets: int = 360) -> list[float]:
+    """A downsampled peak envelope of one rendered scene, 0..1 per bucket.
+
+    Drawn on the page's timeline so a listener can see where the speech is and
+    click straight to it. Peaks rather than RMS: a waveform is read as "where
+    are the words", and RMS flattens exactly the transients that answer that.
+    """
+    try:
+        with wave.open(str(path), "rb") as audio:
+            if audio.getsampwidth() != 2:
+                return []
+            channels = max(1, audio.getnchannels())
+            total = audio.getnframes()
+            if total <= 0:
+                return []
+            block = max(1, total // max(1, buckets))
+            out: list[float] = []
+            while len(out) < buckets:
+                raw = audio.readframes(block)
+                if not raw:
+                    break
+                samples = array.array("h", raw)
+                if sys.byteorder != "little":
+                    samples.byteswap()
+                frame = samples[::channels] if channels > 1 else samples
+                out.append(round(max((abs(v) for v in frame), default=0) / 32768, 4))
+    except (OSError, wave.Error, EOFError, ValueError):
+        return []
+    if not out:
+        return []
+    ceiling = max(out) or 1.0
+    # Normalised for drawing only. The numbers the report grades are measured
+    # elsewhere; scaling a picture is not scaling a measurement.
+    return [round(v / ceiling, 3) for v in out]
 
 
 def measure(path: Path) -> dict:
@@ -909,8 +973,26 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
                  ", ".join(row["language"] for row in original["available"]
                            if row["audio_index"] != original["audio_index"]))
     payload = read_script(Path(script))
-    rows = inventory(payload, Path(clips))
-    scenes = scenes_from(rows, windows, titles)
+    # A variant may bring its own takes (`takes=<clips dir>`): that is how a
+    # voice audition compares performances rather than processing. Without
+    # one, every variant plays the run's takes, exactly as before.
+    variants = {name: dict(overrides) for name, overrides in variants.items()}
+    take_sets = {name: Path(overrides.pop("takes", None) or clips)
+                 for name, overrides in variants.items()}
+    labels = blind_labels(list(variants), comparison_id)
+    scenes_by_source = {}
+    for source_dir in dict.fromkeys(take_sets.values()):
+        scenes_by_source[source_dir] = scenes_from(
+            inventory(payload, source_dir), windows, titles)
+    scenes = scenes_by_source.get(Path(clips)) or next(iter(scenes_by_source.values()))
+    for source_dir, candidate in scenes_by_source.items():
+        for mine, theirs in zip(scenes, candidate, strict=True):
+            if [r["index"] for r in mine.cues] != [r["index"] for r in theirs.cues]:
+                raise ComparisonError(
+                    f"the takes in {source_dir} do not cover the same lines as the "
+                    f"others in scene {mine.index + 1}; versions would not be "
+                    f"saying the same scene")
+    shared_takes = len(scenes_by_source) == 1
     recognizer = None
     if check_content:
         # Best effort. A comparison must still build with nothing listening.
@@ -937,16 +1019,19 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
         preparations = {}
         for name, overrides in variants.items():
             log.info("comparison:   variant %s", name)
+            played = scenes_by_source[take_sets[name]][scene.index]
             settings = variant_config(config, scene_dir, name, speakers, overrides)
-            prepared = prepare(settings, excerpt, scene, source_lang=source_lang,
+            prepared = prepare(settings, excerpt, played, source_lang=source_lang,
                                target_lang=target_lang, target_locale=target_locale,
                                stems=dict(stems or {}), cancel=cancel)
             prepared["overrides"] = dict(overrides)
+            prepared["takes"] = str(take_sets[name])
             preparations[name] = prepared
-            row = render_variant(settings, prepared, scene, name, scene_dir,
+            row = render_variant(settings, prepared, played, name, scene_dir,
                                  source_lang=source_lang, target_lang=target_lang,
                                  target_locale=target_locale, cancel=cancel)
             row["measured"] = measure(Path(row["mixed"])) if row["mixed"] else {}
+            row["peaks"] = envelope(Path(row["mixed"])) if row["mixed"] else []
             rendered.append(row)
         rendered = level_match(rendered, scene_dir, cancel)
         scene_rows.append({
@@ -961,6 +1046,18 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
             # same audio in all of them.
             "takes": check_takes(scene, recognizer, target_lang),
         })
+        if not shared_takes:
+            # Each set of takes is heard once, then filed under every variant
+            # that plays it.
+            heard = {source_dir: (scene_rows[-1]["takes"] if source_dir == Path(clips)
+                                  else check_takes(found[scene.index], recognizer,
+                                                   target_lang))
+                     for source_dir, found in scenes_by_source.items()}
+            scene_rows[-1]["takes_by_variant"] = {
+                name: heard[take_sets[name]] for name in variants}
+            scene_rows[-1]["text_by_variant"] = {
+                name: scenes_by_source[take_sets[name]][scene.index].as_dict()["text"]
+                for name in variants}
     manifest = {
         "manifest_version": MANIFEST_VERSION,
         "comparison_id": comparison_id,
@@ -968,18 +1065,24 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
         "source": {"media": str(Path(source).resolve()), "stamp": stamp(Path(source)),
                    "stream": original,
                    "script": str(Path(script).resolve()), "clips": str(Path(clips).resolve()),
+                   "take_sets": {name: str(path.resolve()) for name, path in take_sets.items()},
                    "source_language": source_lang, "target_language": target_lang,
                    "target_locale": target_locale or target_lang,
                    "stems": {k: str(v) for k, v in (stems or {}).items()}},
         "variants": {name: dict(overrides) for name, overrides in variants.items()},
-        "labels": blind_labels(list(variants), comparison_id),
+        "labels": labels,
+        "shared_takes": shared_takes,
         "scenes": scene_rows,
         "objective": objective(scene_rows),
-        "take_findings": take_findings(scene_rows),
+        "take_findings": take_findings(scene_rows, labels),
         "honesty": [
-            "Every variant reused the takes imported from a completed run. No "
-            "speech was generated for this comparison and the engine handed to "
-            "each run refuses to generate at all.",
+            ("Every variant reused the takes imported from a completed run. "
+             if shared_takes else
+             "Versions play different takes, generated before this comparison "
+             "was built; a difference between them is a difference in "
+             "performance as well as processing. ")
+            + "No speech was generated while building this comparison and the "
+            "engine handed to each run refuses to generate at all.",
             "This is a bounded excerpt. It says nothing about an episode nobody "
             "has listened to.",
             "A passing objective check means the files are comparable. Whether "
@@ -997,8 +1100,10 @@ def results_sheet(manifest: dict) -> str:
     lines = [
         f"# Listening results — {manifest['comparison_id']}",
         "",
-        "Fill in what you actually heard. `same` and `worse` are real answers and",
-        "are as useful as `better`; leaving a row blank is better than guessing.",
+        "**Use `index.html` rather than this file.** The page captures a verdict, the",
+        "issues behind it, a note and a marked moment per scene, and exports a filled-in",
+        "copy of this sheet. Marking a moment while you hear it beats finding the right",
+        "row afterwards. This copy is the fallback, and the record of what was rendered.",
         "",
         "Neutral labels and what they are:",
         "",
@@ -1008,7 +1113,13 @@ def results_sheet(manifest: dict) -> str:
     for label, name in manifest["labels"].items():
         lines.append(f"| {label} | `{name}` |")
     flagged = manifest.get("take_findings") or []
-    if flagged:
+    if flagged and manifest.get("shared_takes") is False:
+        lines += ["", "## Before you listen: flagged takes", "",
+                  "Each version plays its own takes. A recognizer listened to every",
+                  "set once; these are the defects it could prove, by version:", ""]
+        lines += [f"- {row}" for row in flagged]
+        lines += [""]
+    elif flagged:
         lines += ["", "## Before you listen: the shared takes have known defects", "",
                   "A recognizer was run once over the imported takes — the same audio",
                   "every variant plays — and disagreed with these. They are defects in",
@@ -1119,349 +1230,11 @@ def _tally(counts: dict) -> str:
     return ", ".join(f"{value} {key}" for key, value in sorted(counts.items()))
 
 
-PAGE_CSS = """
-:root {
-  --ink: #16181d; --dim: #5a6069; --line: #e4e7ec; --bg: #fbfbfc;
-  --card: #fff; --accent: #16181d; --good: #1a6b39; --warn: #8a6d3b;
-  --bad: #9b1c1c; --bar: 5.4rem;
-}
-* { box-sizing: border-box; }
-body {
-  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
-  margin: 0; color: var(--ink); background: var(--bg);
-  padding-bottom: 4rem;
-}
-.wrap { max-width: 64rem; margin: 0 auto; padding: 0 1rem; }
-h1 { margin: 1.4rem 0 .2rem; font-size: 1.5rem; }
-h2 { margin: 0; font-size: 1.05rem; }
-.meta { color: var(--dim); margin: .15rem 0; font-size: .9em; }
-
-/* The player follows you. A comparison you have to scroll back up to
-   operate is a comparison nobody makes twice. */
-.bar {
-  position: sticky; top: 0; z-index: 10; background: var(--card);
-  border-bottom: 1px solid var(--line); padding: .6rem 0;
-  box-shadow: 0 1px 8px rgba(0,0,0,.05);
-}
-.bar .wrap { display: flex; gap: .9rem; align-items: center; flex-wrap: wrap; }
-.bar audio { flex: 1 1 22rem; min-width: 16rem; height: 2.4rem; }
-.now { flex: 1 1 14rem; min-width: 12rem; line-height: 1.3; }
-.now strong { display: block; }
-.now span { color: var(--dim); font-size: .85em; }
-.toggles { display: flex; gap: .9rem; align-items: center; flex-wrap: wrap;
-           font-size: .9em; }
-.toggles label { display: flex; gap: .3rem; align-items: center; cursor: pointer; }
-
-section.scene {
-  background: var(--card); border: 1px solid var(--line); border-radius: .6rem;
-  padding: 1rem 1.1rem; margin: 1rem 0; scroll-margin-top: calc(var(--bar) + 1rem);
-}
-section.scene.current { border-color: var(--accent); }
-.row { display: flex; flex-wrap: wrap; gap: .45rem; margin: .7rem 0 0; }
-.row .sep { width: 100%; height: 0; }
-button {
-  font: inherit; padding: .42rem .8rem; border: 1px solid #c7ccd4;
-  background: #fff; border-radius: .4rem; cursor: pointer; line-height: 1.2;
-}
-button:hover { border-color: var(--accent); }
-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-button.playing { background: var(--accent); color: #fff; border-color: var(--accent); }
-button.is-original { border-color: var(--good); }
-button.is-dub { border-color: var(--warn); font-style: italic; }
-button kbd {
-  font: inherit; font-size: .82em; opacity: .55; margin-left: .4rem;
-  border: 1px solid currentColor; border-radius: .2rem; padding: 0 .25rem;
-}
-nav.scenes { display: flex; gap: .4rem; flex-wrap: wrap; margin: .8rem 0 0; }
-nav.scenes a {
-  font-size: .85em; text-decoration: none; color: var(--dim);
-  border: 1px solid var(--line); border-radius: 1rem; padding: .2rem .7rem;
-}
-nav.scenes a:hover, nav.scenes a.current { color: var(--ink); border-color: var(--accent); }
-details { margin-top: .8rem; }
-summary { cursor: pointer; color: var(--dim); font-size: .9em; }
-table { border-collapse: collapse; width: 100%; font-size: .88em; margin-top: .5rem; }
-td, th { border-bottom: 1px solid var(--line); padding: .3rem .5rem;
-         text-align: left; vertical-align: top; }
-th { color: var(--dim); font-weight: 500; }
-.was { color: var(--warn); font-size: .85em; }
-.ok { color: var(--good); } .bad { color: var(--bad); }
-.note li { color: var(--warn); }
-.callout {
-  border-left: 3px solid var(--warn); background: #fffdf7; padding: .6rem .9rem;
-  margin: 1rem 0; border-radius: 0 .4rem .4rem 0;
-}
-.callout.good { border-left-color: var(--good); background: #f6fbf7; }
-footer { color: var(--dim); font-size: .9em; margin: 2.5rem 0 1rem; }
-kbd.help { border: 1px solid var(--line); border-radius: .2rem; padding: 0 .3rem; }
-@media (max-width: 40rem) {
-  .bar .wrap { gap: .5rem; }
-  .bar audio { flex: 1 1 100%; }
-}
-"""
-
-PAGE_JS = """
-// One audio element for the whole page, deliberately: two would play over each
-// other the moment a switch races a load, and a comparison where both versions
-// are audible at once is not a comparison.
-const player = document.getElementById('player');
-const nowLabel = document.getElementById('nowLabel');
-const nowScene = document.getElementById('nowScene');
-const matched = document.getElementById('matched');
-const loop = document.getElementById('loop');
-let current = null;              // the button that is loaded
-let scene = 0;                   // the scene the keyboard acts on
-
-const buttons = () => [...document.querySelectorAll('button[data-actual]')];
-const inScene = n => buttons().filter(b => Number(b.dataset.scene) === n);
-
-function srcFor(button) {
-  // The level-matched copy is an audition aid. It only exists for the
-  // variants, so a reference track ignores the toggle rather than going silent.
-  return (matched.checked && button.dataset.matched) || button.dataset.actual;
-}
-
-function play(button, { keepPosition = true } = {}) {
-  if (!button) return;
-  const wasPlaying = !player.paused && !player.ended;
-  const at = keepPosition ? player.currentTime : 0;
-  buttons().forEach(b => b.classList.remove('playing'));
-  button.classList.add('playing');
-  current = button;
-  scene = Number(button.dataset.scene);
-  markScene();
-  nowLabel.textContent = button.dataset.label;
-  nowScene.textContent = button.dataset.scenename
-    + (matched.checked && button.dataset.matched ? ' · level-matched' : '');
-  player.src = srcFor(button);
-  player.load();
-  player.addEventListener('loadedmetadata', () => {
-    // Keep the listener's place across a switch: comparing two versions is
-    // only useful if the same moment is being compared.
-    if (at && isFinite(player.duration)) {
-      player.currentTime = Math.min(at, Math.max(0, player.duration - 0.05));
-    }
-    if (wasPlaying) player.play().catch(() => {});
-  }, { once: true });
-}
-
-function markScene() {
-  document.querySelectorAll('section.scene').forEach(s =>
-    s.classList.toggle('current', Number(s.dataset.scene) === scene));
-  document.querySelectorAll('nav.scenes a').forEach(a =>
-    a.classList.toggle('current', Number(a.dataset.scene) === scene));
-}
-
-buttons().forEach(b => b.addEventListener('click', () => play(b)));
-matched.addEventListener('change', () => play(current, { keepPosition: true }));
-loop.addEventListener('change', () => { player.loop = loop.checked; });
-document.getElementById('reveal').addEventListener('click', e => {
-  document.getElementById('mapping').hidden = false;
-  e.target.hidden = true;
-});
-
-// Which scene the keyboard acts on follows what you are looking at, so
-// switching variants never jumps you to another part of the episode.
-const spy = new IntersectionObserver(entries => {
-  const visible = entries.filter(e => e.isIntersecting)
-    .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-  if (visible && !current) { scene = Number(visible.target.dataset.scene); markScene(); }
-}, { rootMargin: '-30% 0px -50% 0px', threshold: [0.1, 0.5] });
-document.querySelectorAll('section.scene').forEach(s => spy.observe(s));
-
-document.addEventListener('keydown', event => {
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  const target = event.target;
-  // Only a field you could be typing into swallows a shortcut. Ticking the
-  // level-matched box leaves focus on it, and a listener who then pressed 2
-  // and got nothing would reasonably conclude the keys do not work.
-  if (target.matches('input:not([type=checkbox]):not([type=radio]), textarea, select')) {
-    return;
-  }
-  // Space still belongs to a focused checkbox: that is how it is toggled.
-  if (event.key === ' ' && target.matches('input[type=checkbox]')) return;
-  const here = inScene(scene);
-  const key = event.key.toLowerCase();
-  if (key === ' ') {
-    event.preventDefault();
-    if (!current) { play(here[0], { keepPosition: false }); return; }
-    player.paused ? player.play().catch(() => {}) : player.pause();
-    return;
-  }
-  if (key >= '1' && key <= '9') {
-    const pick = here.find(b => b.dataset.key === key);
-    if (pick) { event.preventDefault(); play(pick); }
-    return;
-  }
-  if (key === 'o' || key === 'r') {
-    const role = key === 'o' ? 'original' : 'dub';
-    const pick = here.find(b => b.dataset.role === role);
-    if (pick) { event.preventDefault(); play(pick); }
-    return;
-  }
-  if (key === 'm') { event.preventDefault(); matched.checked = !matched.checked;
-                     play(current, { keepPosition: true }); return; }
-  if (key === 'l') { event.preventDefault(); loop.checked = !loop.checked;
-                     player.loop = loop.checked; return; }
-  if (key === '[' || key === ']') {
-    event.preventDefault();
-    const total = document.querySelectorAll('section.scene').length;
-    scene = Math.max(0, Math.min(total - 1, scene + (key === ']' ? 1 : -1)));
-    markScene();
-    document.getElementById('scene-' + scene).scrollIntoView({ behavior: 'smooth' });
-    const pick = current
-      ? inScene(scene).find(b => b.dataset.name === current.dataset.name)
-      : null;
-    play(pick || inScene(scene)[0], { keepPosition: false });
-  }
-});
-markScene();
-"""
-
-
 def page(manifest: dict, root: Path) -> str:
-    """A local page built for the job: switch fast, keep your place, read less.
+    """The listening-test page. Built in `listening_page`, which owns its design."""
+    from .listening_page import render
 
-    Three things it is shaped around. The player is sticky, because a
-    comparison you have to scroll back up to operate is one nobody makes
-    twice. Switching is on the keyboard, because A/B judgement lives or dies on
-    how quickly you can go back and forth. And level-matched playback is one
-    toggle rather than a second row of buttons, because doubling the controls
-    to express one boolean is how a page stops being readable.
-    """
-    def rel(path) -> str:
-        try:
-            return Path(path).resolve().relative_to(Path(root).resolve()).as_posix()
-        except (ValueError, TypeError):
-            return ""
-
-    def clock(seconds: float) -> str:
-        return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
-
-    labels = manifest["labels"]
-    reveal = " · ".join(f"{label} = {name}" for label, name in labels.items())
-    blocks, nav = [], []
-    for row in manifest["scenes"]:
-        s = row["scene"]
-        index = s["index"]
-        nav.append(f'<a href="#scene-{index}" data-scene="{index}">'
-                   f'{index + 1}. {_esc(s["title"])}</a>')
-        controls = []
-        for ref in sorted(row.get("references") or [],
-                          key=lambda r: r["role"] != "original"):
-            key = "O" if ref["role"] == "original" else "R"
-            controls.append(
-                f'<button data-actual="{rel(ref["path"])}" data-scene="{index}" '
-                f'data-role="{"original" if ref["role"] == "original" else "dub"}" '
-                f'data-name="{_esc(ref["role"])}" '
-                f'data-label="{_esc(ref["label"])}" '
-                f'data-scenename="Scene {index + 1} · {_esc(s["title"])}" '
-                f'class="{"is-original" if ref["role"] == "original" else "is-dub"}" '
-                f'title="{_esc(ref["note"])}">{_esc(ref["label"])}'
-                f'<kbd>{key}</kbd></button>')
-        controls.append('<span class="sep"></span>')
-        for position, (label, name) in enumerate(labels.items(), start=1):
-            variant = next((v for v in row["variants"] if v["name"] == name), None)
-            if variant is None or not variant.get("mixed"):
-                continue
-            matched_src = (f' data-matched="{rel(variant["matched"])}"'
-                           if variant.get("matched") else "")
-            controls.append(
-                f'<button data-actual="{rel(variant["mixed"])}"{matched_src} '
-                f'data-scene="{index}" data-key="{position}" data-name="{_esc(name)}" '
-                f'data-label="Version {label}" '
-                f'data-scenename="Scene {index + 1} · {_esc(s["title"])}">'
-                f'Version {label}<kbd>{position}</kbd></button>')
-        lines = "".join(
-            f"<tr><td>{line['start']:.1f}s</td><td>{_esc(line['speaker'])}</td>"
-            f"<td>{_esc(line['source'])}</td><td>{_esc(line['dub'] or '')}"
-            + (f"<br><span class='was'>cached script said: "
-               f"{_esc(line.get('script') or '')}</span>"
-               if line.get("stale_script") else "")
-            + "</td></tr>"
-            for line in s["text"])
-        window = s["window"]
-        blocks.append(f"""
-  <section class="scene" id="scene-{index}" data-scene="{index}">
-    <h2>{index + 1}. {_esc(s['title'])}</h2>
-    <p class="meta">{s['duration']:.0f}s · {s['lines']} lines ·
-      {_esc(', '.join(s['speakers']))} ·
-      episode {clock(window['start'])}–{clock(window['end'])}</p>
-    <div class="row">{''.join(controls)}</div>
-    <details><summary>Script ({s['lines']} lines)</summary>
-      <table><thead><tr><th>At</th><th>Speaker</th><th>Original</th>
-      <th>What the dub says</th></tr></thead><tbody>{lines}</tbody></table>
-    </details>
-  </section>""")
-
-    problems = manifest["objective"]["problems"]
-    notes = manifest["objective"]["notes"]
-    if problems:
-        status = ('<div class="callout"><p class="bad"><strong>Objective checks '
-                  'found problems.</strong></p><ul>'
-                  + "".join(f"<li>{_esc(p)}</li>" for p in problems) + "</ul></div>")
-    else:
-        status = ('<p class="meta ok">Objective checks passed: the versions are '
-                  'comparable.</p>')
-    if notes:
-        status += ('<div class="callout"><ul class="note">'
-                   + "".join(f"<li>{_esc(n)}</li>" for n in notes) + "</ul></div>")
-    flagged = manifest.get("take_findings") or []
-    if flagged:
-        status += ('<div class="callout"><p><strong>The shared takes have known '
-                   'defects.</strong> A recognizer disagreed with these. They are in '
-                   'the generated speech every version plays, so no setting on either '
-                   'side can fix them:</p><ul>'
-                   + "".join(f"<li>{_esc(f)}</li>" for f in flagged[:8])
-                   + ("<li>…and more, in results.md</li>" if len(flagged) > 8 else "")
-                   + "</ul></div>")
-
-    return f"""<!doctype html>
-<html lang="en"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Doblarr comparison — {_esc(manifest['comparison_id'])}</title>
-<style>{PAGE_CSS}</style>
-
-<div class="bar"><div class="wrap">
-  <audio id="player" controls preload="none"></audio>
-  <div class="now"><strong id="nowLabel">Pick something to play</strong>
-    <span id="nowScene">{len(manifest['scenes'])} scenes · keys 1-3, O, R, M, [ ]</span></div>
-  <div class="toggles">
-    <label title="Plays a gain-matched copy. Audition aid only — it never
-changed any rendered audio."><input type="checkbox" id="matched"> Level-matched</label>
-    <label><input type="checkbox" id="loop"> Loop</label>
-  </div>
-</div></div>
-
-<div class="wrap">
-<h1>{_esc(manifest['comparison_id'])}</h1>
-<p class="meta">{_esc(manifest.get('note') or '')}</p>
-{status}
-<p class="meta">Versions are lettered so the order does not steer you. The mapping
-  is not a secret: <button id="reveal">Reveal which is which</button>
-  <span id="mapping" hidden><strong>{_esc(reveal)}</strong></span></p>
-<p class="meta">Keyboard: <kbd class="help">1</kbd>…<kbd class="help">3</kbd> switch
-  version · <kbd class="help">O</kbd> original · <kbd class="help">R</kbd> reference
-  dub · <kbd class="help">M</kbd> level-matched · <kbd class="help">L</kbd> loop ·
-  <kbd class="help">space</kbd> play/pause · <kbd class="help">[</kbd>
-  <kbd class="help">]</kbd> previous/next scene. Switching keeps your place in the
-  scene.</p>
-<nav class="scenes">{''.join(nav)}</nav>
-{''.join(blocks)}
-<footer>
-<p>A green-edged button is the <strong>original performance</strong> this dub was
-made from. An italic one is <strong>another dub</strong> of the same scene — worth
-hearing, and not evidence about the original.</p>
-<p>Every version reused the same imported takes. No speech was generated for this
-comparison.</p>
-<p>This is a bounded excerpt and says nothing about an episode nobody has heard.
-A passing objective check means the files are comparable; whether the dub is
-better is not established by anything on this page.</p>
-</footer>
-</div>
-<script>{PAGE_JS}</script>
-</html>
-"""
+    return render(manifest, root)
 
 
 def _esc(value) -> str:

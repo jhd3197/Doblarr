@@ -318,14 +318,33 @@ def test_a_treated_variant_produces_the_treated_role_and_the_other_does_not(tmp_
 
 @needs_ffmpeg
 def test_every_source_track_is_offered_and_the_original_is_named_as_such(tmp_path):
-    """Another dub is a useful reference and is never called the original."""
+    """Another dub is a useful reference and is never called the original.
+
+    The fixture media carries one track, so this builds a two-track copy — a
+    Japanese original and an English dub, in that container order — because a
+    release that ships both is exactly the case the labelling exists for, and
+    it is also the case where ffmpeg's default pick is the wrong one.
+    """
+    from doblarr.ffmpeg import run_ffmpeg
+
     run = completed_run(tmp_path / "source")
+    source = tmp_path / "two-track.mkv"
+    run_ffmpeg(["-y", "-i", str(run["media"]), "-map", "0:v:0", "-map", "0:a:0",
+                "-map", "0:a:0", "-c", "copy",
+                "-metadata:s:a:0", "language=eng", "-metadata:s:a:0", "title=English dub",
+                "-metadata:s:a:1", "language=jpn", "-metadata:s:a:1", "title=Japanese",
+                str(source)])
     config = Config.load(tmp_path / "config.yaml")
     manifest = comparison.run(
-        config, comparison_id="refs", source=run["media"], script=run["script"],
+        config, comparison_id="refs", source=source, script=run["script"],
         clips=run["clips"], windows=[(0.5, 8.5)],
         variants={"a": {}, "b": {"boundaries.trim": True}},
         root=tmp_path / "out", source_lang="ja", target_lang="es")
+    # The English dub comes first in the container; the original must still be
+    # the Japanese one, which is the whole point.
+    chosen = manifest["source"]["stream"]
+    assert chosen["language"] == "jpn"
+    assert chosen["audio_index"] == 1
     references = manifest["scenes"][0]["references"]
     assert references, "the scene offers nothing to compare against"
     originals = [r for r in references if r["role"] == "original"]
@@ -340,8 +359,12 @@ def test_every_source_track_is_offered_and_the_original_is_named_as_such(tmp_pat
             assert row["label"].startswith("Reference dub")
             assert "not evidence about the original" in row["note"]
     page = (tmp_path / "out" / "refs" / "index.html").read_text(encoding="utf-8")
-    assert "original performance" in page
-    assert "another dub" in page
+    # The distinction has to survive on the page, not only in the manifest.
+    flat = " ".join(page.split())
+    assert "original performance" in flat
+    assert "not evidence about the original" in flat
+    kinds = {row["role"] for row in references}
+    assert kinds == {"original", "reference dub"}
 
 
 @needs_ffmpeg
@@ -373,17 +396,37 @@ def test_the_results_sheet_is_delivered_empty_with_the_mapping_written_down(tmp_
     assert "bounded excerpt" in sheet
     page = (tmp_path / "out" / "c5" / "index.html").read_text(encoding="utf-8")
     assert "Reveal which is which" in page
-    assert "No speech was generated" in page
-    # The player has to follow the reader down a five-scene page, and the
-    # switching has to be reachable without the mouse.
-    assert "position: sticky" in page
-    assert 'id="player"' in page
-    for key in ("data-key=", "keydown", "Level-matched"):
-        assert key in page
-    for label, name in manifest["labels"].items():
-        assert f"{label} = {name}" in page
-    # every playable file the page links to is relative and on disk
+    # The three claims the page must never stop making, however it is worded
+    # or wrapped. Collapsing whitespace is the point: an assertion that breaks
+    # on a line break is testing the formatter, not the promise.
+    lower = " ".join(page.split()).lower()
+    assert "no speech was generated" in lower
+    assert "bounded excerpt" in lower
+    assert "not that any version is better" in lower
+    # The page is an instrument, not a file list: the transport stays put, the
+    # keyboard works, and a verdict has somewhere to go.
+    assert "position:sticky" in page
+    for key in ("Which sounded best in this scene?", "Moments", "Export results",
+                "keydown", "Level-matched"):
+        assert key in page, key
+    # It carries its own data and every path in it is relative and on disk.
+    import json as _json
     import re
-    for src in re.findall(r'data-actual="([^"]+)"', page):
-        assert not src.startswith(("/", "http"))
-        assert (tmp_path / "out" / "c5" / src).is_file()
+    blob = re.search(r"const DATA = (\{.*\});", page)
+    assert blob, "the page carries no data"
+    data = _json.loads(blob.group(1))
+    assert data["labels"] == manifest["labels"]
+    assert len(data["scenes"]) == len(manifest["scenes"])
+    for scene in data["scenes"]:
+        assert scene["sources"], "a scene with nothing to play"
+        for source in scene["sources"]:
+            assert source["kind"] in ("original", "reference", "version")
+            for key in ("src", "matched"):
+                target = source[key]
+                if not target:
+                    continue
+                assert not target.startswith(("/", "http"))
+                assert (tmp_path / "out" / "c5" / target).is_file()
+            # a waveform is drawn from real audio, not invented
+            assert source["peaks"], "a source with no envelope"
+            assert max(source["peaks"]) <= 1.0

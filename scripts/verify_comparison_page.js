@@ -30,55 +30,61 @@ const problems = [];
 page.on('pageerror', e => problems.push(`page error: ${e.message}`));
 await page.goto(page_url);
 
-const buttons = await page.locator('button[data-actual]').all();
-console.log(`${manifest.comparison_id}: ${buttons.length} playback controls`);
-if (!buttons.length) problems.push('the page offers nothing to play');
-
-for (const button of buttons) {
-  const label = (await button.textContent()).trim();
-  const src = await button.getAttribute('data-actual');
-  await button.click();
-  // Wait for real decoded audio, not just a src attribute that was set.
-  const ok = await page.waitForFunction(() => {
-    const player = document.getElementById('player');
-    return player.readyState >= 2 && Number.isFinite(player.duration) && player.duration > 1;
-  }, null, { timeout: 15000 }).then(() => true).catch(() => false);
-  if (!ok) { problems.push(`${label} (${src}) did not decode`); continue; }
-  const duration = await page.evaluate(() => document.getElementById('player').duration);
-  await page.evaluate(() => document.getElementById('player').play());
-  const moved = await page.waitForFunction(() => {
-    return document.getElementById('player').currentTime > 0.15;
-  }, null, { timeout: 10000 }).then(() => true).catch(() => false);
-  await page.evaluate(() => document.getElementById('player').pause());
-  if (!moved) problems.push(`${label} (${src}) decoded but did not play`);
-  console.log(`  ${moved ? 'plays' : 'SILENT'}  ${label} · ${duration.toFixed(2)}s · ${src}`);
+// Every scene, every source, actually decoded and played. The page renders
+// one scene at a time, so this walks them rather than reading one screen.
+const scenes = await page.locator('.scene').count();
+console.log(`${manifest.comparison_id}: ${scenes} scenes`);
+if (!scenes) problems.push('the page offers no scenes');
+let played = 0;
+for (let n = 0; n < scenes; n += 1) {
+  await page.locator('.scene').nth(n).click();
+  await page.waitForTimeout(150);
+  const title = await page.locator('#sceneTitle').textContent();
+  const sources = await page.locator('.src').count();
+  for (let i = 0; i < sources; i += 1) {
+    const button = page.locator('.src').nth(i);
+    const label = (await button.textContent()).trim().replace(/\s+/g, ' ');
+    await button.click();
+    const ok = await page.waitForFunction(() => {
+      const a = document.querySelector('audio') || window.__player;
+      return a && a.readyState >= 2 && isFinite(a.duration) && a.duration > 1;
+    }, null, { timeout: 15000 }).then(() => true).catch(() => false);
+    if (!ok) { problems.push(`scene ${n + 1} / ${label} did not decode`); continue; }
+    await page.evaluate(() => (document.querySelector('audio') || window.__player).play());
+    const moved = await page.waitForFunction(() => {
+      const a = document.querySelector('audio') || window.__player;
+      return a.currentTime > 0.15;
+    }, null, { timeout: 10000 }).then(() => true).catch(() => false);
+    await page.evaluate(() => (document.querySelector('audio') || window.__player).pause());
+    if (!moved) problems.push(`scene ${n + 1} / ${label} decoded but did not play`);
+    else played += 1;
+  }
+  console.log(`  scene ${n + 1}: ${sources} sources play · ${title}`);
 }
+console.log(`  ${played} playable sources in total`);
 
-// The level-matched toggle must swap the loaded file, not silence it.
-// `find` with an async predicate matches the first element every time — the
-// promise is always truthy — so the attribute is resolved before filtering.
-const attrs = await Promise.all(buttons.map(b => b.getAttribute('data-matched')));
-const withMatched = buttons[attrs.findIndex(Boolean)];
-if (withMatched) {
-  await withMatched.click();
-  await page.locator('#matched').check();
-  const ok = await page.waitForFunction(() => {
-    const p = document.getElementById('player');
-    return p.readyState >= 2 && p.duration > 1;
-  }, null, { timeout: 15000 }).then(() => true).catch(() => false);
-  if (!ok) problems.push('the level-matched toggle did not load a playable file');
-  else console.log('  level-matched toggle swaps the source');
-  await page.locator('#matched').uncheck();
-}
+// The judgement controls are the point of the page, not decoration.
+await page.locator('.scene').first().click();
+await page.getByRole('button', { name: 'Version B', exact: true }).first().click();
+if (!(await page.locator('#judged').textContent()).startsWith('1 '))
+  problems.push('a verdict was not recorded');
+await page.locator('#markNow').click();
+if (await page.locator('.mark').count() !== 1) problems.push('a moment was not marked');
+if (await page.locator('.pin').count() !== 1) problems.push('a marked moment has no pin');
 
-// Keyboard switching is the point of the page; if it is dead, say so.
-// Deliberately pressed straight after touching the checkbox, because that is
-// where the shortcuts used to stop working.
+// Keyboard, pressed straight after touching a control, because that is where
+// shortcuts have broken before.
 await page.keyboard.press('2');
-const switched = await page.evaluate(() =>
-  document.querySelector('button.playing')?.dataset.key === '2');
-if (!switched) problems.push('the keyboard did not switch versions');
-else console.log('  keyboard switching works');
+await page.waitForTimeout(200);
+const pressed = await page.locator('.src[aria-pressed="true"]').first().textContent();
+if (!pressed.includes('Version B')) problems.push('the keyboard did not switch versions');
+else console.log('  verdict, moment and keyboard all work');
+
+// A reload must not lose a judgement somebody already made.
+await page.reload();
+await page.waitForTimeout(500);
+if (!(await page.locator('#judged').textContent()).startsWith('1 '))
+  problems.push('judgements did not survive a reload');
 
 // The label mapping is a fairness aid, never a secret.
 await page.getByRole('button', { name: 'Reveal which is which' }).click();
