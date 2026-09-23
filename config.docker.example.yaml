@@ -34,6 +34,8 @@ filtering:
 
 # Where the local model stages run: Demucs separation, pyannote diarization and
 # whisper transcription. voicebox is a separate process with its own device.
+# This image has no ML stack; for a GPU, run the GPU image (Dockerfile.gpu via
+# docker-compose.gpu.yml, see the README).
 compute:
   device: auto                  # auto | cpu | cuda | cuda:N | mps
                                 # auto: first CUDA GPU, else Apple MPS, else CPU; never fails.

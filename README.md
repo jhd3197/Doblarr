@@ -269,6 +269,23 @@ an error if publication succeeded but the image cannot be read publicly.
 fragment. The image is the app only (no ML stack) — the worker runs dry-run until
 Demucs/voicebox are added.
 
+#### GPU
+
+`Dockerfile.gpu` adds the local models (Demucs separation, whisperx
+transcription, pyannote diarization) on a CUDA build of PyTorch. The host needs
+an NVIDIA driver and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+
+```bash
+export HF_TOKEN=hf_...   # pyannote's model is gated; accept its terms on HuggingFace
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+Then open **Settings → Hardware**. It shows the GPU the container sees, its free
+memory and which libraries are installed, and lets you pick the device for each
+stage. Downloaded models stay under `data/models`. voicebox still runs as its own
+service. The image is large (CUDA wheels) and is built locally, not published.
+
 ## Pipeline
 
 | # | Stage | Tool | Status |

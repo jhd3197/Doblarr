@@ -1,5 +1,7 @@
 # Doblarr — app image (no ML stack; the worker runs dry-run until Demucs/voicebox
-# are added in a future GPU variant). ffmpeg is included for extract/mux/mix.
+# are added). ffmpeg is included for extract/mux/mix. For Demucs, whisperx and
+# pyannote on an NVIDIA GPU, use the GPU variant: Dockerfile.gpu, started with
+# docker-compose.gpu.yml (see README "GPU").
 FROM python:3.11-slim
 
 RUN apt-get update \
