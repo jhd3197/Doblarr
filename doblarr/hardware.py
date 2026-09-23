@@ -17,8 +17,10 @@ import importlib.util
 import logging
 import shutil
 import subprocess
+import sys
 import threading
 from collections.abc import Mapping
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 
 log = logging.getLogger("doblarr.hardware")
@@ -353,3 +355,74 @@ def resolve_device(stage: str, compute: Mapping | None = None,
             f"{stage}: device {configured} is configured, but only {count} CUDA "
             f"device(s) are visible ({found})")
     return Device("cuda", index if index is not None else 0, configured)
+
+
+# -- memory around a stage ------------------------------------------------------
+
+def _mib(value) -> str:
+    return "?" if value is None else f"{value / (1024 * 1024):.0f} MiB"
+
+
+def _cuda_counters(torch) -> dict[str, dict]:
+    """Allocated/reserved/peak bytes per visible CUDA device."""
+    rows: dict[str, dict] = {}
+    try:
+        if not torch.cuda.is_available():
+            return rows
+        count = torch.cuda.device_count()
+    except Exception:  # noqa: BLE001
+        return rows
+    for index in range(count):
+        row = {}
+        for key, name in (("allocated", "memory_allocated"), ("reserved", "memory_reserved"),
+                          ("peak_allocated", "max_memory_allocated")):
+            with suppress(Exception):
+                row[key] = int(getattr(torch.cuda, name)(index))
+        rows[f"cuda:{index}"] = row
+    return rows
+
+
+@contextmanager
+def gpu_stage(name: str, job, compute: Mapping | None = None, retain: bool = False):
+    """Measure a local model stage's GPU memory and free it afterwards.
+
+    Records `job.metrics["gpu_memory"][name]` (peak allocated and reserved per
+    device) and, with `compute.release_after_stage`, drops pooled models and
+    empties the caches, so voicebox synthesizing next on the same GPU is not
+    starved. `retain` (transcribe.keep_models_loaded) keeps the models. A
+    no-op until some stage has imported torch; this never imports it.
+    """
+    from .model_pool import release_models
+
+    compute = compute or {}
+    torch = sys.modules.get("torch")
+    before: dict[str, dict] = {}
+    if torch is not None:
+        with suppress(Exception):
+            if torch.cuda.is_available():
+                for index in range(torch.cuda.device_count()):
+                    torch.cuda.reset_peak_memory_stats(index)
+        before = _cuda_counters(torch)
+    try:
+        yield
+    finally:
+        torch = sys.modules.get("torch")  # the stage may have loaded it
+        after = _cuda_counters(torch) if torch is not None else {}
+        if after:
+            job.metrics.setdefault("gpu_memory", {})[name] = {
+                device: {"peak_allocated": row.get("peak_allocated"),
+                         "reserved": row.get("reserved")}
+                for device, row in after.items()}
+        released = False
+        if compute.get("release_after_stage", True) and not retain:
+            release_models()
+            released = True
+        if after and compute.get("log_memory", True):
+            freed = _cuda_counters(torch) if released else after
+            for device, row in after.items():
+                was = before.get(device, {})
+                now = freed.get(device, {})
+                log.info("%s on %s: allocated %s -> %s (peak %s), reserved %s -> %s%s",
+                         name, device, _mib(was.get("allocated")), _mib(now.get("allocated")),
+                         _mib(row.get("peak_allocated")), _mib(was.get("reserved")),
+                         _mib(now.get("reserved")), " after release" if released else "")

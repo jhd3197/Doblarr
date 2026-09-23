@@ -16,6 +16,7 @@ from .config import Config
 from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
 from .ffmpeg import FFmpegError
+from .hardware import gpu_stage
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
 from .languages import base_language, display_name, resolve_target_locale
@@ -149,6 +150,30 @@ def run_job(
     cast_holder: dict = {"cast": None}
     # Which device each local model stage runs on (hardware.resolve_device).
     compute = dict(config.get("compute", {}))
+    keep_models = bool(config["transcribe"].get("keep_models_loaded", False))
+
+    def _separate():
+        # Demucs runs in-process and voicebox synthesizes next on the same
+        # GPU: its memory has to be handed back, not left in torch's cache.
+        with gpu_stage("separate", job, compute):
+            separate.run(job, shared_work, model=config["separate"]["model"],
+                         dry_run=dry_run, force=force, compute=compute)
+
+    def _transcribe():
+        with gpu_stage("transcribe", job, compute, retain=keep_models):
+            transcribe.run(
+                job,
+                work,
+                source=config["transcribe"]["source"],
+                whisper_model=config["transcribe"]["whisper_model"],
+                vb=vb,
+                segment_limit=seg_limit,
+                max_seconds=teaser_s,
+                dry_run=dry_run,
+                options=dict(config["transcribe"]),
+                force=force,
+                compute=compute,
+            )
 
     def _ensure_cast():
         if db is None or dry_run:
@@ -167,8 +192,9 @@ def run_job(
         )
 
     def _diarize():
-        diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run,
-                    compute=compute)
+        with gpu_stage("diarize", job, compute, retain=keep_models):
+            diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run,
+                        compute=compute)
         if not dry_run and job.segments:
             prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
                         interjections=config["transcribe"].get(
@@ -519,29 +545,8 @@ def run_job(
                 duration=teaser_s,
             ),
         ),
-        (
-            "separate",
-            lambda: separate.run(
-                job, shared_work, model=config["separate"]["model"], dry_run=dry_run, force=force,
-                compute=compute,
-            ),
-        ),
-        (
-            "transcribe",
-            lambda: transcribe.run(
-                job,
-                work,
-                source=config["transcribe"]["source"],
-                whisper_model=config["transcribe"]["whisper_model"],
-                vb=vb,
-                segment_limit=seg_limit,
-                max_seconds=teaser_s,
-                dry_run=dry_run,
-                options=dict(config["transcribe"]),
-                force=force,
-                compute=compute,
-            ),
-        ),
+        ("separate", _separate),
+        ("transcribe", _transcribe),
         ("diarize", _diarize),
         ("cast", _ensure_cast),
         ("translate", _translate),
