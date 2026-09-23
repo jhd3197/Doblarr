@@ -674,7 +674,8 @@ def run_job(
                 # Phrase timing and coverage policy, frozen the same way: an old
                 # review must show the policy that produced it, not today's.
                 "timing": {k: timing_options.get(k, default) for k, default in (
-                    ("mode", "whole"), ("max_stretch", 1.3), ("min_stretch", 1.0),
+                    ("mode", "whole"), ("pacing", "speaker"),
+                    ("max_stretch", 1.3), ("min_stretch", 1.0),
                     ("protect_pause", 0.45), ("anchor_tolerance", 0.12),
                     ("repair", True))},
                 "coverage": {k: coverage_options.get(k, default) for k, default in (

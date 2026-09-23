@@ -119,6 +119,12 @@ const TABS = [
     N("timing.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the phrase boundaries are not knowable and the line is fitted as one whole."),
     N("timing.collision_gap", "Overlap slack before two turns collide (seconds)"),
     B("timing.repair", "Allow a bounded rewrite when a line cannot fit", "Tries an existing take first; a rewrite is charged to the shared request budget."),
+  ]), group("Pace", [
+    C("timing.pacing", "Keep each character's pace steady", ["speaker", "off"], "Speaker keeps one character's lines in a scene near one pace, so a line is not played at natural speed and the next 30% faster. A line that would need more is rewritten first, and a slow take is sped toward the others. Off fits every line on its own, as earlier releases did. Applies to whole-line timing."),
+    N("timing.pace_tolerance", "Flag a line this far off its character's pace", "0.18 means 18% faster or slower than the character's other lines in the scene. Reported for review; it changes no audio."),
+    N("timing.pace_local_range", "How far one line's compression may differ", "0.10 lets a line sit 0.1x either side of its character's compression, unless it needs more to fit its slot."),
+    N("timing.pace_max_speedup", "Most to speed up a slow take", "1.15 means up to 15% faster, toward the character's usual pace."),
+    N("timing.pace_scene_gap", "A silence this long starts a new scene (seconds)", "A character's pace is compared within a scene, not across the whole episode."),
   ]), group("Reactions and background", [
     C("coverage.mode", "Reaction coverage", ["off", "review", "retain"], "Off still lists every laugh, gasp and door the subtitles recorded, and changes no audio. Review prepares the sound so you can hear it next to the scene without it entering the dub. Retain also places it. Nothing is ever inserted without a decision."),
     N("coverage.gain_db", "Level of a placed sound (dB)"),
@@ -201,7 +207,7 @@ const PLAN_FIELDS = [
     "boundaries.trim", "boundaries.edge_fade_ms",
     // Which timing owner and whether coverage may place a sound are per-title
     // choices; the thresholds behind them stay global.
-    "timing.mode", "coverage.mode",
+    "timing.mode", "timing.pacing", "coverage.mode",
     // Which space a show is played in, and how hard its exports are checked,
     // are per-title choices; the thresholds behind them stay global.
     "treatments.mode", "treatments.default", "delivery.mode"]

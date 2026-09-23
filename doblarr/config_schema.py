@@ -250,10 +250,15 @@ class TimingModel(_Section):
     min_separation_db: float = 10
     collision_gap: float = 0.0
     repair: bool = True
-    # Pace per character (doblarr.pacing): a line heard more than
-    # `pace_tolerance` off its group's median pace is flagged. A group is one
-    # speaker's lines, split where they fall silent for `pace_scene_gap`.
+    # Pace per character (doblarr.pacing). A group is one speaker's lines,
+    # split where they fall silent for `pace_scene_gap`; a line heard more
+    # than `pace_tolerance` off its group's median pace is flagged.
+    # `speaker` keeps a group's lines near one pace in whole-clip mode;
+    # `off` fits each line alone, exactly as earlier releases did.
+    pacing: Literal["off", "speaker"] = "speaker"
     pace_tolerance: float = 0.18
+    pace_local_range: float = 0.10  # how far a line's factor may sit from its group's
+    pace_max_speedup: float = 1.15  # most a slow take is sped toward its group
     pace_scene_gap: float = 8.0
     phrases: dict[str, dict] = {}   # per-cue anchors/pauses set in review
     overlaps: dict[str, dict] = {}  # per-cue accepted intentional overlaps

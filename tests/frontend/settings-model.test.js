@@ -108,3 +108,11 @@ test('device choices come from the probe, with a fallback and the saved value ke
   applyDeviceOptions(null);  // probe unavailable: choices stay as they were
   assert.ok(FIELD_BY_KEY['compute.device'].o.includes('cuda:0'));
 });
+
+test('steady pacing is a visible timing choice a title can make', () => {
+  assert.deepEqual(FIELD_BY_KEY['timing.pacing'].o, ['speaker', 'off']);
+  assert.match(FIELD_BY_KEY['timing.pacing'].h, /as earlier releases did/);
+  for (const key of ['timing.pace_tolerance', 'timing.pace_local_range',
+    'timing.pace_max_speedup', 'timing.pace_scene_gap']) assert.ok(FIELD_BY_KEY[key]?.h, key);
+  assert.ok(PLAN_FIELDS.map(f => f.k).includes('timing.pacing'));
+});

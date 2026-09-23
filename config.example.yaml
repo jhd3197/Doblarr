@@ -199,10 +199,16 @@ timing:
   min_separation_db: 10          # below this, phrase boundaries are not knowable
   collision_gap: 0.0             # extra slack before two turns count as colliding
   repair: true                   # allow a bounded rewrite when a line cannot fit
-  # Pace per character: a line heard more than pace_tolerance faster or slower
-  # than the same speaker's other lines in the scene gets an info finding. A
-  # scene here is a speaker's run of lines with no gap longer than pace_scene_gap.
-  pace_tolerance: 0.18           # 0.18 = 18% off the group's median pace
+  # Pace per character. Without it a line can play at natural speed and the
+  # next one at 1.3x, or a slow take plays slow with a gap after it. `speaker`
+  # keeps one speaker's lines in a scene near one pace (whole mode): a group
+  # compression, each line within pace_local_range of it, a line that needs
+  # more is rewritten first (repair), and a slow take is sped toward the group.
+  # `off` fits every line on its own, exactly as earlier releases did.
+  pacing: speaker                # off | speaker
+  pace_tolerance: 0.18           # a line 18% off its group's pace gets an info finding
+  pace_local_range: 0.10         # how far a line's compression may sit from its group's
+  pace_max_speedup: 1.15         # most a slow take is sped up toward its group
   pace_scene_gap: 8.0            # seconds of silence that start a new pace group
   phrases: {}                    # per-cue anchors and protected pauses, set in review
   overlaps: {}                   # per-cue accepted intentional overlaps, set in review

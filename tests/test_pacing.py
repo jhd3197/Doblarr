@@ -123,3 +123,38 @@ def test_fit_timing_records_pace_without_changing_audio_when_off(tmp_path, monke
     assert calls == []  # every take fits its 3s slot: nothing is rendered
     assert job.metrics["pacing"]["pace_jumps"] == 1
     assert job.metrics["pacing"]["mode"] == "off"
+
+
+def _fit_paced(tmp_path, monkeypatch, voiced, options):
+    job, rows = _paced_job(tmp_path, voiced)
+    for seg, take in rows:
+        seg.audio_clip = take
+        os.utime(take, (2000, 2000))
+    rendered = {}
+
+    def render(args, **kwargs):
+        rendered[Path(args[2]).stem] = args[args.index("-af") + 1]
+        Path(args[-1]).write_bytes(b"audio")
+
+    monkeypatch.setattr(fit_timing, "run_ffmpeg", render)
+    fit_timing.run(job, tmp_path / "work", options=options)
+    return job, rendered
+
+
+def test_a_slow_take_is_sped_toward_its_character_capped(tmp_path, monkeypatch):
+    # Same text, 3 s slots; the last take is ~30% slower than the other two.
+    job, rendered = _fit_paced(tmp_path, monkeypatch, [2.0, 2.0, 2.6],
+                               {"pacing": "speaker", "pace_local_range": 0.3})
+    assert rendered == {"2": "atempo=1.1500"}      # pace_max_speedup, not the full 1.3
+    assert not any("timing_overflow" in s.issues for s in job.segments)
+
+
+def test_the_slow_take_speedup_also_respects_the_local_range(tmp_path, monkeypatch):
+    _job, rendered = _fit_paced(tmp_path, monkeypatch, [2.0, 2.0, 2.6], {"pacing": "speaker"})
+    assert rendered == {"2": "atempo=1.1000"}      # base 1.0 + pace_local_range 0.10
+
+
+def test_with_pacing_off_a_slow_take_is_left_slow(tmp_path, monkeypatch):
+    job, rendered = _fit_paced(tmp_path, monkeypatch, [2.0, 2.0, 2.6], {"pacing": "off"})
+    assert rendered == {}
+    assert job.metrics["pacing"]["pace_jumps"] == 1  # still reported
