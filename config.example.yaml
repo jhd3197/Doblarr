@@ -199,6 +199,11 @@ timing:
   min_separation_db: 10          # below this, phrase boundaries are not knowable
   collision_gap: 0.0             # extra slack before two turns count as colliding
   repair: true                   # allow a bounded rewrite when a line cannot fit
+  # Pace per character: a line heard more than pace_tolerance faster or slower
+  # than the same speaker's other lines in the scene gets an info finding. A
+  # scene here is a speaker's run of lines with no gap longer than pace_scene_gap.
+  pace_tolerance: 0.18           # 0.18 = 18% off the group's median pace
+  pace_scene_gap: 8.0            # seconds of silence that start a new pace group
   phrases: {}                    # per-cue anchors and protected pauses, set in review
   overlaps: {}                   # per-cue accepted intentional overlaps, set in review
 

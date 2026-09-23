@@ -18,6 +18,7 @@ import threading
 import wave
 from pathlib import Path
 
+from .. import pacing
 from ..cues import FITTED, Artifact
 from ..ffmpeg import run_ffmpeg, run_ffprobe
 from ..fingerprints import processing as processing_fingerprint
@@ -121,6 +122,14 @@ def _record_timing_findings(seg, actual: float, factor: float) -> None:
     apply_findings(seg, DETECTOR, f"{actual:.4f}/{seg.duration:.4f}/{factor:.4f}", observed)
 
 
+def _record_pacing(job, measured, takes, options, cancel) -> None:
+    """How fast each line is heard, next to its character's other lines."""
+    config = pacing.settings(options)
+    lines = [pacing.measure(s, takes[id(s)], factor, config["threshold_db"], cancel)
+             for s, _actual, factor in measured]
+    pacing.record(job, lines, options)
+
+
 @stage("fit_timing")
 def run(
     job: DubJob,
@@ -134,6 +143,7 @@ def run(
     checkpoint=None,
     max_attempts=2,
     budget=None,
+    options: dict | None = None,
 ) -> Plan | None:
     if not enabled:
         log.info("fit_timing disabled")
@@ -159,6 +169,7 @@ def run(
 
     plan: list[tuple[Segment, Path, Path, float, float]] = []  # seg, src, dest, actual, factor
     measured: list[tuple[Segment, float, float]] = []     # seg, actual, factor
+    takes: dict[int, Path] = {}                            # the take each factor applies to
     for s, src in clips:
         s.issues = [i for i in s.issues if i not in {"timing_overflow", "timing_repair_failed"}]
         if s.duration <= 0:
@@ -209,6 +220,7 @@ def run(
                 else:
                     raise RuntimeError("timing repair did not produce an audio clip")
                 actual = _duration(src, cancel=cancel)
+        takes[id(s)] = src
         if actual <= s.duration * FIT_SLACK:
             measured.append((s, actual, 1.0))
             continue
@@ -223,6 +235,7 @@ def run(
     # its old overflow instead of leaving a stale one open.
     for s, actual, factor in measured:
         _record_timing_findings(s, actual, factor)
+    _record_pacing(job, measured, takes, options, cancel)
 
     if not plan:
         log.info("fit_timing: every clip fits its slot")

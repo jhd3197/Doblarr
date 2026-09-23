@@ -44,6 +44,9 @@ ISSUE_KINDS = {
     # A giggle or hum the line never asked for. Recognition leaves those out,
     # so the content check alone passes such a take (see doblarr.vocalization).
     "extra_sound": ("content", "warning"),
+    # A line heard faster or slower than its character's other lines in the
+    # scene (see doblarr.pacing). Information: the timing owner decides.
+    "pace_jump": ("timing", "info"),
 }
 
 
