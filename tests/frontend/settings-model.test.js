@@ -78,7 +78,7 @@ test('the Hardware tab holds the device and memory controls', () => {
   assert.deepEqual(keys, [
     'compute.device', 'compute.separate_device', 'compute.diarize_device',
     'compute.transcribe_device', 'compute.release_after_stage', 'compute.log_memory',
-    'transcribe.compute_type', 'transcribe.keep_models_loaded',
+    'transcribe.compute_type', 'transcribe.keep_models_loaded', 'separate.chunk_seconds',
   ]);
   const info = hardware.groups[0].fields[0];
   assert.equal(info.t, 'info');

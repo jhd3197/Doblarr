@@ -157,7 +157,10 @@ def run_job(
         # GPU: its memory has to be handed back, not left in torch's cache.
         with gpu_stage("separate", job, compute):
             separate.run(job, shared_work, model=config["separate"]["model"],
-                         dry_run=dry_run, force=force, compute=compute)
+                         dry_run=dry_run, force=force, compute=compute,
+                         chunk_seconds=float(config["separate"].get("chunk_seconds", 600)),
+                         overlap_seconds=float(config["separate"].get("overlap_seconds", 10)),
+                         cancel=cancel_event)
 
     def _transcribe():
         with gpu_stage("transcribe", job, compute, retain=keep_models):

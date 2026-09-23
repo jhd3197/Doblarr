@@ -99,6 +99,9 @@ compute:
 # Source separation
 separate:
   model: htdemucs_ft            # keep music+FX, replace only dialogue
+  chunk_seconds: 600            # longer sources are separated in windows of this many
+                                # seconds, so a film needs one window's memory; 0 = whole
+  overlap_seconds: 10           # each window reads this much past its end, crossfaded
 
 # Dubbing behaviour
 dub:

@@ -44,6 +44,12 @@ compute:
   release_after_stage: true     # free GPU memory after each stage so voicebox has room
   log_memory: true              # log allocated/reserved GPU memory around each stage
 
+# Source separation (Demucs, when installed). Longer sources are separated in
+# overlapping windows, so a film needs the memory of one window.
+separate:
+  chunk_seconds: 600            # 0 = separate in one piece
+  overlap_seconds: 10
+
 # Source-relative dynamics. `legacy` keeps the pre-timing loudness pass exactly
 # as earlier releases ran it. The other modes move loudness ownership to a
 # single pass *after* timing, so a whisper that the original actor played

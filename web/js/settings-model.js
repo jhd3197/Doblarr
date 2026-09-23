@@ -173,6 +173,7 @@ const TABS = [
     B("compute.log_memory", "Log GPU memory per stage", "Allocated and reserved memory before and after each stage, in the job log."),
     C("transcribe.compute_type", "Transcription precision", ["auto", "float16", "int8"], "Auto is float16 on a GPU and int8 on the CPU."),
     B("transcribe.keep_models_loaded", "Keep local models loaded", "Uses more memory. Enable only when the GPU can hold the active models."),
+    N("separate.chunk_seconds", "Separate long files in windows of (seconds)", "A film is separated in overlapping windows of this length, so it needs the memory of one window, and a cancelled run resumes at the next one. 0 separates in one piece."),
   ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),

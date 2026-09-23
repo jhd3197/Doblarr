@@ -128,6 +128,10 @@ class ComputeModel(_Section):
 
 class SeparateModel(_Section):
     model: str = "htdemucs_ft"
+    # A source longer than this is separated in overlapping windows, so a
+    # feature film needs the memory of one window. 0 separates in one piece.
+    chunk_seconds: float = 600
+    overlap_seconds: float = 10
 
 
 class DubModel(_Section):
