@@ -116,3 +116,10 @@ test('steady pacing is a visible timing choice a title can make', () => {
     'timing.pace_max_speedup', 'timing.pace_scene_gap']) assert.ok(FIELD_BY_KEY[key]?.h, key);
   assert.ok(PLAN_FIELDS.map(f => f.k).includes('timing.pacing'));
 });
+
+test('the translation prep pass is opt-in and says what it costs', () => {
+  const field = FIELD_BY_KEY['translate.prepass'];
+  assert.deepEqual(field.o, ['off', 'summary', 'summary_terms']);
+  assert.match(field.h, /never enter the glossary on their own/);
+  assert.match(field.h, /Costs extra requests/);
+});

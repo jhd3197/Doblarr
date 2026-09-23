@@ -91,6 +91,10 @@ class TranslateModel(_Section):
     reuse_memory: bool = False
     direction: str = ""
     character_notes: dict[str, str] = {}
+    # One bounded read of the whole script before translating: a synopsis for
+    # the translator, and with summary_terms, name/term candidates for review.
+    # Costs provider calls, so off by default (see doblarr.prepass).
+    prepass: Literal["off", "summary", "summary_terms"] = "off"
 
 
 class TranscribeModel(_Section):

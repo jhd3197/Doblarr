@@ -21,6 +21,7 @@ def run(
     checkpoint=None,
     cancel=None,
     memory_db=None,
+    synopsis=None,
 ):
     if hasattr(translator, "repair_glossary"):
         translator.repair_glossary = dict(glossary or {})
@@ -30,7 +31,7 @@ def run(
         return
     size = max(1, min(32, int(batch_size)))
     for position, seg in enumerate(job.segments):
-        context = memory.scene_context(job, position, glossary)
+        context = memory.scene_context(job, position, glossary, synopsis)
         if ((seg.memory_context and seg.memory_context != context)
                 or (job.script_is_target and job.translation_options.get("adapt_region")
                     and not seg.translation_provenance)):
@@ -43,7 +44,8 @@ def run(
     for seg in pending:
         if cancel is not None and cancel.is_set():
             raise JobCancelled("cancelled during memory lookup")
-        seg.memory_context = memory.scene_context(job, positions[seg.index], glossary)
+        seg.memory_context = memory.scene_context(job, positions[seg.index], glossary,
+                                                  synopsis)
         reason = "reuse-disabled"
         match = None
         if memory_db is not None and job.translation_options.get("reuse_memory"):
@@ -108,6 +110,8 @@ def run(
                 job.target_lang,
                 context=context,
                 glossary=glossary,
+                # only when there is one, so translators without it still work
+                **({"synopsis": synopsis} if synopsis else {}),
             )
         else:
             results = [

@@ -58,6 +58,7 @@ const TABS = [
     C("translate.adaptation", "Dialogue style", ["natural", "faithful", "localized"]),
     B("translate.adapt_region", "Adapt wording to this region", "Also adapt subtitles already in the target language. Original dialogue stays available for comparison."),
     B("translate.reuse_memory", "Reuse reviewed translations", "Opt-in pilot: exact lines with matching scene, register, settings and timing only."),
+    C("translate.prepass", "Read the whole episode first", ["off", "summary", "summary_terms"], "Summary gives the translator a short machine-written synopsis of the episode. Summary and terms also lists names and terms to keep consistent, for review only: they never enter the glossary on their own. Costs extra requests (charged to the shared budget); cached, so a rerun does not pay again."),
     T("translate.direction", "Dialogue direction", "For example: restrained anime dialogue; keep cultural terms; avoid added catchphrases."),
     J("translate.character_notes", "Character dialogue notes", 'By speaker ID, for example {"GINKO": "Calm, concise; never overly formal"}.'),
     N("translate.batch_size", "Lines per translation batch"),

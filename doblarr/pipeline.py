@@ -8,7 +8,16 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from . import background, conversation, delivery, levels, phrases, reactions, treatments
+from . import (
+    background,
+    conversation,
+    delivery,
+    levels,
+    phrases,
+    prepass,
+    reactions,
+    treatments,
+)
 from .artifacts import digest, media_work
 from .budget import RequestBudget
 from .clients.translator import build_translator
@@ -103,7 +112,10 @@ def run_job(
     job.translation_options["target_locale"] = job.target_locale
     edits = config["dub"].get("line_edits", {})
     if edits or job.kind == "audition":
-        effective_work = work / "effective" / digest([edits, config["translate"], job.kind])[:16]
+        # A prep pass that is off leaves the key what it was before it existed.
+        translate_key = {k: v for k, v in dict(config["translate"]).items()
+                         if k != "prepass" or v != "off"}
+        effective_work = work / "effective" / digest([edits, translate_key, job.kind])[:16]
     else:
         effective_work = work
     character_group = config["dub"].get("cast_group", "")
@@ -212,27 +224,37 @@ def run_job(
         )
         if job.kind == "audition" and not edits and not dry_run:
             load_script(job, translation_work, force)
+        glossary = {
+            # Resolved terminology relevant to these segments; the explicit
+            # translate.glossary config always wins on a conflict.
+            **(
+                knowledge.glossary_terms([s.text_src for s in job.segments],
+                                         job.script_lang or job.source_lang)
+                if knowledge is not None
+                else {}
+            ),
+            **config["translate"].get("glossary", {}),
+        }
+        synopsis = None
+        if not dry_run and (not job.script_is_target
+                            or job.translation_options.get("adapt_region")):
+            synopsis = prepass.apply(job, prepass.analyze(
+                job, translator, config["translate"].get("prepass", "off"),
+                work_dir=work, budget=budget, cancel=cancel_event,
+                corrections=config["transcribe"].get("source") == "whisper",
+                title=job.input_file.stem), glossary)
         translate.run(
             job,
             translator,
             dry_run=dry_run,
             progress=_report("translate"),
             batch_size=config["translate"].get("batch_size", 12),
-            glossary={
-                # Resolved terminology relevant to these segments; the explicit
-                # translate.glossary config always wins on a conflict.
-                **(
-                    knowledge.glossary_terms([s.text_src for s in job.segments],
-                                             job.script_lang or job.source_lang)
-                    if knowledge is not None
-                    else {}
-                ),
-                **config["translate"].get("glossary", {}),
-            },
+            glossary=glossary,
             chars_per_second=config["translate"].get("chars_per_second", 14),
             checkpoint=lambda: save_script(job, translation_work),
             cancel=cancel_event,
             memory_db=db,
+            synopsis=synopsis,
         )
         if not dry_run and job.segments:
             save_script(job, translation_work)  # + translations

@@ -44,6 +44,10 @@ compute:
   release_after_stage: true     # free GPU memory after each stage so voicebox has room
   log_memory: true              # log allocated/reserved GPU memory around each stage
 
+translate:
+  prepass: "off"                # off | summary | summary_terms: one bounded read of the
+                                # script before translating (extra provider calls, cached)
+
 # Source separation (Demucs, when installed). Longer sources are separated in
 # overlapping windows, so a film needs the memory of one window.
 separate:

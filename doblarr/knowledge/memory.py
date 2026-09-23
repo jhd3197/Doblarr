@@ -78,13 +78,18 @@ def save(db, entry: MemoryEntry) -> MemoryEntry:
     return entry
 
 
-def scene_context(job, position: int, glossary: dict | None) -> dict:
+def scene_context(job, position: int, glossary: dict | None,
+                  synopsis: str | None = None) -> dict:
     segment = job.segments[position]
     options = job.translation_options
     # Keep only guidance relevant to this complete line in the reuse key.
     relevant = {k: v for k, v in (glossary or {}).items() if k in segment.text_src}
+    # `prepass` is how the synopsis was made, not what it says; the synopsis
+    # itself is identified below, and only when there is one, so contexts from
+    # runs without a prep pass keep the key they always had.
     settings = {k: v for k, v in options.items()
-                if k not in {"reuse_memory", "glossary", "character_notes"}}
+                if k not in {"reuse_memory", "glossary", "character_notes", "prepass"}}
+    extra = {"synopsis": digest(synopsis)[:16]} if synopsis else {}
     return {
         "before": [{"text": s.text_src, "speaker": s.speaker}
                    for s in job.segments[max(0, position - 3):position]],
@@ -94,6 +99,7 @@ def scene_context(job, position: int, glossary: dict | None) -> dict:
         "speaker": segment.speaker,
         "settings": settings,
         "glossary": relevant,
+        **extra,
     }
 
 
