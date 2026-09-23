@@ -235,6 +235,9 @@ def run_job(
             ),
             **config["translate"].get("glossary", {}),
         }
+        reactions_on = bool(config["transcribe"].get("interjections_as_reactions", True))
+        if hasattr(translator, "flag_reactions"):
+            translator.flag_reactions = reactions_on
         synopsis = None
         if not dry_run and (not job.script_is_target
                             or job.translation_options.get("adapt_region")):
@@ -255,6 +258,7 @@ def run_job(
             cancel=cancel_event,
             memory_db=db,
             synopsis=synopsis,
+            flag_reactions=reactions_on,
         )
         if not dry_run and job.segments:
             save_script(job, translation_work)  # + translations

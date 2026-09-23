@@ -23,6 +23,11 @@ Three things this deliberately will not do:
 - **Lose words.** A mixed cue (`[laughs] No puedo creerlo.`) is split only when
   the bracketed part matches the known vocabulary *and* real words remain. Any
   other shape is left exactly as it is and stays a spoken line.
+
+The rules above only know reaction sounds they were written for. The
+translator, which reads every cue anyway, may flag others ("えっ", "¡Uf!") as
+reactions (`from_translator`). Its word is never enough on its own: the cue
+must also pass `wordless`, a conservative local check, or it stays speech.
 """
 
 import re
@@ -63,6 +68,86 @@ _INTERJECTION_TYPES = tuple((re.compile(f"(?:{pattern})"), kind)
                             for pattern, kind in _INTERJECTIONS)
 _INTERJECTION_TOKEN = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
 _MAX_INTERJECTION_TOKENS = 4
+
+
+# Sounds other writing systems use for a reaction. A kana or hangul token made
+# only of these is a sound; any kanji, or any other letter, is a word.
+_KANA_SOUNDS = set("あいうえおぁぃぅぇぉっゃゅょーはひふへほわんアイウエオァィゥェォッャュョー"
+                   "ハヒフヘホワンぎぐげギグゲ～〜")
+_HANGUL_SOUNDS = set("아어오우으에이애하허호후흐히헉헐흑흥음응앗엇읏윽악억크킥풉쯧")
+# A short Latin token of only these letters ("ow", "ooh", "eh") is a sound.
+_LATIN_SOUND = re.compile(r"[aeiouhw]{1,4}")
+
+
+def _is_sound(token: str) -> bool:
+    if any(pattern.fullmatch(token) for pattern, _kind in _INTERJECTION_TYPES):
+        return True
+    if all(ch in _KANA_SOUNDS for ch in token):
+        return True
+    if all(ch in _HANGUL_SOUNDS for ch in token):
+        return True
+    return bool(token.isascii() and _LATIN_SOUND.fullmatch(token))
+
+
+def wordless(text: str) -> bool:
+    """Whether a cue has no real words, only reaction sounds.
+
+    Conservative on purpose: every token must be a sound this module
+    recognises, in Latin, kana or hangul writing. Any other letter, any
+    kanji, any digit, or a bracketed tag keeps the cue as speech.
+    """
+    body = str(text).strip()
+    if not body or re.search(r"[\[\]()\d]", body):
+        return False
+    tokens = [t for token in _INTERJECTION_TOKEN.findall(body.casefold())
+              for t in token.split("-") if t]
+    return bool(tokens) and len(tokens) <= _MAX_INTERJECTION_TOKENS \
+        and all(_is_sound(t) for t in tokens)
+
+
+REACTION_KINDS = {"laugh": "laugh", "gasp": "gasp", "sigh": "sigh", "scream": "scream",
+                  "interjection": "interjection"}
+
+
+def from_translator(job, flags: dict) -> int:
+    """Turn cues the translator flagged as reactions into reaction events.
+
+    `flags` maps a cue id to what the translator said about it. A flagged cue
+    becomes an event through the same path a rules-detected interjection
+    takes, but only when `wordless` agrees; a cue with words stays a line
+    whatever the model said. The model may suggest keeping the original
+    sound; that is shown in review and never applied, so the decision stays
+    `unresolved`.
+    """
+    known = {event.event_id for event in job.nonverbal}
+    kept, converted = [], 0
+    for seg in job.segments:
+        flag = flags.get(seg.cue_id)
+        text = seg.text_src.strip()
+        if (flag is None or flag.get("delivery") != "reaction" or not wordless(text)
+                or not seg.cue_id or not seg.end > seg.start >= 0):
+            if flag is not None and flag.get("delivery") == "reaction":
+                job.metrics["reaction_flags_kept_as_speech"] = (
+                    job.metrics.get("reaction_flags_kept_as_speech", 0) + 1)
+            kept.append(seg)
+            continue
+        event = _event(seg, text, 0, "whole", text, detected_by="translator")
+        kind = REACTION_KINDS.get(str(flag.get("reaction_kind") or ""))
+        if event.type == "unknown" or (kind and event.type == "interjection"):
+            event.type = kind or "interjection"
+            event.category = "vocal"
+            event.speaker = seg.speaker
+        if flag.get("suggest_retain"):
+            event.checks["suggested_decision"] = "retain"
+        if event.event_id not in known:
+            job.nonverbal.append(event)
+            known.add(event.event_id)
+        converted += 1
+    job.segments = kept
+    job.metrics["reaction_cues_by_translator"] = (
+        job.metrics.get("reaction_cues_by_translator", 0) + converted)
+    job.metrics["nonverbal_events"] = len(job.nonverbal)
+    return converted
 
 
 def interjection(text: str) -> str | None:
@@ -150,7 +235,8 @@ def _split_mixed(text: str) -> tuple[str, str, str] | None:
     return tag, rest.strip(), "leading" if match.group("lead") else "trailing"
 
 
-def _event(seg, text: str, ordinal: int, position: str, original: str) -> NonverbalEvent:
+def _event(seg, text: str, ordinal: int, position: str, original: str,
+           detected_by: str = "rules") -> NonverbalEvent:
     """One timed piece of evidence, with the original wording kept verbatim."""
     kind, category = classify(text)
     spans = [s.as_dict() for s in seg.source.spans] or [Span(seg.start, seg.end, SOURCE).as_dict()]
@@ -169,7 +255,7 @@ def _event(seg, text: str, ordinal: int, position: str, original: str) -> Nonver
         # and a fabricated 0.8 here would be read as detector confidence.
         confidence=None,
         checks={"cue_text": original, "position": position,
-                "parsed": kind != "unknown"},
+                "parsed": kind != "unknown", "detected_by": detected_by},
         at=now(),
     )
 

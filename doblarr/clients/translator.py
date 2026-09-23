@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -36,6 +36,11 @@ class TranslationLine(BaseModel):
 
     segment_id: int = Field(ge=1)
     text: str = Field(min_length=1)
+    # Asked for only with transcribe.interjections_as_reactions: a cue that is
+    # a reaction sound rather than words (see stages/prepare.from_translator).
+    delivery: Literal["speech", "reaction"] = "speech"
+    reaction_kind: Literal["laugh", "gasp", "sigh", "scream", "interjection"] | None = None
+    suggest_retain: bool = False
 
     @field_validator("text")
     @classmethod
@@ -87,6 +92,10 @@ class PromptureTranslator:
         self.direction: dict = {}
         self.provider_calls = 0
         self.repair_glossary: dict = {}
+        # With flag_reactions on, translate_batch also reports which cues are
+        # reaction sounds rather than words, aligned with its result.
+        self.flag_reactions = False
+        self.last_flags: list[dict] = []
 
     def _get_driver(self):
         if self._driver is None:
@@ -139,6 +148,12 @@ class PromptureTranslator:
             + ("The synopsis is a machine-written summary of the episode: background for "
                "understanding only, never text to translate, and it may be wrong. "
                if synopsis else "")
+            + ("Set delivery to reaction only for a segment that is nothing but a vocal "
+               "reaction sound (a laugh, gasp, sigh, scream or interjection such as "
+               "'えっ' or '¡Uf!') with no words at all; still translate it. Name its "
+               "reaction_kind, and set suggest_retain when the original actor's sound "
+               "would serve better than a new one. Any segment with words is speech. "
+               if self.flag_reactions and not instruction else "")
             + translation_direction(self.direction, target_lang) + " " + instruction
         )
         request: dict[str, Any] = {
@@ -176,6 +191,11 @@ class PromptureTranslator:
                 if len(ids) != len(lines) or set(ids) != set(range(1, len(lines) + 1)):
                     raise _InvalidTranslation("each requested segment ID must occur exactly once")
                 mapped = {item.segment_id: item.text for item in batch.translations}
+                flags = {item.segment_id: {"delivery": item.delivery,
+                                           "reaction_kind": item.reaction_kind,
+                                           "suggest_retain": item.suggest_retain}
+                         for item in batch.translations}
+                self.last_flags.extend(flags[i] for i in range(1, len(lines) + 1))
                 return [mapped[i] for i in range(1, len(lines) + 1)]
             except (ExtractionError, ValidationError, _InvalidTranslation) as exc:
                 if attempt == 1:
@@ -206,6 +226,7 @@ class PromptureTranslator:
         synopsis: str | None = None,
     ) -> list[str]:
         self.last_usage = []
+        self.last_flags = []
         texts = [s["text"] for s in segments]
         try:
             return self._translate_lines(
@@ -213,6 +234,7 @@ class PromptureTranslator:
                 synopsis=synopsis,
             )
         except _InvalidTranslation:
+            self.last_flags = []
             try:
                 return [
                     self._translate_lines(
