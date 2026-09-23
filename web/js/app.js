@@ -11,6 +11,7 @@ import { TABS } from './settings-model.js';
 import { jobsFor } from './identity.js';
 import { loadLanguages } from './languages.js';
 import { createKnowledge } from './knowledge.js';
+import { initStar } from './star.js';
 
 const { statusTag, langChipsHtml, renderLibrary, fetchPlan, queueDub, loadLibrary } = createLibrary({ goTitle });
 const { jobStatusTag, updateDryRunTag, renderJobs, loadJobs, loadOverview, startEventStream } = createJobs({
@@ -341,3 +342,4 @@ const savedTheme = safeGet("doblarr.theme", "light");
 setTheme(savedTheme === "dark" ? "dark" : "light");
 loadLanguages().finally(() => applyRoute());  // open the view named by the URL path
 startEventStream();
+initStar();
