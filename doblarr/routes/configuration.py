@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from .. import delivery as export_delivery
-from .. import treatments
+from .. import hardware, treatments
 from ..config import Config
 from ..errors import DoblarrError
 from ..library_service import LibraryService
@@ -38,7 +38,14 @@ def build_router(config: Config, library: LibraryService,
             },
             "delivery": export_delivery.describe(
                 export_delivery.settings(dict(config.get("delivery", {})))),
+            "hardware": hardware.probe(),
         }
+
+    @api.get("/api/hardware")
+    def hardware_status(refresh: bool = False):
+        """The probe plus live GPU memory; `refresh=1` probes again."""
+        report = hardware.refresh() if refresh else hardware.probe()
+        return {**report, "memory": hardware.live_memory()}
 
     @api.post("/api/config")
     def post_config(changes: dict[str, Any]):

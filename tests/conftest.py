@@ -6,6 +6,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from doblarr import hardware
 from doblarr.config import Config
 from doblarr.server import create_app
 
@@ -22,6 +23,11 @@ def offline_dependencies():
         patch.delenv("CLAUDE_API_KEY", raising=False)
         patch.setitem(sys.modules, "demucs", None)
         patch.setitem(sys.modules, "demucs.separate", None)
+        # The API reports hardware; never probe the real machine to answer it.
+        patch.setattr(hardware, "_cached", {
+            "source": "none", "devices": [], "libraries": {}, "notes": ["test"],
+            "torch": {"installed": False, "version": None, "cuda": None,
+                      "cuda_available": False}})
         yield
 
 
