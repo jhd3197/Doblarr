@@ -34,18 +34,32 @@ class LanguageEntry:
     supported: bool = True
 
 
+# Where Latin American and Spain Spanish diverge most often, measured by
+# comparing Latino and Spain subtitle tracks of the same English lines across
+# ~50 titles. Shared by every Latin American locale.
+_LATAM_CORE = (
+    "Use ustedes, never vosotros, os or -áis/-éis verb forms. For completed "
+    "actions prefer the simple past over the present perfect (¿Fue Sam?, te dije, "
+    "¿qué pasó?, not ¿ha sido?, te he dicho, ¿qué ha pasado?). Never use vale for "
+    "okay; use bien, está bien, bueno or de acuerdo. Prefer lamento over siento for "
+    "apologies, no importa over da igual, and ¿verdad? over a ¿no? tag. Say esposa/"
+    "esposo, mamá/papá and te amo; avoid coche, tío for a guy, joder, puto and "
+    "enhorabuena."
+)
 _ES_419_DIRECTION = (
-    "Neutral Latin American Spanish for studio dubbing. Use ustedes, not vosotros; "
-    "avoid Spain-specific vocabulary and heavy regional slang."
+    "Neutral Latin American Spanish for studio dubbing. " + _LATAM_CORE + " Prefer "
+    "neutral vocabulary (auto, lugar, tal vez, todavía, felicidades) and avoid heavy "
+    "regional slang. Avoid diminutives unless the source is diminutive "
+    "(ahora, not ahorita; café, not cafecito)."
 )
 _ES_MX_DIRECTION = (
     "Mexican Spanish for studio dubbing. Use natural Mexican vocabulary "
-    "without adding exaggerated slang or stereotypes."
+    "without adding exaggerated slang or stereotypes. " + _LATAM_CORE
 )
 _ES_ES_DIRECTION = "Spanish from Spain with consistent regional vocabulary and forms of address."
 _ES_VE_DIRECTION = (
-    "Venezuelan Spanish for studio dubbing. Use natural Venezuelan vocabulary and "
-    "ustedes forms without adding exaggerated slang or stereotypes."
+    "Venezuelan Spanish for studio dubbing. Use natural Venezuelan vocabulary "
+    "without adding exaggerated slang or stereotypes. " + _LATAM_CORE
 )
 
 # The first entries are the validated dubbing targets; the rest keep every base
