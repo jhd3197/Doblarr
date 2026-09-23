@@ -75,6 +75,8 @@ transcribe:
   whisper_model: large-v3       # used when source = whisper
   diarize: true                 # split speakers with pyannote
   clean_cues: true              # remove recognized nonspoken cues; retain ambiguous text
+  interjections_as_reactions: true  # "Tsk!", "Heh heh", "Oh!" alone -> a reaction event, not TTS
+                                # (pair with coverage.mode: retain to keep the original sound)
   align_subtitles: false        # word alignment only for source-language subtitles
   batch_size: 8
   device: auto

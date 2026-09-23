@@ -98,6 +98,9 @@ class TranscribeModel(_Section):
     whisper_model: str = "large-v3"
     diarize: bool = True
     clean_cues: bool = True
+    # A cue that is only a reaction written as a word ("Tsk!", "Heh heh") becomes
+    # a reaction event instead of a line for the engine to act.
+    interjections_as_reactions: bool = True
     align_subtitles: bool = False
     batch_size: int = 8
     device: str = "auto"

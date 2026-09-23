@@ -167,7 +167,9 @@ def run_job(
     def _diarize():
         diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run)
         if not dry_run and job.segments:
-            prepare.run(job, enabled=config["transcribe"].get("clean_cues", True))
+            prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
+                        interjections=config["transcribe"].get(
+                            "interjections_as_reactions", True))
             save_script(job, work)  # transcript + speakers survive a crash now
 
     def _translate():
