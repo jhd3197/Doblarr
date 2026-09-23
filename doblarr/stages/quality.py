@@ -10,6 +10,7 @@ from array import array
 from pathlib import Path
 
 from .. import verify as content
+from .. import vocalization
 from ..artifacts import digest, matches, read_json, record, stamp
 from ..cues import (
     NORMALIZED,
@@ -28,7 +29,8 @@ from ..fingerprints import verification as verification_fingerprint
 from ..telemetry import write_json
 from . import boundaries
 
-ACOUSTIC_ISSUES = {"silence", "clipping", "unexpected_duration", "text_mismatch", "repetition"}
+ACOUSTIC_ISSUES = {"silence", "clipping", "unexpected_duration", "text_mismatch", "repetition",
+                   "extra_sound"}
 
 # Structured classification for the legacy issue strings. Severity is about
 # consequence; confidence (where a detector can state one) is separate.
@@ -39,6 +41,9 @@ ISSUE_KINDS = {
     "unexpected_duration": ("timing", "warning"),
     "text_mismatch": ("content", "warning"),
     "repetition": ("content", "warning"),
+    # A giggle or hum the line never asked for. Recognition leaves those out,
+    # so the content check alone passes such a take (see doblarr.vocalization).
+    "extra_sound": ("content", "warning"),
 }
 
 
@@ -222,7 +227,7 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
         "slot": seg.duration,
         "language": language,
         "asr": asr,
-        "version": 1,
+        "version": 2,
     }
     receipt = source.with_suffix(".quality.json")
     saved = read_json(receipt)
@@ -264,6 +269,15 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
         issues.append("clipping")
     if stats["duration"] < 0.15 or stats["duration"] > max(2, seg.duration * 2):
         issues.append("unexpected_duration")
+    if "silence" not in issues:
+        # Listening to the edges costs recognition, so it follows the same
+        # policy as the content check; with recognition off only an extreme
+        # excess is recorded, and never as a retryable issue.
+        extra = vocalization.check(source, text, language,
+                                   vb if asr != "off" else None)
+        stats["extra_sound"] = extra
+        if extra["state"] == "extra":
+            issues.append("extra_sound")
     write_json(receipt, {"request": request, "issues": issues, "stats": stats})
     if verify:
         issues += _verify_here(seg, source, language, vb, asr, text, issues, budget, reason,
