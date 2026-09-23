@@ -157,3 +157,79 @@ def test_hardware_route_refreshes(client_factory, monkeypatch, no_smi):
     assert [d["id"] for d in body["devices"]] == ["cuda:0"]
     assert body["memory"] == [{"id": "cuda:0", "free_bytes": 4, "total_bytes": 8}]
 
+
+# -- resolve_device -----------------------------------------------------------
+
+@pytest.mark.parametrize("compute, legacy, stage, expected", [
+    ({}, None, "separate", "cuda:0"),                                   # auto
+    ({"device": "cpu"}, None, "separate", "cpu"),                       # global
+    ({"device": "cpu", "separate_device": "cuda:1"}, None, "separate", "cuda:1"),  # override
+    ({"device": "cuda:1", "diarize_device": "inherit"}, None, "diarize", "cuda:1"),
+    ({"device": "cuda:1"}, "cpu", "transcribe", "cpu"),                 # legacy wins over global
+    ({"device": "cuda:1"}, "auto", "transcribe", "cuda:1"),             # legacy auto defers
+    ({"transcribe_device": "cuda:1"}, "cpu", "transcribe", "cuda:1"),   # override wins over legacy
+    ({"device": "cpu"}, "cuda", "separate", "cpu"),                     # legacy is transcribe-only
+    ({"device": "cuda"}, None, "separate", "cuda:0"),
+])
+def test_resolution_order(monkeypatch, compute, legacy, stage, expected):
+    monkeypatch.setitem(sys.modules, "torch", fake_torch([("A", 1, 1), ("B", 1, 1)]))
+    device = hardware.resolve_device(stage, compute, legacy)
+    assert device.torch == expected
+
+
+def test_auto_without_a_gpu_is_cpu_and_never_fails(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torch", None)
+    assert hardware.resolve_device("separate", {"device": "auto"}).torch == "cpu"
+    monkeypatch.setitem(sys.modules, "torch", fake_torch(cuda=None))
+    assert hardware.resolve_device("diarize", {}).torch == "cpu"
+
+
+@pytest.mark.parametrize("torch_module", [None, "cpu-wheel"])
+def test_an_explicit_missing_cuda_is_a_clear_failure(monkeypatch, torch_module):
+    monkeypatch.setitem(sys.modules, "torch",
+                        fake_torch(cuda=None) if torch_module else None)
+    with pytest.raises(hardware.DeviceUnavailable) as err:
+        hardware.resolve_device("separate", {"device": "cuda"})
+    message = str(err.value)
+    assert "separate" in message and "cuda" in message and "pytorch.org" in message
+
+
+def test_an_index_past_the_visible_devices_fails(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torch", fake_torch([("A", 1, 1)]))
+    with pytest.raises(hardware.DeviceUnavailable, match="only 1 CUDA"):
+        hardware.resolve_device("diarize", {"diarize_device": "cuda:3"})
+
+
+def test_a_nonsense_device_is_a_clear_failure(monkeypatch):
+    with pytest.raises(hardware.DeviceUnavailable, match="not a device"):
+        hardware.resolve_device("separate", {"device": "gpu"})
+
+
+def test_mps_for_torch_stages_but_cpu_for_transcription(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torch", fake_torch(cuda=None, mps=True))
+    assert hardware.resolve_device("separate", {}).torch == "mps"
+    auto = hardware.resolve_device("transcribe", {})
+    assert auto.torch == "cpu" and "MPS" in auto.reason
+    explicit = hardware.resolve_device("transcribe", {"device": "mps"})
+    assert explicit.torch == "cpu"
+
+
+def test_explicit_mps_without_mps_fails(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torch", fake_torch(cuda=None))
+    with pytest.raises(hardware.DeviceUnavailable, match="MPS"):
+        hardware.resolve_device("separate", {"device": "mps"})
+
+
+def test_transcription_can_use_a_ctranslate2_gpu_next_to_cpu_torch(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torch", fake_torch(cuda=None))
+    monkeypatch.setattr(hardware, "ctranslate2_cuda_devices", lambda: 1)
+    device = hardware.resolve_device("transcribe", {"device": "cuda"})
+    assert (device.kind, device.device_index) == ("cuda", 0)
+    assert hardware.resolve_device("separate", {}).torch == "cpu"  # torch stage: no GPU
+
+
+def test_device_forms():
+    device = hardware.Device("cuda", 1)
+    assert (device.torch, device.kind, device.device_index, str(device)) == \
+        ("cuda:1", "cuda", 1, "cuda:1")
+    assert hardware.Device().torch == "cpu" and hardware.Device().device_index == 0

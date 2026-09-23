@@ -27,9 +27,9 @@ def _job_with_audio(tmp_path, vocals=True) -> DubJob:
 def _fake_whisperx(captured):
     mod = types.ModuleType("whisperx")
 
-    def load_model(model, device, compute_type=None, language=None):
-        captured.update(model=model, device=device, compute_type=compute_type,
-                        language=language)
+    def load_model(model, device, device_index=0, compute_type=None, language=None):
+        captured.update(model=model, device=device, device_index=device_index,
+                        compute_type=compute_type, language=language)
 
         class _Model:
             def transcribe(self, audio):
@@ -44,6 +44,7 @@ def _fake_whisperx(captured):
 
     def load_align_model(language_code=None, device=None):
         captured["align_lang"] = language_code
+        captured["align_device"] = device
         return object(), {}
 
     def align(segments, align_model, metadata, audio, device):
@@ -98,8 +99,9 @@ def test_whisper_falls_back_to_faster_whisper(tmp_path, monkeypatch):
     fw = types.ModuleType("faster_whisper")
 
     class WhisperModel:
-        def __init__(self, model, device=None):
-            captured["model"] = model
+        def __init__(self, model, device=None, device_index=0, compute_type=None):
+            captured.update(model=model, device=device, device_index=device_index,
+                            compute_type=compute_type)
 
         def transcribe(self, audio, language=None, word_timestamps=False):
             captured.update(audio=audio, language=language, words=word_timestamps)
@@ -136,3 +138,80 @@ def test_whisper_dry_run_never_imports_backend(tmp_path, monkeypatch):
     job = DubJob(input_file=Path("film.mkv"), source_lang="ko", target_lang="es")
     assert transcribe.run(job, tmp_path / "work", source="whisper", dry_run=True) is None
     assert job.segments == []
+
+
+def _gpu(monkeypatch, torch_cuda=2, ct2=0):
+    """A fake torch with `torch_cuda` CUDA devices (0 = a CPU-only wheel)."""
+    torch = types.ModuleType("torch")
+    torch.__version__ = "2.8.0"
+    torch.version = types.SimpleNamespace(cuda="12.4" if torch_cuda else None)
+    torch.cuda = types.SimpleNamespace(is_available=lambda: bool(torch_cuda),
+                                       device_count=lambda: torch_cuda,
+                                       empty_cache=lambda: None)
+    torch.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setattr(transcribe.hardware, "ctranslate2_cuda_devices", lambda: ct2)
+
+
+def test_whisperx_gets_the_chosen_device_and_index(tmp_path, monkeypatch):
+    _gpu(monkeypatch)
+    captured = {}
+    monkeypatch.setitem(sys.modules, "whisperx", _fake_whisperx(captured))
+    job = _job_with_audio(tmp_path)
+    transcribe.run(job, tmp_path / "work", source="whisper",
+                   compute={"device": "auto", "transcribe_device": "cuda:1"})
+    assert (captured["device"], captured["device_index"]) == ("cuda", 1)
+    assert captured["compute_type"] == "float16"
+    assert captured["align_device"] == "cuda:1"
+    assert job.metrics["devices"] == {"transcribe": "cuda:1"}
+
+
+def test_legacy_transcribe_device_still_applies(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setitem(sys.modules, "whisperx", _fake_whisperx(captured))
+    job = _job_with_audio(tmp_path)
+    transcribe.run(job, tmp_path / "work", source="whisper",
+                   options={"device": "cpu"}, compute={"device": "cuda"})
+    assert captured["device"] == "cpu" and captured["compute_type"] == "int8"
+    # the device never enters the script cache key
+    assert "compute" not in job.transcription_options
+
+
+def test_faster_whisper_gets_device_and_index(tmp_path, monkeypatch):
+    _gpu(monkeypatch, torch_cuda=0, ct2=1)  # CPU torch, CTranslate2 sees a GPU
+    monkeypatch.setitem(sys.modules, "whisperx", None)
+    captured = {}
+    fw = types.ModuleType("faster_whisper")
+
+    class WhisperModel:
+        def __init__(self, model, device=None, device_index=0, compute_type=None):
+            captured.update(device=device, device_index=device_index, compute_type=compute_type)
+
+        def transcribe(self, audio, language=None, word_timestamps=False):
+            return iter([types.SimpleNamespace(start=1.0, end=2.5, text="안녕")]), None
+
+    fw.WhisperModel = WhisperModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", fw)
+    job = _job_with_audio(tmp_path)
+    transcribe.run(job, tmp_path / "work", source="whisper", compute={"device": "auto"})
+    assert captured == {"device": "cuda", "device_index": 0, "compute_type": "float16"}
+
+
+def test_alignment_on_a_ctranslate2_only_gpu_runs_on_cpu(tmp_path, monkeypatch):
+    _gpu(monkeypatch, torch_cuda=0, ct2=1)
+    captured = {}
+    monkeypatch.setitem(sys.modules, "whisperx", _fake_whisperx(captured))
+    job = _job_with_audio(tmp_path)
+    transcribe.run(job, tmp_path / "work", source="whisper", compute={"device": "cuda"})
+    assert captured["device"] == "cuda"
+    assert captured["align_device"] == "cpu"
+
+
+def test_an_explicit_missing_gpu_fails_before_loading(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setitem(sys.modules, "whisperx", _fake_whisperx(captured))
+    job = _job_with_audio(tmp_path)
+    with pytest.raises(transcribe.hardware.DeviceUnavailable, match="cuda:0.*pytorch.org"):
+        transcribe.run(job, tmp_path / "work", source="whisper",
+                       compute={"transcribe_device": "cuda:0"})
+    assert "model" not in captured

@@ -84,6 +84,18 @@ transcribe:
   keep_models_loaded: false     # opt in only with enough RAM / VRAM
   # hf_token read from HF_TOKEN env var (pyannote needs it)
 
+# Where the local model stages run: Demucs separation, pyannote diarization and
+# whisper transcription. voicebox is a separate process with its own device.
+compute:
+  device: auto                  # auto | cpu | cuda | cuda:N | mps
+                                # auto: first CUDA GPU, else Apple MPS, else CPU; never fails.
+                                # An explicit GPU that is missing fails the job up front.
+  separate_device: inherit      # inherit (= device) | auto | cpu | cuda | cuda:N | mps
+  diarize_device: inherit
+  transcribe_device: inherit    # while inherit, an older transcribe.device still applies
+  release_after_stage: true     # free GPU memory after each stage so voicebox has room
+  log_memory: true              # log allocated/reserved GPU memory around each stage
+
 # Source separation
 separate:
   model: htdemucs_ft            # keep music+FX, replace only dialogue

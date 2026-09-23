@@ -147,6 +147,8 @@ def run_job(
     log.info("=== Doblarr %s job: %s ===", job.kind, job.summary())
 
     cast_holder: dict = {"cast": None}
+    # Which device each local model stage runs on (hardware.resolve_device).
+    compute = dict(config.get("compute", {}))
 
     def _ensure_cast():
         if db is None or dry_run:
@@ -165,7 +167,8 @@ def run_job(
         )
 
     def _diarize():
-        diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run)
+        diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run,
+                    compute=compute)
         if not dry_run and job.segments:
             prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
                         interjections=config["transcribe"].get(
@@ -519,7 +522,8 @@ def run_job(
         (
             "separate",
             lambda: separate.run(
-                job, shared_work, model=config["separate"]["model"], dry_run=dry_run, force=force
+                job, shared_work, model=config["separate"]["model"], dry_run=dry_run, force=force,
+                compute=compute,
             ),
         ),
         (
@@ -535,6 +539,7 @@ def run_job(
                 dry_run=dry_run,
                 options=dict(config["transcribe"]),
                 force=force,
+                compute=compute,
             ),
         ),
         ("diarize", _diarize),

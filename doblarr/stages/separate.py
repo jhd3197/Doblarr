@@ -14,6 +14,7 @@ import logging
 import shutil
 from pathlib import Path
 
+from .. import hardware
 from ..artifacts import matches, record, stamp
 from ..models import DubJob
 from .common import Plan, cached, dry, stage, work_stem
@@ -23,7 +24,8 @@ log = logging.getLogger("doblarr.separate")
 
 @stage("separate")
 def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
-        dry_run: bool = False, force: bool = False) -> Plan | None:
+        dry_run: bool = False, force: bool = False,
+        compute: dict | None = None) -> Plan | None:
     job.vocals = work_dir / f"{work_stem(job)}.vocals.wav"
     job.background = work_dir / f"{work_stem(job)}.background.wav"
     if dry_run:
@@ -46,10 +48,15 @@ def run(job: DubJob, work_dir: Path, model: str = "htdemucs_ft",
 
     if job.source_audio is None:
         raise RuntimeError("separate: no source audio — the extract stage must run first")
+    # The device is deliberately not in `request`: the stems are the same on
+    # any device, so moving to a GPU must not throw the cached ones away.
+    device = hardware.resolve_device("separate", compute)
+    job.metrics.setdefault("devices", {})["separate"] = device.torch
     out_root = work_dir / "separated"
     out_root.mkdir(parents=True, exist_ok=True)
-    log.info("separate (%s): isolating dialogue from %s", model, job.source_audio.name)
-    demucs_main(["--two-stems", "vocals", "-n", model,
+    log.info("separate (%s on %s): isolating dialogue from %s",
+             model, device, job.source_audio.name)
+    demucs_main(["--two-stems", "vocals", "-n", model, "-d", device.torch,
                  "-o", str(out_root), str(job.source_audio)])
 
     track_dir = out_root / model / job.source_audio.stem

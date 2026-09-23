@@ -18,6 +18,8 @@ import logging
 import shutil
 import subprocess
 import threading
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 log = logging.getLogger("doblarr.hardware")
 
@@ -200,3 +202,154 @@ def live_memory() -> list[dict]:
         rows.append(row)
     return rows
 
+
+# -- choosing a device --------------------------------------------------------
+
+CUDA_INSTALL_HINT = (
+    "install a CUDA build of PyTorch from pytorch.org (for example "
+    "`pip install torch --index-url https://download.pytorch.org/whl/cu128`), "
+    "or set the device back to auto")
+
+DEVICE_KINDS = ("cpu", "cuda", "mps")
+
+
+class DeviceUnavailable(RuntimeError):
+    """An explicitly chosen device this machine cannot provide."""
+
+
+@dataclass(frozen=True)
+class Device:
+    """Where a stage runs, in both the forms the libraries want.
+
+    torch and pyannote take `torch` ("cuda:1"); CTranslate2 (faster-whisper,
+    whisperx's ASR model) takes `kind` plus `index`.
+    """
+
+    kind: str = "cpu"
+    index: int | None = None
+    configured: str = "auto"
+    reason: str = ""
+
+    @property
+    def torch(self) -> str:
+        return f"{self.kind}:{self.index}" if self.kind == "cuda" and self.index is not None \
+            else self.kind
+
+    @property
+    def device_index(self) -> int:
+        return self.index or 0
+
+    def __str__(self) -> str:
+        return self.torch
+
+
+def parse_device(value: str) -> tuple[str, int | None]:
+    """"cuda:1" -> ("cuda", 1). Raises ValueError for anything unknown."""
+    text = str(value or "").strip().lower()
+    kind, _, index = text.partition(":")
+    if kind not in DEVICE_KINDS or (index and not index.isdigit()):
+        raise ValueError(f"{value!r} is not a device; use auto, cpu, cuda, cuda:N or mps")
+    if index and kind != "cuda":
+        if kind == "mps" and index == "0":
+            return kind, None
+        raise ValueError(f"{value!r} is not a device; only CUDA devices take an index")
+    return kind, int(index) if index else None
+
+
+def _torch_module():
+    try:
+        import torch
+    except Exception:  # noqa: BLE001 - absent or broken both mean "no torch"
+        return None
+    return torch
+
+
+def _torch_cuda_count(torch) -> int:
+    try:
+        return int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _mps_available(torch) -> bool:
+    try:
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        return bool(mps is not None and mps.is_available())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _cuda_count(stage: str) -> tuple[int, str]:
+    """CUDA devices this stage's engine can use, and what was asked."""
+    torch = _torch_module()
+    count = _torch_cuda_count(torch) if torch is not None else 0
+    if stage == "transcribe" and not count:
+        # whisper's ASR model runs on CTranslate2, which needs no CUDA torch.
+        ct2 = ctranslate2_cuda_devices()
+        if ct2:
+            return ct2, "CTranslate2"
+    if torch is None:
+        return 0, "PyTorch is not installed"
+    return count, (f"torch {getattr(torch, '__version__', '?')}, "
+                   f"torch.version.cuda={getattr(getattr(torch, 'version', None), 'cuda', None)}")
+
+
+def configured_device(stage: str, compute: Mapping | None = None,
+                      legacy: str | None = None) -> str:
+    """The device setting that applies to `stage`, before it is resolved."""
+    compute = compute or {}
+    override = str(compute.get(f"{stage}_device") or "inherit").strip().lower()
+    if override != "inherit":
+        return override
+    if stage == "transcribe" and legacy and str(legacy).strip().lower() != "auto":
+        return str(legacy).strip().lower()  # transcribe.device predates compute.*
+    return str(compute.get("device") or "auto").strip().lower()
+
+
+def resolve_device(stage: str, compute: Mapping | None = None,
+                   legacy: str | None = None) -> Device:
+    """Where `stage` runs: per-stage override, legacy transcribe.device, then
+    compute.device.
+
+    `auto` never fails: first CUDA device, else MPS, else CPU. An explicit
+    GPU that is not there raises DeviceUnavailable naming what was found; a
+    silent CPU fallback would turn a two-minute stage into an hour unnoticed.
+    """
+    configured = configured_device(stage, compute, legacy)
+    if configured == "auto":
+        count, _found = _cuda_count(stage)
+        if count:
+            return Device("cuda", 0, configured)
+        torch = _torch_module()
+        if torch is not None and _mps_available(torch):
+            if stage == "transcribe":
+                return Device("cpu", None, configured,
+                              "whisper has no MPS backend (CTranslate2); using the CPU")
+            return Device("mps", None, configured)
+        return Device("cpu", None, configured)
+    try:
+        kind, index = parse_device(configured)
+    except ValueError as exc:
+        raise DeviceUnavailable(f"{stage}: {exc}") from None
+    if kind == "cpu":
+        return Device("cpu", None, configured)
+    if kind == "mps":
+        if stage == "transcribe":
+            return Device("cpu", None, configured,
+                          "whisper has no MPS backend (CTranslate2); using the CPU")
+        torch = _torch_module()
+        if torch is None or not _mps_available(torch):
+            raise DeviceUnavailable(
+                f"{stage}: device {configured} is configured, but MPS is not available "
+                "on this machine; set it to auto or cpu")
+        return Device("mps", None, configured)
+    count, found = _cuda_count(stage)
+    if not count:
+        raise DeviceUnavailable(
+            f"{stage}: device {configured} is configured, but CUDA is not available "
+            f"({found}); {CUDA_INSTALL_HINT}")
+    if index is not None and index >= count:
+        raise DeviceUnavailable(
+            f"{stage}: device {configured} is configured, but only {count} CUDA "
+            f"device(s) are visible ({found})")
+    return Device("cuda", index if index is not None else 0, configured)

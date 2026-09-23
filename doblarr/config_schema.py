@@ -108,6 +108,24 @@ class TranscribeModel(_Section):
     keep_models_loaded: bool = False
 
 
+class ComputeModel(_Section):
+    """Where the local model stages run (Demucs, pyannote, whisper).
+
+    `auto` picks the first CUDA device, else Apple MPS, else the CPU, and never
+    fails. An explicit device that is not there fails the job before the stage
+    starts instead of silently running an hour on the CPU. `inherit` on a
+    stage means "use `device`"; the older `transcribe.device` still applies to
+    transcription while its own override is `inherit`.
+    """
+
+    device: str = "auto"               # auto | cpu | cuda | cuda:N | mps
+    separate_device: str = "inherit"   # inherit | auto | cpu | cuda | cuda:N | mps
+    diarize_device: str = "inherit"
+    transcribe_device: str = "inherit"
+    release_after_stage: bool = True   # free VRAM after each local model stage
+    log_memory: bool = True            # log allocated/reserved VRAM around them
+
+
 class SeparateModel(_Section):
     model: str = "htdemucs_ft"
 
@@ -308,6 +326,7 @@ class ConfigModel(_Section):
     translate: TranslateModel = TranslateModel()
     transcribe: TranscribeModel = TranscribeModel()
     separate: SeparateModel = SeparateModel()
+    compute: ComputeModel = ComputeModel()
     dub: DubModel = DubModel()
     knowledge: KnowledgeModel = KnowledgeModel()
     quality: QualityModel = QualityModel()

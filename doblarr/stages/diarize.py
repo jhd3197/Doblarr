@@ -13,6 +13,7 @@ import logging
 import os
 from typing import Any
 
+from .. import hardware
 from ..cues import SOURCE, Span, split_cue
 from ..model_pool import model as pooled_model
 from ..models import DubJob, Segment, Speaker
@@ -30,8 +31,8 @@ def _single_narrator(job: DubJob, reason: str) -> None:
     log.warning("diarize: %s — falling back to a single narrator voice", reason)
 
 
-def _load_pipeline(token: str):
-    """Load the pyannote diarization pipeline, on GPU when one is available."""
+def _load_pipeline(token: str, device: hardware.Device | None = None):
+    """Load the pyannote diarization pipeline on the chosen device."""
     from pyannote.audio import Pipeline
 
     from_pretrained: Any = Pipeline.from_pretrained
@@ -40,11 +41,12 @@ def _load_pipeline(token: str):
     except TypeError:  # pyannote.audio >= 4 renamed the kwarg
         pipe = from_pretrained(MODEL_ID, token=token)
 
-    import torch
+    device = device or hardware.Device()
+    if device.kind != "cpu":
+        import torch
 
-    if torch.cuda.is_available():
-        pipe.to(torch.device("cuda"))
-        log.info("diarize: using CUDA")
+        pipe.to(torch.device(device.torch))
+    log.info("diarize: using %s", device)
     return pipe
 
 
@@ -118,7 +120,8 @@ def _assign_speakers(job: DubJob, diarization) -> None:
 
 
 @stage("diarize")
-def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan | None:
+def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
+        compute: dict | None = None) -> DryRunPlan | None:
     if not enabled:
         if job.speakers:
             # Turning diarization off means "do not run the model", not "throw
@@ -157,10 +160,14 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False) -> DryRunPlan 
     if audio is None:
         raise RuntimeError("diarize needs vocals or source audio (extract/separate must run first)")
 
+    # Resolved outside the fallback below: an explicit device that is missing
+    # is a configuration error to fix, not a reason to quietly lose the cast.
+    device = hardware.resolve_device("diarize", compute)
+    job.metrics.setdefault("devices", {})["diarize"] = device.torch
     try:
         context = pooled_model(
-            ("diarization", MODEL_ID),
-            lambda: _load_pipeline(token),
+            ("diarization", MODEL_ID, device.torch),
+            lambda: _load_pipeline(token, device),
             job.transcription_options.get("keep_models_loaded", False),
         )
         with context as pipe:

@@ -63,3 +63,33 @@ def test_separate_dry_run_plans_paths(tmp_path):
     separate.run(job, tmp_path / "work", dry_run=True)
     assert job.vocals and job.vocals.name == "clip.vocals.wav"
     assert job.background and job.background.name == "clip.background.wav"
+
+
+def test_separate_passes_the_chosen_device(tmp_path, monkeypatch):
+    _fake_demucs(monkeypatch)
+    seen = []
+    real = sys.modules["demucs.separate"].main
+
+    def main(argv):
+        seen.append(argv)
+        real(argv)
+
+    sys.modules["demucs.separate"].main = main
+    job = _job(tmp_path)
+    separate.run(job, tmp_path / "work", compute={"device": "cpu"})
+    argv = seen[0]
+    assert argv[argv.index("-d") + 1] == "cpu"
+    assert job.metrics["devices"] == {"separate": "cpu"}
+
+
+def test_separate_cache_survives_a_device_change(tmp_path, monkeypatch):
+    _fake_demucs(monkeypatch)
+    calls = []
+    real = sys.modules["demucs.separate"].main
+    sys.modules["demucs.separate"].main = lambda argv: (calls.append(argv), real(argv))
+    job = _job(tmp_path)
+    separate.run(job, tmp_path / "work", compute={"device": "cpu"})
+    again = DubJob(input_file=job.input_file, source_lang="ko", target_lang="es")
+    again.source_audio = job.source_audio
+    separate.run(again, tmp_path / "work", compute={"device": "auto"})
+    assert len(calls) == 1

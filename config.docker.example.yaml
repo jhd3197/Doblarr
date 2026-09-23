@@ -32,6 +32,18 @@ filtering:
   kometa_handoff: true
   auto_label: false
 
+# Where the local model stages run: Demucs separation, pyannote diarization and
+# whisper transcription. voicebox is a separate process with its own device.
+compute:
+  device: auto                  # auto | cpu | cuda | cuda:N | mps
+                                # auto: first CUDA GPU, else Apple MPS, else CPU; never fails.
+                                # An explicit GPU that is missing fails the job up front.
+  separate_device: inherit      # inherit (= device) | auto | cpu | cuda | cuda:N | mps
+  diarize_device: inherit
+  transcribe_device: inherit    # while inherit, an older transcribe.device still applies
+  release_after_stage: true     # free GPU memory after each stage so voicebox has room
+  log_memory: true              # log allocated/reserved GPU memory around each stage
+
 # Source-relative dynamics. `legacy` keeps the pre-timing loudness pass exactly
 # as earlier releases ran it. The other modes move loudness ownership to a
 # single pass *after* timing, so a whisper that the original actor played
