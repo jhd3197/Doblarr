@@ -118,3 +118,20 @@ test('movie tabs have persistent deep links and normalize unsupported tabs', asy
   await page.goto('/title/tmdb-42/episodes');
   await expect(page).toHaveURL(/\/title\/tmdb-42\/plan$/);
 });
+
+test('the Hardware tab shows the probe and offers its devices', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/hardware*', route => route.fulfill({ json: {
+    source: 'torch', torch: { installed: true, version: '2.8.0', cuda: '12.4', cuda_available: true },
+    devices: [{ id: 'cuda:0', kind: 'cuda', index: 0, name: 'Test GPU', total_bytes: 8 * 1024 ** 3,
+      free_bytes: 6 * 1024 ** 3, usable_by: ['separate', 'diarize', 'transcribe'] }],
+    libraries: { demucs: true }, notes: [], memory: [],
+  } }));
+  await page.goto('/settings/hardware');
+  await expect(page.locator('#settingsGroups')).toContainText('cuda:0 — Test GPU');
+  const device = page.locator('.frow').filter({ hasText: 'Default device' });
+  await expect(device.getByRole('button', { name: 'cuda:0', exact: true })).toBeVisible();
+  await expect(page.locator('#workerStatus')).toHaveText('worker online · cuda:0');
+  expect(errors).toEqual([]);
+});

@@ -62,3 +62,24 @@ export async function loadHardware({ refresh = false } = {}) {
     return null;
   }
 }
+
+// Lines for the read-only "This machine" block on the Hardware settings tab.
+export function hardwareDetails(hw, memory = null) {
+  if (!hw) return ['Hardware could not be probed.'];
+  const lines = [];
+  const devices = hw.devices || [];
+  for (const d of devices) {
+    const live = (memory || []).find(m => m.id === d.id) || d;
+    const mem = live.total_bytes ? ` · ${gb(live.free_bytes ?? 0)} GB free of ${gb(live.total_bytes)} GB` : '';
+    const used = (d.usable_by || []).length === 3 ? '' : (d.usable_by || []).length
+      ? ` · used for ${d.usable_by.join(', ')}` : ' · not usable by the local models';
+    lines.push(`${d.id} — ${d.name || 'GPU'}${mem}${used}`);
+  }
+  if (!usableDevices(hw).length) lines.push(`CPU only: ${cpuReason(hw)}.`);
+  const t = hw.torch || {};
+  lines.push(t.installed ? `PyTorch ${t.version}${t.cuda ? ` (CUDA ${t.cuda})` : ' (CPU build)'}` : 'PyTorch not installed');
+  const libs = Object.entries(hw.libraries || {});
+  if (libs.length) lines.push('Libraries: ' + libs.map(([name, ok]) => `${name} ${ok ? '✓' : '✗'}`).join(' · '));
+  for (const note of hw.notes || []) lines.push(note);
+  return lines;
+}

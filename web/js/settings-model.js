@@ -5,8 +5,15 @@ const C = (k, l, o, h = "") => ({ k, l, o, h, t: "choice" });
 const B = (k, l, h = "") => C(k, l, ["On", "Off"], h);
 const L = (k, l, h = "") => ({ k, l, h, t: "list" });
 const J = (k, l, h = "") => ({ k, l, h, t: "json" });
+// Read-only status block, drawn by settings.js from `id`; never saved.
+const I = (id, l, h = "") => ({ id, l, h, t: "info" });
 const group = (title, fields) => ({ title, fields });
 const tab = (id, title, groups) => ({ id, title, groups });
+
+// Fallback device choices when the hardware probe is unavailable; the real
+// list comes from /api/capabilities.hardware (applyDeviceOptions).
+const DEVICES = ["auto", "cpu", "cuda", "mps"];
+const STAGE_DEVICES = ["inherit", ...DEVICES];
 
 const TABS = [
   tab("connections", "Connections", [
@@ -36,16 +43,13 @@ const TABS = [
     B("filtering.kometa_handoff", "Hand off to Kometa"), T("filtering.kometa_file", "Kometa file"),
     B("filtering.auto_label", "Auto-apply labels on each scan"),
   ])]),
-  tab("speech", "Transcript", [group("Transcription", [
+  tab("speech", "Transcript", [{ ...group("Transcription", [
     C("transcribe.source", "Transcript from", ["subtitles", "whisper"]),
     T("transcribe.whisper_model", "Whisper model"), B("transcribe.diarize", "Speaker diarization"),
     B("transcribe.clean_cues", "Remove nonspoken cues"),
     B("transcribe.align_subtitles", "Align source-language subtitles to speech"),
     N("transcribe.batch_size", "Transcription batch size"),
-    C("transcribe.device", "Transcription device", ["auto", "cpu", "cuda"]),
-    C("transcribe.compute_type", "Transcription precision", ["auto", "float16", "int8"]),
-    B("transcribe.keep_models_loaded", "Keep local models loaded", "Uses more memory. Enable only when the GPU can hold the active models."),
-  ])]),
+  ]), desc: "The device, precision and memory settings for whisper and diarization are on the Hardware tab." }]),
   tab("translate", "Translation", [group("Provider", [
     C("translate.provider", "Translation provider", ["claude", "prompture", "voicebox", "passthrough"]),
     T("translate.model", "Translation model"),
@@ -151,6 +155,19 @@ const TABS = [
     N("boundaries.edge_fade_ms", "Edge fade (ms)", "0 disables it. Applied only where a clip would otherwise start or end on a click."),
     N("boundaries.edge_threshold_db", "Edge already smooth below (dB)"),
   ])]),
+  tab("hardware", "Hardware", [group("This machine", [
+    I("hardware", "Detected hardware", "What this Doblarr process can use for separation, diarization and transcription. voicebox is a separate program and picks its own device."),
+  ]), group("Devices", [
+    C("compute.device", "Default device", DEVICES, "Auto uses the first GPU, else the CPU, and never fails. A GPU chosen here that is missing stops the job before the stage starts, instead of quietly running on the CPU."),
+    C("compute.separate_device", "Dialogue separation", STAGE_DEVICES, "Separation is the slowest stage on CPU; a GPU makes it minutes instead of tens of minutes."),
+    C("compute.diarize_device", "Speaker diarization", STAGE_DEVICES),
+    C("compute.transcribe_device", "Transcription", STAGE_DEVICES, "Whisper can use an NVIDIA GPU even when PyTorch is a CPU build. Inherit also honours the older transcribe.device setting."),
+  ]), group("Memory", [
+    B("compute.release_after_stage", "Free GPU memory after each stage", "Leaves room for voicebox, which synthesizes on the same GPU right after."),
+    B("compute.log_memory", "Log GPU memory per stage", "Allocated and reserved memory before and after each stage, in the job log."),
+    C("transcribe.compute_type", "Transcription precision", ["auto", "float16", "int8"], "Auto is float16 on a GPU and int8 on the CPU."),
+    B("transcribe.keep_models_loaded", "Keep local models loaded", "Uses more memory. Enable only when the GPU can hold the active models."),
+  ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),
     B("dub.preserve_versions", "Keep completed dub versions", "Save independent copies so later generations cannot replace an earlier output."),
@@ -168,7 +185,7 @@ const TABS = [
 
 // Flat lookup of every settings field by its config key.
 const FIELD_BY_KEY = {};
-TABS.forEach(t => t.groups.forEach(g => g.fields.forEach(f => { FIELD_BY_KEY[f.k] = f; })));
+TABS.forEach(t => t.groups.forEach(g => g.fields.forEach(f => { if (f.k) FIELD_BY_KEY[f.k] = f; })));
 
 function isBoolField(f) { return f.t === "choice" && Array.isArray(f.o) && f.o[0] === "On"; }
 
@@ -204,4 +221,24 @@ function applyLanguageOptions(langs) {
   if (supported.length) FIELD_BY_KEY["dub.target_locale"].o = ["", ...supported];
 }
 
-export { TABS, FIELD_BY_KEY, PLAN_FIELDS, isBoolField, applyLanguageOptions };
+// Fill the device choices from the hardware probe: each device some stage can
+// use, plus whatever is configured now, so a saved choice never disappears.
+function deviceChoices(hw) {
+  const ids = (hw?.devices || []).filter(d => (d.usable_by || []).length).map(d => d.id);
+  const cuda = ids.filter(id => id.startsWith("cuda:"));
+  return ["auto", "cpu", ...(cuda.length ? ["cuda", ...cuda] : []), ...ids.filter(id => id === "mps")];
+}
+
+function applyDeviceOptions(hw, current = () => undefined) {
+  if (!hw) return;
+  const base = deviceChoices(hw);
+  for (const key of ["compute.device", "compute.separate_device", "compute.diarize_device", "compute.transcribe_device"]) {
+    const field = FIELD_BY_KEY[key];
+    const opts = key === "compute.device" ? [...base] : ["inherit", ...base];
+    const now = current(key);
+    if (now && !opts.includes(now)) opts.push(now);
+    field.o = opts;
+  }
+}
+
+export { TABS, FIELD_BY_KEY, PLAN_FIELDS, isBoolField, applyLanguageOptions, applyDeviceOptions, deviceChoices };

@@ -70,3 +70,41 @@ test('the scene player offers the dry line and the treated line separately', () 
   // and they sit next to the processed line rather than among the stems
   assert.ok(kinds.indexOf('dry') === kinds.indexOf('line') + 1);
 });
+
+test('the Hardware tab holds the device and memory controls', () => {
+  const hardware = TABS.find(t => t.id === 'hardware');
+  assert.ok(hardware, 'no Hardware tab');
+  const keys = hardware.groups.flatMap(g => g.fields.map(f => f.k).filter(Boolean));
+  assert.deepEqual(keys, [
+    'compute.device', 'compute.separate_device', 'compute.diarize_device',
+    'compute.transcribe_device', 'compute.release_after_stage', 'compute.log_memory',
+    'transcribe.compute_type', 'transcribe.keep_models_loaded',
+  ]);
+  const info = hardware.groups[0].fields[0];
+  assert.equal(info.t, 'info');
+  assert.equal(info.k, undefined, 'a read-only block is never saved');
+  assert.ok(!('hardware' in FIELD_BY_KEY));
+  // moved, not duplicated: the Transcript tab no longer offers them
+  const speech = TABS.find(t => t.id === 'speech').groups.flatMap(g => g.fields.map(f => f.k));
+  assert.ok(!speech.includes('transcribe.device'));
+  assert.ok(!speech.includes('transcribe.compute_type'));
+  assert.ok(!speech.includes('transcribe.keep_models_loaded'));
+});
+
+test('device choices come from the probe, with a fallback and the saved value kept', async () => {
+  const { applyDeviceOptions, deviceChoices } = await import('../../web/js/settings-model.js');
+  assert.deepEqual(FIELD_BY_KEY['compute.device'].o, ['auto', 'cpu', 'cuda', 'mps']);
+  assert.deepEqual(deviceChoices({ devices: [] }), ['auto', 'cpu']);
+  const hw = { devices: [
+    { id: 'cuda:0', usable_by: ['separate', 'diarize', 'transcribe'] },
+    { id: 'cuda:1', usable_by: ['separate', 'diarize', 'transcribe'] },
+    { id: 'cuda:2', usable_by: [] },
+  ] };
+  applyDeviceOptions(hw, key => (key === 'compute.separate_device' ? 'cuda:5' : undefined));
+  assert.deepEqual(FIELD_BY_KEY['compute.device'].o, ['auto', 'cpu', 'cuda', 'cuda:0', 'cuda:1']);
+  assert.deepEqual(FIELD_BY_KEY['compute.diarize_device'].o,
+    ['inherit', 'auto', 'cpu', 'cuda', 'cuda:0', 'cuda:1']);
+  assert.ok(FIELD_BY_KEY['compute.separate_device'].o.includes('cuda:5'));
+  applyDeviceOptions(null);  // probe unavailable: choices stay as they were
+  assert.ok(FIELD_BY_KEY['compute.device'].o.includes('cuda:0'));
+});

@@ -1,8 +1,9 @@
 import { state, library, cfgGet } from './state.js';
-import { TABS, FIELD_BY_KEY, isBoolField } from './settings-model.js';
+import { TABS, FIELD_BY_KEY, isBoolField, applyDeviceOptions } from './settings-model.js';
 import { el } from './dom.js';
 import { api } from './api.js';
 import { loadLanguages } from './languages.js';
+import { hardwareDetails, renderHardware } from './hardware.js';
 
 export function createSettings({ setPage, onConfigLoaded }) {
   function fieldDisplay(f) {
@@ -13,7 +14,37 @@ export function createSettings({ setPage, onConfigLoaded }) {
     return c;
   }
 
+  // Read-only blocks, by the `id` of an info field in settings-model.js.
+  const INFO = {
+    hardware: () => {
+      const box = el("div", { class: "m", style: "font-size: 13px; line-height: 1.6;" });
+      if (hwState.report === undefined) box.append(el("div", {}, "Checking…"));
+      else hardwareDetails(hwState.report, hwState.memory).forEach(line => box.append(el("div", {}, line)));
+      box.append(el("button", { type: "button", class: "btn btn-ghost", style: "margin-top: 8px;",
+        onclick: () => loadHardwareInfo(true) }, "Refresh"));
+      return box;
+    },
+  };
+  const hwState = { report: undefined, memory: null };
+
+  async function loadHardwareInfo(refresh = false) {
+    try {
+      const data = await api(refresh ? "hardware?refresh=1" : "hardware");
+      hwState.report = data; hwState.memory = data.memory;
+    } catch (e) { hwState.report = null; }
+    applyDeviceOptions(hwState.report, cfgGet);
+    if (refresh) renderHardware(hwState.report, hwState.memory);
+    renderSettings();
+  }
+
   function renderField(f) {
+    if (f.t === "info") {
+      const row = el("div", { class: "frow" }, el("div", {}, el("div", { class: "flabel" }, f.l)));
+      const right = el("div", {}, INFO[f.id] ? INFO[f.id]() : "");
+      if (f.h) right.append(el("p", { class: "hint" }, f.h));
+      row.append(right);
+      return row;
+    }
     const row = el("div", { class: "frow" });
     const left = el("div", {}, el("div", { class: "flabel" }, f.l));
     if (state.keys) left.append(el("div", { class: "fkey" }, f.k));
@@ -52,6 +83,7 @@ export function createSettings({ setPage, onConfigLoaded }) {
     } catch (e) { state.config = null; }
     await loadLanguages();   // dynamic locale choices; defaults survive a failure
     renderSettings();
+    loadHardwareInfo();      // device choices and the machine block; fallbacks survive a failure
   }
 
   async function saveSettings() {

@@ -34,3 +34,19 @@ test('a card only faster-whisper can use says which stage', () => {
     devices: [{ id: 'cuda:0', name: 'RTX', usable_by: ['transcribe'] }] };
   assert.equal(hardwareSummary(hw).device, 'cuda:0 (transcribe only)');
 });
+
+test('the settings block lists devices, libraries and why it is CPU-only', async () => {
+  const { hardwareDetails } = await import('../../web/js/hardware.js');
+  const lines = hardwareDetails({
+    torch: { installed: true, version: '2.8.0+cpu', cuda: null },
+    devices: [{ id: 'cuda:0', name: 'RTX 4090', total_bytes: 24 * GB, free_bytes: 20 * GB, usable_by: ['transcribe'] }],
+    libraries: { demucs: true, whisperx: false },
+    notes: ['A GPU is present but PyTorch cannot use it.'],
+  });
+  assert.equal(lines[0], 'cuda:0 — RTX 4090 · 20 GB free of 24 GB · used for transcribe');
+  assert.ok(lines.includes('PyTorch 2.8.0+cpu (CPU build)'));
+  assert.ok(lines.includes('Libraries: demucs ✓ · whisperx ✗'));
+  assert.ok(lines.includes('A GPU is present but PyTorch cannot use it.'));
+  assert.deepEqual(hardwareDetails({ torch: { installed: false }, devices: [] }).slice(0, 2),
+    ['CPU only: PyTorch not installed.', 'PyTorch not installed']);
+});
