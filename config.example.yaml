@@ -302,3 +302,23 @@ delivery:
   placement_samples: 3           # head/middle/tail cue windows decoded and checked
   silence_db: -50.0              # below this a placed window counts as silent
   check_original_streams: true   # the dub is added; nothing it went in with is dropped
+
+# Typed decisions about the script. Rules read what a line's words say (a
+# trailing dash, a "(whispering)" tag, a caption in capitals); a decision model
+# is asked only where the rules are silent. Confident answers are applied,
+# less confident ones become review suggestions, and without the model the
+# rules run alone. Answers are cached, so a rerun asks nothing again.
+decisions:
+  enabled: true
+  model: laya/router            # any Prompture decision model: laya/router (local, free),
+                                # kev/kev-4b (self-hosted) or typesafe/jev-latest (hosted)
+  apply_confidence: 0.9         # a model answer this sure is applied
+  suggest_confidence: 0.6       # this sure becomes a review suggestion; lower is dropped
+  cutoffs: true                 # a line cut off ("Wait, I—") keeps its hard stop
+  delivery: true                # whisper / shout / thought from the line's own words
+  title_cards: true             # "NEW YORK, 1987" is a caption, not a line to speak
+  reactions: true               # a cue that is only a reaction sound becomes an event
+  sound_tags: true              # name an unrecognized [sound] tag
+  rewrite_check: true           # reject a timing rewrite that loses a name or the meaning
+  treatments: true              # suggest phone / radio / distant from the text (review only)
+  review_order: true            # review lists the lines most likely wrong first

@@ -11,6 +11,7 @@ from pathlib import Path
 from . import (
     background,
     conversation,
+    decisions,
     delivery,
     levels,
     phrases,
@@ -156,6 +157,10 @@ def run_job(
     # quality retries, timing repairs and, later, extra candidate takes. 0 keeps
     # the historical behavior (counted, never capped).
     budget = RequestBudget(config["quality"].get("request_budget", 0), cancel_event)
+    # Typed decisions about the script: rules first, the decision model only
+    # where they are silent. Loaded on first use; without it the rules run alone.
+    decision_options = decisions.settings(dict(config.get("decisions", {})))
+    oracle = decisions.Oracle(decision_options, cache_dir=work)
 
     log.info("=== Doblarr %s job: %s ===", job.kind, job.summary())
 
@@ -689,6 +694,7 @@ def run_job(
         raise
     finally:
         job.metrics["request_budget"] = budget.snapshot()
+        oracle.close()
         if not dry_run and job.segments:
             ensure_identity(job)
             validate_cues(job.segments, job.cue_lineage)

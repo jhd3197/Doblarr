@@ -180,6 +180,22 @@ const TABS = [
     B("transcribe.keep_models_loaded", "Keep local models loaded", "Uses more memory. Enable only when the GPU can hold the active models."),
     N("separate.chunk_seconds", "Separate long files in windows of (seconds)", "A film is separated in overlapping windows of this length, so it needs the memory of one window, and a cancelled run resumes at the next one. 0 separates in one piece."),
   ])]),
+  tab("decisions", "Decisions", [{ ...group("Decision model", [
+    B("decisions.enabled", "Use typed decisions", "Rules read what a line's words say; the model is asked only where they are silent. Off turns every decision below off."),
+    T("decisions.model", "Decision model", "laya/router runs locally for free. kev/kev-4b is self-hosted; typesafe/jev-latest is hosted and billed. If the model cannot load, the rules run alone."),
+    N("decisions.apply_confidence", "Apply a model answer this sure", "Between 0 and 1. A rule that fires always applies; this only governs the model."),
+    N("decisions.suggest_confidence", "Suggest one this sure", "Lower answers are dropped. A suggestion shows in review and changes nothing."),
+  ]), desc: "The model reads text only. It never judges how a take sounds; that stays with the audio checks." },
+  group("Decisions", [
+    B("decisions.cutoffs", "Keep a cut-off line's ending", "A line interrupted mid-word keeps its hard stop instead of being eased out; one trailing off gets a longer fade."),
+    B("decisions.delivery", "Whisper, shout or thought from the words", "Sets the delivery only on lines a reviewer has not set, from tags like (whispering) or a line in capitals."),
+    B("decisions.title_cards", "Leave captions unspoken", "A caption such as NEW YORK, 1987 is kept as a timed event instead of being voiced."),
+    B("decisions.reactions", "Reaction-only cues become events", "Only when a local check also finds no real words, as with the translator's flag."),
+    B("decisions.sound_tags", "Name unrecognized sound tags", "Types a tag like [door creaks] so reaction and background coverage can use it."),
+    B("decisions.rewrite_check", "Check timing rewrites", "Rejects a shortened line that dropped a name or a number, or that the model is sure changed the meaning, before paying to regenerate it."),
+    B("decisions.treatments", "Suggest phone, radio or distant", "From the line's own words. Review suggestions only; nothing is applied."),
+    B("decisions.review_order", "Review the likeliest problems first", "Orders review by how much each line's findings and uncertain decisions need a listen."),
+  ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),
     B("dub.preserve_versions", "Keep completed dub versions", "Save independent copies so later generations cannot replace an earlier output."),

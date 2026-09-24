@@ -340,6 +340,29 @@ class DeliveryModel(_Section):
     check_original_streams: bool = True
 
 
+class DecisionsModel(_Section):
+    """Typed decisions about the script (doblarr.decisions).
+
+    Rules read what the text says; the decision model is asked only where
+    they are silent. A model answer at `apply_confidence` or above is
+    applied, one at `suggest_confidence` or above is a review suggestion.
+    Without the model (not installed, or failing) the rules run alone.
+    """
+
+    enabled: bool = True
+    model: str = "laya/router"      # any Prompture decision model: laya/*, kev/*, typesafe/*
+    apply_confidence: float = 0.9
+    suggest_confidence: float = 0.6
+    cutoffs: bool = True            # a line cut off or trailing away keeps that ending
+    delivery: bool = True           # whisper / shout / thought from the line's own words
+    title_cards: bool = True        # an on-screen caption is not spoken
+    reactions: bool = True          # a cue that is only a reaction sound becomes an event
+    sound_tags: bool = True         # name an unrecognized [sound] tag
+    rewrite_check: bool = True      # reject a timing rewrite that loses names or meaning
+    treatments: bool = True         # suggest phone / radio / distant from the text
+    review_order: bool = True       # the lines most likely wrong come first in review
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -362,6 +385,7 @@ class ConfigModel(_Section):
     coverage: CoverageModel = CoverageModel()
     treatments: TreatmentsModel = TreatmentsModel()
     delivery: DeliveryModel = DeliveryModel()
+    decisions: DecisionsModel = DecisionsModel()
 
 
 def validate_config(data: dict) -> None:

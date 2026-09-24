@@ -28,6 +28,9 @@ def offline_dependencies():
         # Tests that need a GPU install a fake torch of their own.
         patch.setitem(sys.modules, "torch", None)
         patch.setattr(hardware, "ctranslate2_cuda_devices", lambda: 0)
+        # The decision layer's default model runs in-process; never load real
+        # weights in a test. It falls back to the rules alone, as designed.
+        patch.setitem(sys.modules, "laya", None)
         # The API reports hardware; never probe the real machine to answer it.
         patch.setattr(hardware, "_cached", {
             "source": "none", "devices": [], "libraries": {}, "notes": ["test"],
