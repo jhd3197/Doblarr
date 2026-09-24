@@ -37,7 +37,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "types-requests>=2.31",
-    "numpy",         # separation chunking tests
+    "numpy<2.5",     # chunking tests; 2.5 stubs break mypy at 3.11
 ]
 
 [project.scripts]
