@@ -246,3 +246,64 @@ def record(job, verdicts: list[Verdict], kind: str, oracle: Oracle | None = None
 
 def spoken(seg) -> str:
     return (seg.text_translated or seg.text_src or "").strip()
+
+
+# -- 1. cut-off lines --------------------------------------------------------
+
+_CLOSERS = "\"'”’»」』)] "
+_INTERRUPTED = ("—", "–", "--", "-", "―")
+_TRAILING = ("...", "…", "‥")
+_COMPLETE = tuple(".!?。！？")
+
+CUTOFF_QUESTION = choice(
+    "How does this line of dialogue end?",
+    {"complete": "a finished sentence or thought",
+     "interrupted": "cut off mid-word or mid-sentence, as if someone broke in",
+     "trailing": "trailing off, left unfinished on purpose"})
+
+
+def cutoff_rule(text: str) -> str | None:
+    """How a line ends, from its punctuation; None when the words don't say."""
+    body = text.rstrip(_CLOSERS)
+    if not body:
+        return None
+    if body.endswith(_TRAILING):
+        return "trailing"
+    if body.endswith(_INTERRUPTED):
+        return "interrupted"
+    if body.endswith(_COMPLETE):
+        return "complete"
+    return None
+
+
+def cutoffs(job, oracle: Oracle, config: dict) -> dict[str, str]:
+    """Which lines end cut off or trailing away, for the edge fades.
+
+    Returns {cue id: "interrupted" | "trailing"} for the decisions that are
+    applied. A cut-off line keeps its hard stop; a trailing one gets a longer
+    fade. Lines that end in ordinary punctuation are complete and ask nothing.
+    """
+    if not enabled(config, "cutoffs"):
+        return {}
+    verdicts, hints = [], {}
+    for seg in job.segments:
+        text = spoken(seg)
+        if not text or not seg.cue_id:
+            continue
+        ruled = cutoff_rule(text)
+        if ruled is not None:
+            if ruled != "complete":
+                hints[seg.cue_id] = ruled
+                verdicts.append(Verdict("cutoffs", seg.cue_id, ruled, 1.0, "rules", True))
+            continue
+        answers = oracle.ask("cutoffs", {"line": text}, {"ending": CUTOFF_QUESTION})
+        value, confidence, outcome = weigh(config, (answers or {}).get("ending"))
+        if outcome == "drop" or value in (None, "complete"):
+            continue
+        applied = outcome == "apply"
+        if applied:
+            hints[seg.cue_id] = value
+        verdicts.append(Verdict("cutoffs", seg.cue_id, value, round(confidence, 3), "model",
+                                applied))
+    record(job, verdicts, "cutoffs", oracle)
+    return hints

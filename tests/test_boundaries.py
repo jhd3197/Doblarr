@@ -465,3 +465,27 @@ def test_preparation_runs_after_the_raw_checks_see_the_untrimmed_take(tmp_path):
     assert inspected == [raw]  # checked before anything was removed
     assert seg.audio.raw().path == str(raw)
     assert seg.audio.render(TRIMMED) is not None  # both are available, no new TTS
+
+
+@ffmpeg_only
+def test_a_cut_off_line_keeps_its_hard_stop_and_a_trailing_one_fades_longer(
+        tmp_path, monkeypatch):
+    job = _job(tmp_path)
+    job.segments = [Segment(i, i * 3, i * 3 + 2, "x", text_translated="x") for i in range(3)]
+    chains = []
+    real = boundaries.run_ffmpeg
+
+    def spy(args, **kwargs):
+        chains.append(args[args.index("-af") + 1])
+        real(args, **kwargs)
+
+    for seg in job.segments:
+        seg.cue_id = f"cue-{seg.index}"
+        clip = tone(tmp_path / "clips" / f"{seg.index}.wav", [(0.1, 0.0), (1.9, 0.5)])
+        seg.audio.put_render(Artifact(role=FITTED, path=str(clip), fingerprint=f"f{seg.index}"))
+        seg.audio_clip = clip
+    monkeypatch.setattr(boundaries, "run_ffmpeg", spy)
+    boundaries.finish_edges(job, {}, endings={"cue-0": "interrupted", "cue-2": "trailing"})
+    assert chains == ["afade=t=out:st=1.992:d=0.008:curve=hsin",
+                      "afade=t=out:st=1.96:d=0.04:curve=hsin",
+                      "afade=t=out:st=1.92:d=0.08:curve=hsin"]

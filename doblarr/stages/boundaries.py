@@ -436,8 +436,20 @@ def edge_peaks(path: Path, window: float = EDGE_WINDOW_SECONDS) -> tuple[float, 
     return head, tail
 
 
-def finish_edges(job, options: dict | None = None, cancel=None, dry_run: bool = False) -> None:
-    """Ease in and out only the edges that would click, on the final render."""
+# An interrupted line keeps its hard stop: only this much, enough that the
+# cut does not click.
+CUT_FADE_SECONDS = 0.008
+
+
+def finish_edges(job, options: dict | None = None, cancel=None, dry_run: bool = False,
+                 endings: dict[str, str] | None = None) -> None:
+    """Ease in and out only the edges that would click, on the final render.
+
+    `endings` (from doblarr.decisions) marks lines that end on purpose: an
+    `interrupted` line keeps its hard stop, a `trailing` one fades out for
+    twice as long. The older single fade (`edge_fade_ms`) ignores them.
+    """
+    endings = endings or {}
     settings = _settings(options)
     fade_in_at, fade_out_at, curve = edge_fades(settings)
     if dry_run or (fade_in_at <= 0 and fade_out_at <= 0):
@@ -468,7 +480,12 @@ def finish_edges(job, options: dict | None = None, cancel=None, dry_run: bool = 
         # A fade can never eat more than a tenth of the clip, so a very short
         # utterance is shaped rather than swallowed.
         fade_in = min(fade_in_at, duration / 10) if head > threshold else 0.0
-        fade_out = min(fade_out_at, duration / 10) if tail > threshold else 0.0
+        out_at = fade_out_at
+        if curve != "tri" and endings.get(seg.cue_id) == "interrupted":
+            out_at = min(fade_out_at, CUT_FADE_SECONDS)
+        elif curve != "tri" and endings.get(seg.cue_id) == "trailing":
+            out_at = min(MAX_FADE_OUT_SECONDS, fade_out_at * 2)
+        fade_out = min(out_at, duration / 10) if tail > threshold else 0.0
         if duration <= 0 or (fade_in <= 0 and fade_out <= 0):
             # Already smooth at both ends: an audible new fade would only
             # soften a consonant that was fine.

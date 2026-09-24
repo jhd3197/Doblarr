@@ -601,6 +601,7 @@ def run_job(
                 dict(config.get("boundaries", {})),
                 cancel=cancel_event,
                 dry_run=dry_run,
+                endings=({} if dry_run else decisions.cutoffs(job, oracle, decision_options)),
             ),
         ),
         ("treatments", _treatments),

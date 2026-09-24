@@ -123,3 +123,34 @@ def test_verdicts_become_findings_that_retire():
     assert job.metrics["decisions"]["cutoffs"]["applied"] == 1
     decisions.record(job, [], "cutoffs")
     assert finding.disposition == "obsolete"
+
+
+# -- 1. cut-off lines ----------------------------------------------------------
+
+@pytest.mark.parametrize("text, ending", [
+    ("Wait, I—", "interrupted"), ("Espera, yo--", "interrupted"), ("But then-", "interrupted"),
+    ("And so I...", "trailing"), ("待って、私は…", "trailing"), ("«Y entonces…»", "trailing"),
+    ("I'm going home.", "complete"), ("¿Qué haces aquí?", "complete"), ("Run!", "complete"),
+    ("so we went home", None),
+])
+def test_line_endings_from_punctuation(text, ending):
+    assert decisions.cutoff_rule(text) == ending
+
+
+def test_the_model_is_asked_only_where_punctuation_is_silent():
+    job = job_of("Wait, I—", "I'm home.", "and then we", "maybe later")
+    replies = {"and then we": ("interrupted", 0.95), "maybe later": ("trailing", 0.7)}
+    oracle, driver = oracle_with(lambda s, qs: {"ending": replies[s["line"]]})
+    hints = decisions.cutoffs(job, oracle, decisions.settings(None))
+    asked = [state["line"] for state, _q in driver.calls]
+    assert asked == ["and then we", "maybe later"]
+    cues = [s.cue_id for s in job.segments]
+    assert hints == {cues[0]: "interrupted", cues[2]: "interrupted"}  # 0.7 only suggests
+    verdicts = job.metrics["decisions"]["cutoffs"]["verdicts"]
+    assert [(v["source"], v["applied"]) for v in verdicts] == [
+        ("rules", True), ("model", True), ("model", False)]
+
+
+def test_cutoffs_off_decides_nothing():
+    job = job_of("Wait, I—")
+    assert decisions.cutoffs(job, decisions.Oracle({}), decisions.settings({"cutoffs": False})) == {}
