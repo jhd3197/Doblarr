@@ -108,6 +108,8 @@ def test_latin_american_locales_share_the_spain_contrast_rules():
         assert "never vosotros" in direction
         assert "simple past over the present perfect" in direction
         assert "Never use vale" in direction
+        assert "not mirad" in direction
+        assert "Never use coger for take or grab" in direction
     # Country vocabulary stays out of the country locales (Mexico says carro).
     assert "auto" in get("es-419").direction
     assert "auto" not in get("es-MX").direction

@@ -38,13 +38,15 @@ class LanguageEntry:
 # comparing Latino and Spain subtitle tracks of the same English lines across
 # ~50 titles. Shared by every Latin American locale.
 _LATAM_CORE = (
-    "Use ustedes, never vosotros, os or -áis/-éis verb forms. For completed "
+    "Use ustedes, never vosotros, os, -áis/-éis verb forms or -ad/-ed/-id "
+    "commands (miren, esperen; not mirad, esperad). For completed "
     "actions prefer the simple past over the present perfect (¿Fue Sam?, te dije, "
     "¿qué pasó?, not ¿ha sido?, te he dicho, ¿qué ha pasado?). Never use vale for "
     "okay; use bien, está bien, bueno or de acuerdo. Prefer lamento over siento for "
     "apologies, no importa over da igual, and ¿verdad? over a ¿no? tag. Say esposa/"
-    "esposo, mamá/papá and te amo; avoid coche, tío for a guy, joder, puto and "
-    "enhorabuena."
+    "esposo, mamá/papá and te amo; avoid coche, móvil, guay, pillar, apetece, tío "
+    "for a guy, joder, puto and enhorabuena. Never use coger for take or grab "
+    "(it means to have sex in much of Latin America); use agarrar or tomar."
 )
 _ES_419_DIRECTION = (
     "Neutral Latin American Spanish for studio dubbing. " + _LATAM_CORE + " Prefer "

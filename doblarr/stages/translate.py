@@ -159,3 +159,10 @@ def run(
 
         if from_translator(job, flagged) and checkpoint:
             checkpoint()
+    # Text-only and free: whether a Latin American dub slipped into Spain
+    # Spanish. Memory-reused lines are checked too — they were translated once
+    # under older directions.
+    from .. import dialect
+
+    if dialect.check(job) and checkpoint:
+        checkpoint()
