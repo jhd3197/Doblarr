@@ -266,6 +266,9 @@ def run_job(
             flag_reactions=reactions_on,
         )
         if not dry_run and job.segments:
+            # How each line is delivered, where its own words say so; a
+            # reviewer's edit applied afterwards still wins.
+            decisions.delivery(job, oracle, decision_options)
             save_script(job, translation_work)  # + translations
 
     def _recent_effective_scripts():

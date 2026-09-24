@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -307,3 +308,84 @@ def cutoffs(job, oracle: Oracle, config: dict) -> dict[str, str]:
                                 applied))
     record(job, verdicts, "cutoffs", oracle)
     return hints
+
+
+# -- 2. delivery mode -------------------------------------------------------
+
+# A stage direction in brackets, as subtitles write them: "(whispering)".
+_TAG = re.compile(r"[\[(]([^\[\]()]{2,40})[\])]")
+_MODE_WORDS: tuple[tuple[str, re.Pattern], ...] = tuple(
+    (mode, re.compile(pattern, re.IGNORECASE)) for mode, pattern in (
+        ("whisper", r"\bwhisper\w*|\bsoftly\b|\bquietly\b|under (?:his|her|their|my) breath"
+                    r"|\bsusurr\w*|\bmurmur\w*|\bmumbl\w*"),
+        ("shout", r"\bshout\w*|\byell\w*|\bscream\w*|\bgrit\w*|\bhollers?\b"),
+        ("thought", r"\bthink\w*|\bthought\b|inner voice|\binternal\b|\bpensando\b"),
+        ("call", r"\bcall(?:s|ing)? out\b|\bcalling\b|\bllamando\b"),
+        ("broadcast", r"over (?:the )?(?:radio|phone|intercom|speaker|pa)\b"
+                      r"|on (?:the )?(?:radio|tv|television)\b|\bbroadcast\w*|\bannouncer\b"),
+    ))
+
+DELIVERY_QUESTION = choice(
+    "How is this line of dialogue delivered?",
+    {"normal": "ordinary spoken dialogue",
+     "whisper": "whispered or said very quietly",
+     "shout": "shouted, yelled or screamed",
+     "thought": "an inner thought, not said aloud",
+     "call": "called out to someone far away"})
+
+
+def delivery_rule(text: str) -> str | None:
+    """A speech mode the text states outright, else None."""
+    for tag in _TAG.findall(text or ""):
+        for mode, pattern in _MODE_WORDS:
+            if pattern.search(tag):
+                return mode
+    letters = [ch for ch in text or "" if ch.isalpha() and ch.lower() != ch.upper()]
+    if (len(letters) >= 4 and all(ch.isupper() for ch in letters)
+            and len(text.split()) >= 2 and "!" in text):
+        return "shout"  # a whole line in capitals, exclaimed
+    return None
+
+
+def _may_be_marked(text: str) -> bool:
+    """Only lines with some sign of a delivery are worth asking about."""
+    return bool(re.search(r"[!¡]|[\[(]", text or ""))
+
+
+def delivery(job, oracle: Oracle, config: dict) -> int:
+    """Set the speech mode on lines whose words say how they are delivered.
+
+    Never touches a line a reviewer, a cast or knowledge gave a mode. A mode
+    this layer set before is recomputed each run, so switching it off or
+    changing the model takes effect instead of sticking.
+    """
+    for seg in job.segments:
+        if seg.intent.origin == "decision":
+            seg.intent.mode, seg.intent.origin = "unknown", "unknown"
+    if not enabled(config, "delivery"):
+        record(job, [], "delivery")
+        return 0
+    verdicts = []
+    for seg in job.segments:
+        if not seg.cue_id or seg.intent.mode not in ("", "unknown") or \
+                seg.intent.origin not in ("", "unknown"):
+            continue
+        source, target = seg.text_src or "", seg.text_translated or ""
+        mode = delivery_rule(source) or delivery_rule(target)
+        if mode is not None:
+            verdict = Verdict("delivery", seg.cue_id, mode, 1.0, "rules", True)
+        elif _may_be_marked(source) or _may_be_marked(target):
+            answers = oracle.ask("delivery", {"line": source, "translation": target},
+                                 {"mode": DELIVERY_QUESTION})
+            value, confidence, outcome = weigh(config, (answers or {}).get("mode"))
+            if outcome == "drop" or value in (None, "normal"):
+                continue
+            verdict = Verdict("delivery", seg.cue_id, value, round(confidence, 3), "model",
+                              outcome == "apply")
+        else:
+            continue
+        if verdict.applied:
+            seg.intent.mode, seg.intent.origin = verdict.value, "decision"
+        verdicts.append(verdict)
+    record(job, verdicts, "delivery", oracle)
+    return sum(v.applied for v in verdicts)

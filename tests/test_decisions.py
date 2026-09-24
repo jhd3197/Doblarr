@@ -153,4 +153,46 @@ def test_the_model_is_asked_only_where_punctuation_is_silent():
 
 def test_cutoffs_off_decides_nothing():
     job = job_of("Wait, I—")
-    assert decisions.cutoffs(job, decisions.Oracle({}), decisions.settings({"cutoffs": False})) == {}
+    config = decisions.settings({"cutoffs": False})
+    assert decisions.cutoffs(job, decisions.Oracle({}), config) == {}
+
+
+# -- 2. delivery mode ----------------------------------------------------------
+
+@pytest.mark.parametrize("text, mode", [
+    ("(whispering) Don't wake him.", "whisper"), ("[shouts] Get down!", "shout"),
+    ("(susurrando) No lo despiertes.", "whisper"), ("(thinking) Why me?", "thought"),
+    ("(calling out) Over here!", "call"), ("(over radio) Unit two, respond.", "broadcast"),
+    ("GET OUT OF HERE!", "shout"), ("NEW YORK, 1987", None), ("I'm fine.", None),
+    ("OK!", None),
+])
+def test_delivery_the_words_state(text, mode):
+    assert decisions.delivery_rule(text) == mode
+
+
+def test_delivery_sets_only_unset_lines_and_asks_only_marked_ones():
+    job = job_of("(whispering) Hush.", "Run, now!", "I'm fine.", "Careful!")
+    job.segments[3].intent.mode, job.segments[3].intent.origin = "normal", "manual"
+    oracle, driver = oracle_with(lambda s, qs: {"mode": ("shout", 0.93)})
+    assert decisions.delivery(job, oracle, decisions.settings(None)) == 2
+    modes = [(s.intent.mode, s.intent.origin) for s in job.segments]
+    assert modes == [("whisper", "decision"), ("shout", "decision"),
+                     ("unknown", "unknown"), ("normal", "manual")]
+    assert [state["line"] for state, _q in driver.calls] == ["Run, now!"]
+
+
+def test_delivery_is_recomputed_so_switching_it_off_reverts():
+    job = job_of("(whispering) Hush.")
+    decisions.delivery(job, decisions.Oracle({}), decisions.settings(None))
+    assert job.segments[0].intent.mode == "whisper"
+    decisions.delivery(job, decisions.Oracle({}), decisions.settings({"delivery": False}))
+    assert (job.segments[0].intent.mode, job.segments[0].intent.origin) == ("unknown", "unknown")
+
+
+def test_an_unsure_model_only_suggests_a_mode():
+    job = job_of("Well!")
+    oracle, _driver = oracle_with(lambda s, qs: {"mode": ("shout", 0.7)})
+    assert decisions.delivery(job, oracle, decisions.settings(None)) == 0
+    assert job.segments[0].intent.mode == "unknown"
+    (finding,) = [f for f in job.segments[0].findings if f.code == "decision_delivery"]
+    assert finding.evidence == {"value": "shout", "source": "model", "applied": False, "note": ""}
