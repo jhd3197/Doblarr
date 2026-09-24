@@ -15,6 +15,8 @@ from doblarr.clients.translator import (
     TranslationError,
     VoiceboxTranslator,
     build_translator,
+    translation_direction,
+    translation_options,
 )
 from doblarr.errors import ConfigError, JobCancelled
 
@@ -97,6 +99,24 @@ def test_spanish_region_does_not_leak_into_other_languages(setup_driver):
     translator = build_translator("prompture", "local/test", direction={"locale": "es-MX"})
     translator.translate("Hello", "en", "fr")
     assert "Mexican Spanish" not in driver.calls[0][0]
+
+
+def test_regional_slang_is_off_unless_enabled():
+    off = translation_direction({"locale": "es-MX"}, "es")
+    on = translation_direction({"locale": "es-MX", "slang": True}, "es")
+    assert "Do not add regional slang" in off and "slang is allowed" not in off
+    assert "Regional slang is allowed" in on and "Do not add regional slang" not in on
+    # Stereotypes stay out either way.
+    assert "stereotypes" in off and "stereotypes" in on
+    # Plain Spanish and other languages have no region to be slangy about.
+    assert "slang" not in translation_direction({"locale": "es", "slang": True}, "es")
+    assert "slang" not in translation_direction({"locale": "es-MX", "slang": True}, "fr")
+
+
+def test_slang_off_does_not_change_a_saved_jobs_translation_key():
+    before = {"provider": "claude", "locale": "es-MX", "adaptation": "natural"}
+    assert translation_options({**before, "slang": False}) == before
+    assert translation_options({**before, "slang": True}) == {**before, "slang": True}
 
 
 @pytest.mark.parametrize("invalid", [

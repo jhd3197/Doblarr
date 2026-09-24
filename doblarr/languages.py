@@ -50,18 +50,17 @@ _LATAM_CORE = (
 )
 _ES_419_DIRECTION = (
     "Neutral Latin American Spanish for studio dubbing. " + _LATAM_CORE + " Prefer "
-    "neutral vocabulary (auto, lugar, tal vez, todavía, felicidades) and avoid heavy "
-    "regional slang. Avoid diminutives unless the source is diminutive "
+    "neutral vocabulary (auto, lugar, tal vez, todavía, felicidades). Avoid "
+    "diminutives unless the source is diminutive "
     "(ahora, not ahorita; café, not cafecito)."
 )
 _ES_MX_DIRECTION = (
-    "Mexican Spanish for studio dubbing. Use natural Mexican vocabulary "
-    "without adding exaggerated slang or stereotypes. " + _LATAM_CORE
+    "Mexican Spanish for studio dubbing. Use natural Mexican vocabulary. " + _LATAM_CORE
 )
 _ES_ES_DIRECTION = "Spanish from Spain with consistent regional vocabulary and forms of address."
 _ES_VE_DIRECTION = (
-    "Venezuelan Spanish for studio dubbing. Use natural Venezuelan vocabulary "
-    "without adding exaggerated slang or stereotypes. " + _LATAM_CORE
+    "Venezuelan Spanish for studio dubbing. Use natural Venezuelan vocabulary. "
+    + _LATAM_CORE
 )
 
 # The first entries are the validated dubbing targets; the rest keep every base

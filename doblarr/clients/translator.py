@@ -413,6 +413,13 @@ def _build_translator(
     raise ValueError(f"unknown translate provider: {provider}")
 
 
+NO_SLANG = ("Do not add regional slang or stereotypes; keep the wording understood "
+            "across the whole region.")
+SLANG = ("Regional slang is allowed: where a character's register calls for it, use "
+         "the colloquial expressions people in this region actually say. Never add "
+         "stereotypes or slang the source line does not imply.")
+
+
 def translation_direction(options: dict, target_lang: str) -> str:
     styles = {
         "natural": "Use idiomatic spoken dialogue while preserving meaning and character intent.",
@@ -428,12 +435,23 @@ def translation_direction(options: dict, target_lang: str) -> str:
     locale = get_language(str(options.get("locale") or ""))
     if locale and locale.direction and locale.base == base_language(target_lang):
         parts.append(locale.direction)
+        # Only a regional target has slang to allow or hold back.
+        parts.append(SLANG if options.get("slang") else NO_SLANG)
     if options.get("direction"):
         parts.append("Dialogue direction: " + options["direction"])
     if options.get("character_notes"):
         parts.append("Character register notes by speaker ID: " + json.dumps(
             options["character_notes"], ensure_ascii=False, sort_keys=True))
     return " ".join(parts)
+
+
+def translation_options(translate: dict) -> dict:
+    """The translate settings a job's script is keyed on.
+
+    A switch that is off leaves the key what it was before the switch existed,
+    so adding one never retranslates every saved job.
+    """
+    return {k: v for k, v in dict(translate).items() if not (k == "slang" and not v)}
 
 
 def build_translator(provider: str, model: str, voicebox_client=None,

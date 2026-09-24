@@ -30,6 +30,7 @@ SETTING_KEYS = (
     "translate.locale",
     "translate.adaptation",
     "translate.adapt_region",
+    "translate.slang",
     "translate.direction",
     "translate.character_notes",
     "translate.chars_per_second",

@@ -88,6 +88,9 @@ class TranslateModel(_Section):
     locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
     adaptation: Literal["natural", "faithful", "localized"] = "natural"
     adapt_region: bool = False
+    # Regional slang in the dub. Off keeps wording understandable across the
+    # region; on lets characters talk the way people there do.
+    slang: bool = False
     reuse_memory: bool = False
     direction: str = ""
     character_notes: dict[str, str] = {}

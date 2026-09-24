@@ -56,6 +56,7 @@ const TABS = [
     T("translate.endpoint", "Translation endpoint"),
     C("translate.locale", "Spanish region", ["auto", "es-419", "es-MX", "es-ES"], "es-419: neutral Latin America. es-MX: Mexico. es-ES: Spain. Wording only; voice accent is set separately."),
     C("translate.adaptation", "Dialogue style", ["natural", "faithful", "localized"]),
+    B("translate.slang", "Allow regional slang", "Off by default. When on, characters may talk the way people in the dub's region do, where their register calls for it. Spain-only Spanish is still flagged in Latin American dubs."),
     B("translate.adapt_region", "Adapt wording to this region", "Also adapt subtitles already in the target language. Original dialogue stays available for comparison."),
     B("translate.reuse_memory", "Reuse reviewed translations", "Opt-in pilot: exact lines with matching scene, register, settings and timing only."),
     C("translate.prepass", "Read the whole episode first", ["off", "summary", "summary_terms"], "Summary gives the translator a short machine-written synopsis of the episode. Summary and terms also lists names and terms to keep consistent, for review only: they never enter the glossary on their own. Costs extra requests (charged to the shared budget); cached, so a rerun does not pay again."),
@@ -202,7 +203,7 @@ const PLAN_FIELDS = [
     h: "Applied when a dub is queued for this title." },
   ...["dub.target_locale", "dub.preset", "dub.voice_mode", "voicebox.default_engine", "dub.cast_group", "dub.character_map", "transcribe.whisper_model", "transcribe.diarize",
     "translate.locale", "translate.adaptation", "translate.direction", "translate.character_notes",
-    "translate.adapt_region", "translate.reuse_memory",
+    "translate.adapt_region", "translate.slang", "translate.reuse_memory",
     "dub.version_name", "dub.preserve_versions",
     "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run",
     // Per-title bypass for boundary preparation; the detector thresholds stay global.

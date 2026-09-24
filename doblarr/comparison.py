@@ -43,7 +43,9 @@ import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import vocalization
 from .artifacts import digest, media_work, record, stamp
+from .clients.translator import translation_options
 from .config import Config
 from .cues import (
     RAW,
@@ -65,7 +67,6 @@ from .services import Services
 from .stages import extract
 from .stages.common import save_script
 from .telemetry import write_json
-from . import vocalization
 
 log = logging.getLogger("doblarr.comparison")
 
@@ -563,7 +564,7 @@ def prepare(config: Config, excerpt: Path, scene: Scene, *, source_lang: str,
     # Mirrors `run_job`, for the same reason: a script cache whose translation
     # options differ from the run's is treated as a different translation and
     # its text is dropped. Here the text is the whole point of the import.
-    job.translation_options = dict(config["translate"])
+    job.translation_options = translation_options(config["translate"])
     job.translation_options["target_locale"] = job.target_locale
     imported = import_takes(job, scene)
     save_script(job, work)

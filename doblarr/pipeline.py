@@ -20,7 +20,7 @@ from . import (
 )
 from .artifacts import digest, media_work
 from .budget import RequestBudget
-from .clients.translator import build_translator
+from .clients.translator import build_translator, translation_options
 from .config import Config
 from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
@@ -108,7 +108,7 @@ def run_job(
     work = shared_work / locale_ns
     job.artifacts_dir = work
     out = config.output_dir / shared_work.name / locale_ns
-    job.translation_options = dict(config["translate"])
+    job.translation_options = translation_options(config["translate"])
     job.translation_options["target_locale"] = job.target_locale
     edits = config["dub"].get("line_edits", {})
     if edits or job.kind == "audition":
