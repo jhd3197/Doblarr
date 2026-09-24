@@ -699,3 +699,59 @@ def rewrite_checker(job, oracle: Oracle, config: dict):
         return not verdict.applied
 
     return accept
+
+
+# -- 7. treatment suggestions ------------------------------------------------------
+
+_SPACE_WORDS: tuple[tuple[str, re.Pattern], ...] = tuple(
+    (preset, re.compile(pattern, re.IGNORECASE)) for preset, pattern in (
+        ("phone", r"\bphone\b|\btelephone|\bon the line\b|\bcell\b|\bteléfono|\bcelular"),
+        ("radio", r"\bradio|\bwalkie|\bintercom|\bspeaker\b|\bp\.?a\.?\b|\bcomms?\b|\btv\b"
+                  r"|\btelevision|\bbroadcast|\bannouncer|\bmegaphone|\bmonitor\b|\btelevisi"),
+        ("distant", r"\bdistant|\bfar away|\bfrom afar|\boff-?screen|\bo\.s\.|\bin the distance"
+                    r"|\ba lo lejos|\bmuffled|\bthrough the (?:door|wall)"),
+    ))
+
+SPACE_QUESTION = choice("Where is this line heard from, going by the subtitle's own words?", {
+    "none": "spoken normally, in the room",
+    "phone": "through a telephone",
+    "radio": "through a radio, speaker, TV or intercom",
+    "distant": "from far away or through a wall"})
+
+
+def space_rule(text: str) -> str | None:
+    """A treatment a stage direction in brackets names, else None."""
+    for tag in _TAG.findall(text or ""):
+        for preset, pattern in _SPACE_WORDS:
+            if pattern.search(tag):
+                return preset
+    return None
+
+
+def treatments(job, oracle: Oracle, config: dict) -> int:
+    """Suggest a phone, radio or distant treatment where the subtitle says so.
+
+    Suggestions only: they show in review and change nothing. Applying a
+    treatment stays a reviewer's or a scene rule's decision, because a wrong
+    phone filter on a line is far worse than a missing one.
+    """
+    if not enabled(config, "treatments"):
+        return 0
+    verdicts = []
+    for seg in job.segments:
+        text = seg.text_src or ""
+        if not seg.cue_id or not _TAG.search(text):
+            continue
+        preset = space_rule(text)
+        if preset is not None:
+            verdicts.append(Verdict("treatments", seg.cue_id, preset, 1.0, "rules", False,
+                                    "suggested; review to apply"))
+            continue
+        answers = oracle.ask("treatments", {"line": text}, {"space": SPACE_QUESTION})
+        value, confidence, outcome = weigh(config, (answers or {}).get("space"))
+        if outcome == "drop" or value is None or value == "none":
+            continue
+        verdicts.append(Verdict("treatments", seg.cue_id, value, round(confidence, 3), "model",
+                                False, "suggested; review to apply"))
+    record(job, verdicts, "treatments", oracle)
+    return len(verdicts)

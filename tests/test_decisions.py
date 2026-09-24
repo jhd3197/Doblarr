@@ -343,3 +343,27 @@ def test_the_checker_rejects_by_rule_or_a_confident_model():
 def test_the_rewrite_check_can_be_switched_off():
     assert decisions.rewrite_checker(job_of("a"), decisions.Oracle({}),
                                      decisions.settings({"rewrite_check": False})) is None
+
+
+# -- 7. treatment suggestions --------------------------------------------------
+
+@pytest.mark.parametrize("text, preset", [
+    ("(on phone) Where are you?", "phone"), ("[over radio] Copy that.", "radio"),
+    ("(on TV) Tonight's weather...", "radio"), ("(distant) Help!", "distant"),
+    ("(O.S.) Dinner's ready!", "distant"), ("Give me your phone.", None),
+    ("(whispering) Quiet.", None),
+])
+def test_treatments_a_stage_direction_names(text, preset):
+    assert decisions.space_rule(text) == preset
+
+
+def test_treatments_are_only_ever_suggested():
+    job = job_of("(on phone) Where are you?", "[muttering] Fine.", "Plain line.")
+    oracle, driver = oracle_with(lambda s, qs: {"space": ("phone", 0.99)})
+    assert decisions.treatments(job, oracle, decisions.settings(None)) == 2
+    assert [state["line"] for state, _q in driver.calls] == ["[muttering] Fine."]
+    summary = job.metrics["decisions"]["treatments"]
+    assert summary["applied"] == 0 and summary["suggested"] == 2
+    from doblarr.cues import Treatment
+
+    assert all(s.treatment == Treatment() for s in job.segments)  # nothing applied

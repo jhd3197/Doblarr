@@ -273,6 +273,7 @@ def run_job(
             # How each line is delivered, where its own words say so; a
             # reviewer's edit applied afterwards still wins.
             decisions.delivery(job, oracle, decision_options)
+            decisions.treatments(job, oracle, decision_options)
             save_script(job, translation_work)  # + translations
 
     def _recent_effective_scripts():
