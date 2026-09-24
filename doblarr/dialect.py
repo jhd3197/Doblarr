@@ -45,6 +45,9 @@ _MARKERS: dict[str, dict[str, str]] = {
         "coche": "auto / carro", "enhorabuena": "felicidades",
         "apetece": "tengo ganas / quiero", "pillar": "atrapar / agarrar",
         "pillado": "atrapado", "pillé": "atrapé", "vale": "bien / está bien / de acuerdo",
+        "ordenador": "computadora", "ordenadores": "computadoras", "nevera": "refrigerador",
+        "patata": "papa", "patatas": "papas", "zumo": "jugo", "aparcar": "estacionar",
+        "despacho": "oficina",
     },
     # "Take/grab" in Spain, "to fuck" in much of Latin America. Latin American
     # subtitles use it on purpose for the sexual sense, so this needs a human:
@@ -70,6 +73,10 @@ _TOKEN = re.compile(r"\w+", re.UNICODE)
 _VALE = re.compile(r"(?:(?:^|[.!?¡¿…—-]\s*)[Vv]ale|[,;:]\s*vale)\s*(?:[.!?,;:…]|$)")
 
 
+# "Ir a por algo" — 182 Spain subtitle lines across 29 titles, 5 Latin American.
+_A_POR = re.compile(r"\ba por\b", re.IGNORECASE)
+
+
 def applies(target_locale: str | None) -> bool:
     """A regional Spanish target outside Spain (es-419, es-MX, es-VE, …)."""
     tag = parse(target_locale or "")
@@ -92,6 +99,10 @@ def markers(text: str) -> list[dict]:
     if _VALE.search(text):
         hits.append({"word": "vale", "category": "vocabulary",
                      "suggest": _WORD["vale"][1]})
+    found = _A_POR.search(text)
+    if found:
+        hits.append({"word": found.group(0), "category": "grammar",
+                     "suggest": "por (voy por agua)"})
     return hits
 
 

@@ -52,6 +52,12 @@ def test_vale_is_flagged_only_as_a_standalone_okay(text, flagged):
     assert any(h["word"] == "vale" for h in dialect.markers(text)) is flagged
 
 
+def test_a_por_is_flagged_as_spain_grammar():
+    [hit] = dialect.markers("Voy a por agua.")
+    assert hit["category"] == "grammar" and "voy por agua" in hit["suggest"]
+    assert dialect.markers("Voy por agua.") == []
+
+
 def test_shared_or_ambiguous_words_are_not_markers():
     # tío (uncle), rollo (everyday Mexican), ID, cojo (lame), and the strong
     # profanity Latin American subtitles use on purpose.
