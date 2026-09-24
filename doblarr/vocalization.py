@@ -170,11 +170,15 @@ def check(path: Path, text: str, language: str, vb=None) -> dict:
     return result
 
 
+def _short(text: str, limit: int = 40) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
 def describe(result: dict) -> str:
     """One sentence for review."""
     if result.get("state") == "extra":
         parts = [f"{u['position']} {u['start']:.1f}–{u['end']:.1f}s"
-                 + (f" (“{u['heard']}”)" if u["heard"] else " (no words)")
+                 + (f" (“{_short(u['heard'])}”)" if u["heard"] else " (no words)")
                  for u in result["unaccounted"]]
         return "sound the line does not account for: " + "; ".join(parts)
     if result.get("state") == "suspicious":
