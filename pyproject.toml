@@ -37,6 +37,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "types-requests>=2.31",
+    "numpy",         # separation chunking tests
 ]
 
 [project.scripts]

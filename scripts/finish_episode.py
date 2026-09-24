@@ -16,14 +16,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from doblarr.artifacts import digest  # noqa: E402
 from doblarr.clients.translator import PromptureTranslator  # noqa: E402
 from doblarr.clients.voicebox import VoiceboxClient  # noqa: E402
 from doblarr.config import Config  # noqa: E402
+from doblarr.cues import RAW, Artifact, Selection, Take, now  # noqa: E402
 from doblarr.discovery import lang_name  # noqa: E402
 from doblarr.ffmpeg import run_ffmpeg  # noqa: E402
 from doblarr.models import DubJob, Segment, Speaker  # noqa: E402
-from doblarr.artifacts import digest  # noqa: E402
-from doblarr.cues import RAW, Artifact, Selection, Take, now  # noqa: E402
 from doblarr.stages import fit_timing, mix, mux, quality, synthesize, transcribe  # noqa: E402
 from doblarr.stages.common import save_script  # noqa: E402
 from doblarr.stages.prepare import interjection  # noqa: E402

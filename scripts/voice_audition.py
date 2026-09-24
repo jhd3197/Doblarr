@@ -43,6 +43,7 @@ Everything lands in `work/benchmarks/voice-audition/<id>/` and stays local.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import shutil
@@ -318,10 +319,8 @@ class Audition:
         """Delete a profile left without a sample by a refused upload."""
         for profile in self.vb.voice_profiles():
             if profile.get("name") == name:
-                try:
+                with contextlib.suppress(VoiceboxError):
                     self.vb._request("DELETE", f"/profiles/{profile['id']}")
-                except VoiceboxError:
-                    pass
 
     def character_reference(self, speaker: str) -> Path:
         """The cleanest single line of this character's original performance."""

@@ -27,9 +27,8 @@ import sys
 import tempfile
 import wave
 from array import array
-from pathlib import Path
-
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from .ffmpeg import run_ffmpeg
 from .verify import base_language, normalize
@@ -140,9 +139,10 @@ def check(path: Path, text: str, language: str, vb=None) -> dict:
     regions, duration = voiced_regions(Path(path))
     voiced = round(sum(b - a for a, b in regions), 3)
     expected = round(expected_seconds(text, language), 3)
+    unaccounted: list[dict] = []
     result = {"checker": CHECKER, "state": "clean", "voiced": voiced,
               "expected": expected, "duration": round(duration, 3),
-              "regions": [list(r) for r in regions], "unaccounted": []}
+              "regions": [list(r) for r in regions], "unaccounted": unaccounted}
     excess = voiced - expected
     if not regions or excess < EXCESS_SECONDS or voiced < expected * EXCESS_RATIO:
         return result
@@ -163,9 +163,9 @@ def check(path: Path, text: str, language: str, vb=None) -> dict:
                 continue
             if accounted_for(heard, text, language):
                 continue
-            result["unaccounted"].append({"position": position, "start": start,
-                                          "end": end, "heard": heard.strip()})
-    if result["unaccounted"]:
+            unaccounted.append({"position": position, "start": start,
+                                "end": end, "heard": heard.strip()})
+    if unaccounted:
         result["state"] = "extra"
     return result
 
