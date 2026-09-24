@@ -219,6 +219,7 @@ def run_job(
             prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
                         interjections=config["transcribe"].get(
                             "interjections_as_reactions", True))
+            decisions.title_cards(job, oracle, decision_options)
             save_script(job, work)  # transcript + speakers survive a crash now
 
     def _translate():

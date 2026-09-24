@@ -196,3 +196,42 @@ def test_an_unsure_model_only_suggests_a_mode():
     assert job.segments[0].intent.mode == "unknown"
     (finding,) = [f for f in job.segments[0].findings if f.code == "decision_delivery"]
     assert finding.evidence == {"value": "shout", "source": "model", "applied": False, "note": ""}
+
+
+# -- 3. captions and title cards -----------------------------------------------
+
+@pytest.mark.parametrize("text, caption", [
+    ("NEW YORK, 1987", True), ("THREE YEARS LATER", True), ("PARIS, FRANCE", True),
+    ("CHAPTER 2", True), ("TRES AÑOS DESPUÉS", True),
+    ("GET OUT OF HERE!", False), ("WHERE ARE YOU?", False), ("I'm in New York, 1987.", False),
+    ("HELLO THERE", False),  # capitals, but nothing marks it as a caption
+])
+def test_captions_the_text_shows_plainly(text, caption):
+    assert decisions.card_rule(text) is caption
+
+
+def test_a_caption_leaves_the_script_as_a_timed_event():
+    job = job_of("NEW YORK, 1987", "Where were you?", "OLD MILL ROAD")
+    oracle, driver = oracle_with(lambda s, qs: {"card": 0.96})
+    assert decisions.title_cards(job, oracle, decisions.settings(None)) == 2
+    assert [s.text_src for s in job.segments] == ["Where were you?"]
+    assert [state["line"] for state, _q in driver.calls] == ["OLD MILL ROAD"]
+    events = {e.text: e for e in job.nonverbal}
+    assert events["NEW YORK, 1987"].checks["detected_by"] == "rules"
+    assert events["OLD MILL ROAD"].checks["detected_by"] == "model"
+    assert all(e.category == "background" and e.decision == "unresolved"
+               for e in events.values())
+
+
+def test_an_unsure_caption_stays_a_line_with_a_suggestion():
+    job = job_of("OLD MILL ROAD")
+    oracle, _driver = oracle_with(lambda s, qs: {"card": 0.7})
+    assert decisions.title_cards(job, oracle, decisions.settings(None)) == 0
+    assert [s.text_src for s in job.segments] == ["OLD MILL ROAD"]
+    assert any(f.code == "decision_title_cards" for f in job.segments[0].findings)
+
+
+def test_without_the_model_only_plain_captions_leave():
+    job = job_of("NEW YORK, 1987", "OLD MILL ROAD")
+    decisions.title_cards(job, decisions.Oracle({"model": ""}), decisions.settings(None))
+    assert [s.text_src for s in job.segments] == ["OLD MILL ROAD"]

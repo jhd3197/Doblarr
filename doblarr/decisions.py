@@ -389,3 +389,85 @@ def delivery(job, oracle: Oracle, config: dict) -> int:
         verdicts.append(verdict)
     record(job, verdicts, "delivery", oracle)
     return sum(v.applied for v in verdicts)
+
+
+# -- 3. captions and title cards ----------------------------------------------
+
+_YEAR = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
+_CARD_WORDS = re.compile(
+    r"\b(?:LATER|EARLIER|AGO|CHAPTER|EPISODE|PART|PROLOGUE|EPILOGUE|THE END|MEANWHILE"
+    r"|DESPUÉS|ANTES|CAPÍTULO|EPISODIO|PARTE|MIENTRAS TANTO|FIN)\b")
+
+CARD_QUESTION = noul(
+    "Is this text an on-screen caption, sign, location or date card, rather than "
+    "something a character says out loud?")
+
+
+def _cased_upper(text: str) -> bool:
+    letters = [ch for ch in text if ch.isalpha() and ch.lower() != ch.upper()]
+    return len(letters) >= 3 and all(ch.isupper() for ch in letters)
+
+
+def card_candidate(text: str) -> bool:
+    """Short, in capitals, and not exclaimed or asked: could be a caption."""
+    body = text.strip()
+    return (bool(body) and _cased_upper(body) and len(body.split()) <= 8
+            and not re.search(r"[!?¡¿！？]", body))
+
+
+def card_rule(text: str) -> bool:
+    """A caption the text shows plainly: a date, "3 YEARS LATER", "PARIS, FRANCE"."""
+    body = text.strip().rstrip(".")
+    if not card_candidate(body):
+        return False
+    if _YEAR.search(body) or _CARD_WORDS.search(body):
+        return True
+    parts = [p.strip() for p in body.split(",")]
+    return len(parts) == 2 and all(p and len(p.split()) <= 3 for p in parts)
+
+
+def title_cards(job, oracle: Oracle, config: dict) -> int:
+    """Take captions out of the spoken script, keeping each as a timed event.
+
+    A caption is not dialogue: voiced, "NEW YORK, 1987" is an announcer who
+    was never in the film. It leaves synthesis the way a non-spoken cue does,
+    as an event on the ledger with its original text, so nothing is lost and
+    review can see it. Only short lines in capitals that are not exclaimed or
+    asked are ever considered.
+    """
+    from .stages.prepare import _event
+
+    if not enabled(config, "title_cards"):
+        return 0
+    verdicts, kept, removed = [], [], 0
+    known = {event.event_id for event in job.nonverbal}
+    for seg in job.segments:
+        text = (seg.text_src or "").strip()
+        verdict = None
+        if seg.cue_id and card_candidate(text):
+            if card_rule(text):
+                verdict = Verdict("title_cards", seg.cue_id, "caption", 1.0, "rules", True)
+            else:
+                answers = oracle.ask("title_cards", {"line": text}, {"card": CARD_QUESTION})
+                _value, confidence, outcome = weigh(config, (answers or {}).get("card"),
+                                                    value="caption")
+                if outcome != "drop":
+                    verdict = Verdict("title_cards", seg.cue_id, "caption",
+                                      round(confidence, 3), "model", outcome == "apply")
+        if verdict is not None:
+            verdicts.append(verdict)
+        if verdict is None or not verdict.applied or not seg.end > seg.start >= 0:
+            kept.append(seg)
+            continue
+        event = _event(seg, text, 0, "whole", text, detected_by=verdict.source)
+        event.type, event.category, event.speaker = "unknown", "background", None
+        event.reason = "an on-screen caption, not dialogue"
+        event.checks["decided"] = "caption"
+        if event.event_id not in known:
+            job.nonverbal.append(event)
+            known.add(event.event_id)
+        removed += 1
+    job.segments = kept
+    job.metrics["captions_removed"] = removed
+    record(job, verdicts, "title_cards", oracle)
+    return removed
