@@ -64,6 +64,9 @@ SETTING_KEYS = (
     "boundaries.threshold_db",
     "boundaries.min_separation_db",
     "boundaries.edge_fade_ms",
+    "boundaries.edge_fade_in_ms",
+    "boundaries.edge_fade_out_ms",
+    "boundaries.edge_fade_curve",
     "boundaries.edge_threshold_db",
     # Timing and coverage policy travels; the per-cue anchors, the per-event
     # decisions and the local sound files deliberately do not. An anchor
@@ -287,6 +290,8 @@ class DubRecipe(StrictModel):
             "boundaries.threshold_db": (1, 60),
             "boundaries.min_separation_db": (0, 60),
             "boundaries.edge_fade_ms": (0, 50),
+            "boundaries.edge_fade_in_ms": (0, 50),
+            "boundaries.edge_fade_out_ms": (0, 150),
             "boundaries.edge_threshold_db": (-90, 0),
             "dub.background_volume": (0, 4),
             "dub.fallback_volume": (0, 4),

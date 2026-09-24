@@ -123,3 +123,13 @@ test('the translation prep pass is opt-in and says what it costs', () => {
   assert.match(field.h, /never enter the glossary on their own/);
   assert.match(field.h, /Costs extra requests/);
 });
+
+test('voices ease in and out, and each ease says when it applies', () => {
+  for (const key of ['boundaries.edge_fade_in_ms', 'boundaries.edge_fade_out_ms']) {
+    assert.match(FIELD_BY_KEY[key].h, /mid-sound/, key);
+  }
+  assert.deepEqual(FIELD_BY_KEY['boundaries.edge_fade_curve'].o, ['hsin', 'qsin', 'tri']);
+  assert.match(FIELD_BY_KEY['dub.duck_attack_ms'].h, /eases them down/);
+  const plan = PLAN_FIELDS.map(f => f.k);
+  assert.ok(plan.includes('boundaries.edge_fade_in_ms') && plan.includes('boundaries.edge_fade_out_ms'));
+});

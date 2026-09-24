@@ -156,7 +156,7 @@ class DubModel(_Section):
     background_volume: float = 1.0
     fallback_volume: float = 0.2
     duck_threshold: float = 0.05
-    duck_attack_ms: float = 30
+    duck_attack_ms: float = 100     # the bed eases down under a new line instead of snapping
     duck_release_ms: float = 350
     output_codec: str = "aac"
     output_bitrate: str = "192k"
@@ -216,7 +216,12 @@ class BoundariesModel(_Section):
     min_trim_ms: float = 30         # below this there is nothing worth doing
     threshold_db: float = 12        # dB above the noise floor that counts as speech
     min_separation_db: float = 10   # below this the boundary is not knowable
-    edge_fade_ms: float = 0         # 0 = no edge fade; 8 is a good starting value
+    # Voices ease in and out where a clip would otherwise start or end
+    # mid-sound; an edge that is already silent is never touched.
+    edge_fade_in_ms: float = 12     # short: never blunt a consonant (max 50)
+    edge_fade_out_ms: float = 40    # longer: let a vowel or breath die away (max 150)
+    edge_fade_curve: Literal["hsin", "qsin", "tri"] = "hsin"  # hsin = S-shaped, tri = linear
+    edge_fade_ms: float = 0         # older single linear fade; nonzero overrides the three above
     edge_threshold_db: float = -40  # an edge quieter than this is already smooth
 
 

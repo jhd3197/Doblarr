@@ -85,7 +85,7 @@ const TABS = [
     N("dub.background_volume", "Background level", "1 preserves music and effects outside dialogue."),
     N("dub.fallback_volume", "Original-audio fallback level"),
     N("dub.duck_threshold", "Ducking threshold"),
-    N("dub.duck_attack_ms", "Ducking attack (ms)"),
+    N("dub.duck_attack_ms", "Ducking attack (ms)", "How fast music and effects dip when a line starts. 100 eases them down; very low values make an entrance feel like a cut."),
     N("dub.duck_release_ms", "Ducking release (ms)"),
     B("quality.enabled", "Check generated clips"), B("quality.normalize", "Normalize dialogue"),
     N("quality.dialogue_lufs", "Dialogue loudness (LUFS)"),
@@ -160,7 +160,10 @@ const TABS = [
     N("boundaries.min_trim_ms", "Smallest trim worth doing (ms)"),
     N("boundaries.threshold_db", "Speech threshold above noise (dB)"),
     N("boundaries.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the boundary is not knowable and the clip is left alone."),
-    N("boundaries.edge_fade_ms", "Edge fade (ms)", "0 disables it. Applied only where a clip would otherwise start or end on a click."),
+    N("boundaries.edge_fade_in_ms", "Ease a voice in (ms)", "Applied only where a line would start mid-sound; a line that starts in silence is left alone. Keep it short so a consonant keeps its attack. 0 turns it off."),
+    N("boundaries.edge_fade_out_ms", "Ease a voice out (ms)", "Applied only where a line would stop mid-sound, so a vowel or breath dies away instead of being cut. 0 turns it off."),
+    C("boundaries.edge_fade_curve", "Ease shape", ["hsin", "qsin", "tri"], "hsin is an S-curve, the softest start and finish; tri is linear."),
+    N("boundaries.edge_fade_ms", "Edge fade (ms)", "The older single short linear fade at both ends. When above 0 it replaces the two eases above."),
     N("boundaries.edge_threshold_db", "Edge already smooth below (dB)"),
   ])]),
   tab("hardware", "Hardware", [group("This machine", [
@@ -207,7 +210,8 @@ const PLAN_FIELDS = [
     "dub.version_name", "dub.preserve_versions",
     "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run",
     // Per-title bypass for boundary preparation; the detector thresholds stay global.
-    "boundaries.trim", "boundaries.edge_fade_ms",
+    "boundaries.trim", "boundaries.edge_fade_ms", "boundaries.edge_fade_in_ms",
+    "boundaries.edge_fade_out_ms",
     // Which timing owner and whether coverage may place a sound are per-title
     // choices; the thresholds behind them stay global.
     "timing.mode", "timing.pacing", "coverage.mode",

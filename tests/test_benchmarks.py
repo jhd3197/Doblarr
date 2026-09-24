@@ -17,7 +17,7 @@ from doblarr.benchmarks import (
     compare,
     record,
 )
-from doblarr.cues import FITTED, NORMALIZED, RAW, SOURCE
+from doblarr.cues import EDGED, FITTED, NORMALIZED, RAW, SOURCE
 
 pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 
@@ -32,7 +32,10 @@ def test_baseline_runs_offline_through_every_layer(observed):
     assert observed["segments"] == 4
     assert observed["tts_requests"] == 4
     assert observed["metrics"]["tts_generated"] == 4
-    assert observed["roles_available"] == [FITTED, NORMALIZED, RAW]
+    # Voices ease in and out by default, so a line that would start or stop
+    # mid-sound has an edged render on top of its fit.
+    assert observed["roles_available"] == [EDGED, FITTED, NORMALIZED, RAW]
+    assert observed["metrics"]["edge_fades"] >= 1
     assert observed["source_reference"]["stream_index"] is not None
     assert observed["source_reference"]["time_base"] == SOURCE
 
@@ -40,7 +43,7 @@ def test_baseline_runs_offline_through_every_layer(observed):
         assert line["cue_id"] and line["take_id"]
         assert line["origin"] == "import"
         assert line["source_spans"][0]["domain"] == SOURCE
-        assert line["rendered_role"] in {NORMALIZED, FITTED}
+        assert line["rendered_role"] in {NORMALIZED, FITTED, EDGED}
 
 
 def test_baseline_keeps_nonspoken_evidence_without_synthesizing_it(observed):

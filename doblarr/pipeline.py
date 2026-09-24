@@ -610,7 +610,7 @@ def run_job(
                 background_volume=config["dub"].get("background_volume", 1),
                 fallback_volume=config["dub"].get("fallback_volume", 0.2),
                 threshold=config["dub"].get("duck_threshold", 0.05),
-                attack=config["dub"].get("duck_attack_ms", 30),
+                attack=config["dub"].get("duck_attack_ms", 100),
                 release=config["dub"].get("duck_release_ms", 350),
                 dry_run=dry_run,
                 cancel=cancel_event,

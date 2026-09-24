@@ -130,7 +130,7 @@ dub:
   background_volume: 1.0
   fallback_volume: 0.2          # original soundtrack when separation is unavailable
   duck_threshold: 0.05
-  duck_attack_ms: 30
+  duck_attack_ms: 100           # how fast the bed dips under a line; 100 eases it down
   duck_release_ms: 350
   output_codec: aac             # aac | flac | copy
   output_bitrate: 192k
@@ -162,7 +162,12 @@ boundaries:
   min_trim_ms: 30                # below this there is nothing worth doing
   threshold_db: 12               # dB above the noise floor that counts as speech
   min_separation_db: 10          # below this the boundary is not knowable; skip
-  edge_fade_ms: 0                # 0 = off; 8 removes cut clicks inaudibly
+  # Voices ease in and out where a clip starts or ends mid-sound; an edge
+  # that is already silent is left alone. 0 for both turns it off.
+  edge_fade_in_ms: 12            # short, so a consonant keeps its attack (max 50)
+  edge_fade_out_ms: 40           # longer, so a vowel or breath dies away (max 150)
+  edge_fade_curve: hsin          # hsin (S-shaped) | qsin | tri (linear)
+  edge_fade_ms: 0                # older single linear fade; nonzero overrides the above
   edge_threshold_db: -40         # an edge quieter than this is already smooth
 
 # Source-relative dynamics. `legacy` keeps the pre-timing loudness pass exactly

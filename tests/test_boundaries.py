@@ -350,10 +350,61 @@ def test_edges_are_skipped_when_disabled_or_dry_run(tmp_path):
     seg = job.segments[0]
     seg.audio.put_render(Artifact(role=FITTED, path=str(tmp_path / "x.wav"),
                                   fingerprint="f"))
-    boundaries.finish_edges(job, {"edge_fade_ms": 0})
+    # Off is both eases at 0 (and the older single fade left at 0).
+    boundaries.finish_edges(job, {"edge_fade_ms": 0, "edge_fade_in_ms": 0,
+                                  "edge_fade_out_ms": 0})
     boundaries.finish_edges(job, {"edge_fade_ms": 8}, dry_run=True)
     assert seg.audio.render(EDGED) is None
     assert "edge_fades" not in job.metrics
+
+
+def test_voices_ease_in_short_and_out_longer_by_default():
+    fade_in, fade_out, curve = boundaries.edge_fades(boundaries._settings(None))
+    assert (fade_in, fade_out, curve) == (0.012, 0.040, "hsin")
+    assert fade_in < fade_out  # a consonant keeps its attack; a vowel dies away
+
+
+def test_the_older_single_fade_still_means_what_it_did():
+    assert boundaries.edge_fades(boundaries._settings({"edge_fade_ms": 8})) == \
+        (0.008, 0.008, "tri")
+    assert boundaries.edge_fades(boundaries._settings({"edge_fade_ms": 500}))[0] == 0.050
+    # the exit may be longer than the entrance, but it is bounded too
+    assert boundaries.edge_fades(boundaries._settings({"edge_fade_out_ms": 900}))[1] == 0.150
+    with pytest.raises(ValueError, match="edge_fade_curve"):
+        boundaries.edge_fades(boundaries._settings({"edge_fade_curve": "bounce"}))
+
+
+@ffmpeg_only
+def test_a_line_eases_in_and_out_by_default_and_a_silent_edge_is_untouched(
+        tmp_path, monkeypatch):
+    job = _job(tmp_path)
+    job.segments = [Segment(0, 0, 2, "cut", text_translated="cut"),
+                    Segment(1, 3, 5, "smooth", text_translated="smooth")]
+    hard = tone(tmp_path / "clips" / "hard.wav", [(0.8, 0.5)])
+    # silent at the start, cut off at the end
+    tail = tone(tmp_path / "clips" / "tail.wav", [(0.1, 0.0), (0.7, 0.5)])
+    for seg, path in zip(job.segments, (hard, tail), strict=True):
+        seg.cue_id = f"cue-{seg.index}"
+        seg.audio.put_render(Artifact(role=FITTED, path=str(path),
+                                      fingerprint=f"f-{seg.index}"))
+        seg.audio_clip = path
+    chains = []
+    real = boundaries.run_ffmpeg
+
+    def spy(args, **kwargs):
+        chains.append(args[args.index("-af") + 1])
+        real(args, **kwargs)
+
+    monkeypatch.setattr(boundaries, "run_ffmpeg", spy)
+    boundaries.finish_edges(job, {})
+    assert job.metrics["edge_fades"] == 2
+    assert chains[0] == ("afade=t=in:st=0:d=0.012:curve=hsin,"
+                         "afade=t=out:st=0.76:d=0.04:curve=hsin")
+    assert chains[1] == "afade=t=out:st=0.76:d=0.04:curve=hsin"  # no fade-in on silence
+    edged = Path(job.segments[0].audio.render(EDGED).path)
+    assert duration(edged) == pytest.approx(duration(hard), abs=0.01)
+    head, end = boundaries.edge_peaks(edged)
+    assert head < 0.1 and end < 0.1
 
 
 @ffmpeg_only
