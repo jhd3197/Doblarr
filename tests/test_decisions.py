@@ -265,3 +265,48 @@ def test_reactions_follow_the_interjections_setting():
     oracle, driver = oracle_with(lambda s, qs: {"reaction": 1.0, "kind": ("gasp", 1.0)})
     assert decisions.reactions(job, oracle, decisions.settings(None), interjections=False) == 0
     assert driver.calls == []
+
+
+# -- 5. unrecognized sound tags ------------------------------------------------
+
+@pytest.mark.parametrize("text, named", [
+    ("[door creaks open]", ("door", "background")), ("(nervous chuckle)", ("laugh", "vocal")),
+    ("[phone buzzing]", ("unknown", "background")), ("[soft sobbing]", ("cry", "vocal")),
+    ("[suspira]", ("sigh", "vocal")), ("[indistinct chatter]", None),
+])
+def test_sound_tags_the_words_name(text, named):
+    assert decisions.sound_rule(text) == named
+
+
+def test_a_cue_that_is_only_an_unknown_tag_is_named_and_not_spoken():
+    from doblarr.stages import prepare
+
+    job = job_of("[door creaks open]", "[eerie hum]", "Hi.", "[quietly]", speaker="A")
+    prepare.run(job)
+    # the parser does not know these tags, so they are still lines to speak
+    assert len(job.segments) == 4 and job.nonverbal == []
+    replies = {"[eerie hum]": ("bed", 0.95), "[quietly]": ("voice", 0.5)}
+    oracle, driver = oracle_with(lambda s, qs: {"sound": replies[s["tag"]]})
+    assert decisions.sound_tags(job, oracle, decisions.settings(None)) == 2
+    assert [s.text_src for s in job.segments] == ["Hi.", "[quietly]"]  # unsure: kept
+    events = {e.text: e for e in job.nonverbal}
+    door, hum = events["[door creaks open]"], events["[eerie hum]"]
+    assert (door.type, door.category, door.checks["classified_by"]) == \
+        ("door", "background", "rules")
+    assert (hum.type, hum.category, hum.checks["classified_by"]) == \
+        ("unknown", "background", "model")
+    assert [state["tag"] for state, _q in driver.calls] == ["[eerie hum]", "[quietly]"]
+    assert all(e.decision == "unresolved" for e in job.nonverbal)
+    # a second pass finds nothing left to name
+    assert decisions.sound_tags(job, oracle, decisions.settings(None)) == 0
+
+
+def test_an_unknown_event_on_the_ledger_gets_its_type():
+    from doblarr.cues import NonverbalEvent
+
+    job = job_of("Hi.")
+    job.nonverbal.append(NonverbalEvent(event_id="e1", cue_id="c", text="[gasps loudly]"))
+    oracle, driver = oracle_with(lambda s, qs: {"sound": ("bed", 1.0)})
+    assert decisions.sound_tags(job, oracle, decisions.settings(None)) == 1
+    assert (job.nonverbal[0].type, job.nonverbal[0].category) == ("gasp", "vocal")
+    assert driver.calls == []

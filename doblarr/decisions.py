@@ -299,7 +299,7 @@ def cutoffs(job, oracle: Oracle, config: dict) -> dict[str, str]:
             continue
         answers = oracle.ask("cutoffs", {"line": text}, {"ending": CUTOFF_QUESTION})
         value, confidence, outcome = weigh(config, (answers or {}).get("ending"))
-        if outcome == "drop" or value in (None, "complete"):
+        if outcome == "drop" or value is None or value == "complete":
             continue
         applied = outcome == "apply"
         if applied:
@@ -378,7 +378,7 @@ def delivery(job, oracle: Oracle, config: dict) -> int:
             answers = oracle.ask("delivery", {"line": source, "translation": target},
                                  {"mode": DELIVERY_QUESTION})
             value, confidence, outcome = weigh(config, (answers or {}).get("mode"))
-            if outcome == "drop" or value in (None, "normal"):
+            if outcome == "drop" or value is None or value == "normal":
                 continue
             verdict = Verdict("delivery", seg.cue_id, value, round(confidence, 3), "model",
                               outcome == "apply")
@@ -514,3 +514,127 @@ def reactions(job, oracle: Oracle, config: dict, interjections: bool = True) -> 
                                 applied))
     record(job, verdicts, "reactions", oracle)
     return from_translator(job, flags, detected_by="model") if flags else 0
+
+
+# -- 5. unrecognized sound tags --------------------------------------------------
+
+# Words inside a tag that name an event type, checked in order. The parser in
+# stages/prepare only accepts a tag that *is* one of its phrases; these find
+# the type inside a longer description ("[door creaks open]").
+_SOUND_WORDS: tuple[tuple[str, str, re.Pattern], ...] = tuple(
+    (kind, category, re.compile(pattern, re.IGNORECASE)) for kind, category, pattern in (
+        ("laugh", "vocal", r"\blaugh|\bchuckl|\bgiggl|\bsnicker|\bris[ae]"),
+        ("sigh", "vocal", r"\bsigh|\bsuspir"),
+        ("gasp", "vocal", r"\bgasp|\bjadea"),
+        ("cry", "vocal", r"\bsob|\bcry|\bcries|\bweep|\bwhimper|\bllor"),
+        ("scream", "vocal", r"\bscream|\bshriek|\byell|\bshout|\bgrit"),
+        ("cough", "vocal", r"\bcough|\btos\b|\btose"),
+        ("breath", "vocal", r"\bbreath|\bpant|\bexhal|\binhal|\bsniff|\brespir"),
+        ("effort", "vocal", r"\bgrunt|\bgroan|\bstrain|\bmoan|\bgime"),
+        ("applause", "background", r"\bapplau|\bclap|\bcheer|\baplaus"),
+        ("music", "background", r"\bmusic|\bsong|\bsing|\bmelod|♪|\bmúsica|\bcanci"),
+        ("footsteps", "background", r"\bfootstep|\bfootfall|\bpasos\b"),
+        ("door", "background", r"\bdoor|\bknock|\bpuerta|\btoca"),
+    ))
+# Sounds of the world that are no speaker's voice but have no type of their
+# own: kept `unknown`, but known to belong to the bed.
+_BED_WORDS = re.compile(
+    r"\bphone|\bring|\bbuzz|\bbeep|\balarm|\bsiren|\bengine|\bcar\b|\bgun|\bshot|"
+    r"\bexplo|\bthunder|\brain\b|\bwind\b|\bdog|\bbark|\bcrash|\bbang|\bglass|\bclock|"
+    r"\bbell|\bhorn|\bbird|\bwater|\btraffic|\bteléfono|\bdisparo|\bperro", re.IGNORECASE)
+
+SOUND_QUESTION = choice("What is this subtitle sound tag describing?", {
+    "laugh": "laughing", "sigh": "sighing", "gasp": "a gasp", "cry": "crying or sobbing",
+    "scream": "screaming or shouting", "cough": "coughing", "breath": "breathing",
+    "effort": "a grunt, groan or effort sound", "applause": "applause or cheering",
+    "music": "music or singing", "footsteps": "footsteps", "door": "a door or knocking",
+    "bed": "some other sound of the scene, not a person's voice",
+    "voice": "some other sound a person makes"})
+
+
+def sound_rule(text: str) -> tuple[str, str] | None:
+    """(type, category) the tag's own words name, else None."""
+    for kind, category, pattern in _SOUND_WORDS:
+        if pattern.search(text):
+            return kind, category
+    if _BED_WORDS.search(text):
+        return "unknown", "background"
+    return None
+
+
+_WHOLE_TAG = re.compile(r"^\s*[\[(][^\[\]()]{1,60}[\])]\s*$")
+
+
+def _name_tag(text: str, oracle: Oracle, config: dict):
+    """(type, category, confidence, source, applied) for a tag, or None."""
+    ruled = sound_rule(text)
+    if ruled is not None:
+        return (*ruled, 1.0, "rules", True)
+    answers = oracle.ask("sound_tags", {"tag": text}, {"sound": SOUND_QUESTION})
+    value, confidence, outcome = weigh(config, (answers or {}).get("sound"))
+    if outcome == "drop" or value is None:
+        return None
+    kind, category = ("unknown", "background") if value == "bed" else \
+        ("unknown", "vocal") if value == "voice" else \
+        next(((k, c) for k, c, _p in _SOUND_WORDS if k == value), ("unknown", "unknown"))
+    return kind, category, round(confidence, 3), "model", outcome == "apply"
+
+
+def sound_tags(job, oracle: Oracle, config: dict) -> int:
+    """Name the sound tags the parser did not recognise.
+
+    Two places: a cue that is nothing but a tag the parser did not know
+    (`[door creaks open]`) would otherwise be spoken as dialogue; once its
+    sound is named it leaves synthesis as an event, like a known tag. And an
+    event already on the ledger as `unknown` gets its type. Only type and
+    category change: the original text stays, the decision stays
+    `unresolved`, and nothing is inserted. Captions are left alone.
+    """
+    from .stages.prepare import _event
+
+    if not enabled(config, "sound_tags"):
+        return 0
+    verdicts, named, kept = [], 0, []
+    known = {event.event_id for event in job.nonverbal}
+    for seg in job.segments:
+        text = (seg.text_src or "").strip()
+        named_tag = (_name_tag(text, oracle, config)
+                     if seg.cue_id and _WHOLE_TAG.match(text) and seg.end > seg.start >= 0
+                     else None)
+        if named_tag is None:
+            kept.append(seg)
+            continue
+        kind, category, confidence, source, applied = named_tag
+        verdicts.append(Verdict("sound_tags", seg.cue_id, f"{kind}/{category}", confidence,
+                                source, applied))
+        if not applied:
+            kept.append(seg)
+            continue
+        event = _event(seg, text, 0, "whole", text, detected_by=source)
+        event.type, event.category = kind, category
+        event.speaker = seg.speaker if category == "vocal" else None
+        event.checks["classified_by"] = source
+        if event.event_id not in known:
+            job.nonverbal.append(event)
+            known.add(event.event_id)
+        named += 1
+    job.segments = kept
+    for event in job.nonverbal:
+        if event.type != "unknown" or event.category != "unknown" or \
+                event.checks.get("decided") == "caption" or event.origin == "manual":
+            continue
+        named_event = _name_tag((event.text or "").strip(), oracle, config)
+        if named_event is None:
+            continue
+        kind, category, confidence, source, applied = named_event
+        if applied:
+            event.type, event.category = kind, category
+            event.checks["classified_by"] = source
+            if category == "vocal" and event.speaker is None:
+                seg = next((s for s in job.segments if s.cue_id == event.cue_id), None)
+                event.speaker = seg.speaker if seg is not None else None
+            named += 1
+        verdicts.append(Verdict("sound_tags", event.event_id, f"{kind}/{category}",
+                                confidence, source, applied))
+    record(job, verdicts, "sound_tags", oracle)
+    return named
