@@ -281,6 +281,7 @@ def run(
     checkpoint=None,
     max_attempts: int = 2,
     budget=None,
+    accept_rewrite=None,
 ) -> Plan | None:
     config = planner.settings(options)
     if config["mode"] != "phrase":
@@ -310,7 +311,7 @@ def run(
             if plan.state != "infeasible" or not config["repair"]:
                 break
             repair = _repair(job, seg, plan, config, translator, regenerate,
-                             checkpoint, budget)
+                             checkpoint, budget, accept_rewrite)
             if repair is None:
                 break
             repaired += 1
@@ -408,7 +409,8 @@ def _record_pacing(job, paced, options, cancel) -> None:
     pacing.record(job, lines, options)
 
 
-def _repair(job, seg, plan, config, translator, regenerate, checkpoint, budget):
+def _repair(job, seg, plan, config, translator, regenerate, checkpoint, budget,
+            accept_rewrite=None):
     """Make room for a line that does not fit, cheapest option first.
 
     An existing take that already fits costs nothing and is tried first. Only
@@ -451,6 +453,8 @@ def _repair(job, seg, plan, config, translator, regenerate, checkpoint, budget):
         job.metrics.setdefault("timing_translation_usage", []).extend(
             getattr(translator, "last_usage", []) or [None])
     if not shorter.strip() or len(shorter) >= len(current):
+        return None
+    if accept_rewrite is not None and not accept_rewrite(seg, current, shorter):
         return None
     seg.text_translated = shorter
     seg.translation_provenance = {**seg.translation_provenance, "timing_rewritten": True}

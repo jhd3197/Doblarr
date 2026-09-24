@@ -221,7 +221,7 @@ def _steady_factors(entries, config: dict, max_stretch: float, repair, cancel):
 
 
 def _repair(job, s, src, actual, ceiling, translator, regenerate, checkpoint,
-            max_attempts, budget, cancel) -> tuple[Path, float]:
+            max_attempts, budget, cancel, accept_rewrite=None) -> tuple[Path, float]:
     """Shorten and regenerate a line while it needs more than `ceiling` x its slot."""
     from ..clients.translator import TranslationError
 
@@ -253,6 +253,8 @@ def _repair(job, s, src, actual, ceiling, translator, regenerate, checkpoint,
             )
         if not shorter.strip() or len(shorter) >= len(current):
             break
+        if accept_rewrite is not None and not accept_rewrite(s, current, shorter):
+            break  # keep the words; paying to regenerate a wrong line helps no one
         s.text_translated = shorter
         s.translation_provenance = {**s.translation_provenance, "timing_rewritten": True}
         if checkpoint:
@@ -284,6 +286,7 @@ def run(
     max_attempts=2,
     budget=None,
     options: dict | None = None,
+    accept_rewrite=None,
 ) -> Plan | None:
     if not enabled:
         log.info("fit_timing disabled")
@@ -320,7 +323,7 @@ def run(
 
     def repair(s, src, actual, ceiling):
         return _repair(job, s, src, actual, ceiling, translator, regenerate, checkpoint,
-                       max_attempts, budget, cancel)
+                       max_attempts, budget, cancel, accept_rewrite)
 
     entries: list[tuple[Segment, Path, float]] = []
     for s, src in clips:

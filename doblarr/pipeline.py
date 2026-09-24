@@ -492,6 +492,7 @@ def run_job(
             checkpoint=lambda: save_script(job, effective_work),
             max_attempts=config["dub"].get("max_fit_attempts", 2),
             budget=budget,
+            accept_rewrite=decisions.rewrite_checker(job, oracle, decision_options),
         )
         if not dry_run:
             save_script(job, effective_work)
@@ -571,6 +572,7 @@ def run_job(
             max_attempts=config["dub"].get("max_fit_attempts", 2),
             budget=budget,
             options=timing_options,
+            accept_rewrite=decisions.rewrite_checker(job, oracle, decision_options),
         )
         if not dry_run:
             save_script(job, effective_work)

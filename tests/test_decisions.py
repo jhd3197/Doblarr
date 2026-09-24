@@ -310,3 +310,36 @@ def test_an_unknown_event_on_the_ledger_gets_its_type():
     assert decisions.sound_tags(job, oracle, decisions.settings(None)) == 1
     assert (job.nonverbal[0].type, job.nonverbal[0].category) == ("gasp", "vocal")
     assert driver.calls == []
+
+
+# -- 6. timing rewrites --------------------------------------------------------
+
+@pytest.mark.parametrize("original, shorter, rejected", [
+    ("Tell Ginko we leave at 5.", "Tell Ginko at 5.", False),
+    ("Tell Ginko we leave at 5.", "We leave at 5.", True),        # a name dropped
+    ("Tell Ginko we leave at 5.", "Tell Ginko soon.", True),      # a number dropped
+    ("Espera. Mañana vamos a Madrid con Ana.", "Mañana, Madrid con Ana.", False),
+    ("Well, I'm sure. OK then.", "Sure.", False),                 # grammar capitals
+])
+def test_rewrites_that_drop_names_or_numbers(original, shorter, rejected):
+    assert (decisions.rewrite_rule(original, shorter) is not None) is rejected
+
+
+def test_the_checker_rejects_by_rule_or_a_confident_model():
+    job = job_of("a", "b", "c")
+    replies = {"Short one.": 0.02, "Short two.": 0.3}
+    oracle, driver = oracle_with(lambda s, qs: {"same": replies[s["shorter"]]})
+    accept = decisions.rewrite_checker(job, oracle, decisions.settings(None))
+    a, b, c = job.segments
+    assert accept(a, "Tell Ginko now.", "Tell him now.") is False     # rule
+    assert accept(b, "A long first line.", "Short one.") is False     # model sure: changed
+    assert accept(c, "A long second line.", "Short two.") is True     # model unsure: suggest
+    assert len(driver.calls) == 2
+    assert job.metrics["timing_rewrites_rejected"] == 2
+    summary = job.metrics["decisions"]["rewrite_check"]
+    assert (summary["applied"], summary["suggested"]) == (2, 1)
+
+
+def test_the_rewrite_check_can_be_switched_off():
+    assert decisions.rewrite_checker(job_of("a"), decisions.Oracle({}),
+                                     decisions.settings({"rewrite_check": False})) is None

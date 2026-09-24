@@ -638,3 +638,64 @@ def sound_tags(job, oracle: Oracle, config: dict) -> int:
                                 confidence, source, applied))
     record(job, verdicts, "sound_tags", oracle)
     return named
+
+
+# -- 6. timing rewrites ------------------------------------------------------------
+
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+_NAME = re.compile(r"(?<![.!?¿¡:;]\s)(?<!^)\b([A-ZÁÉÍÓÚÑÜ][\w'’-]+)")
+
+REWRITE_QUESTION = noul("Does the shorter line keep the meaning of the original line, "
+                        "with no key fact, name or number lost?")
+
+
+def rewrite_rule(original: str, shorter: str) -> str | None:
+    """Why a rewrite must be rejected on its words alone, or None."""
+    kept = shorter.casefold()
+    for number in _NUMBER.findall(original):
+        if number not in shorter:
+            return f"dropped the number {number}"
+    for name in _NAME.findall(original.strip()):
+        if name.startswith("I'") or name.startswith("I’") or name.upper() == "OK":
+            continue  # a capital that is grammar, not a name
+        if name.casefold() not in kept:
+            return f"dropped the name {name}"
+    return None
+
+
+def rewrite_checker(job, oracle: Oracle, config: dict):
+    """A check for timing repairs, or None when the decision is off.
+
+    Called with (cue, original, shorter) after the translator shortened a line
+    and before the line is regenerated. A rewrite that dropped a number or a
+    name is rejected by rule; otherwise one the model is confident changed
+    the meaning is rejected. Rejecting saves the regeneration, and the line
+    keeps its original words and simply stays compressed or over.
+    """
+    if not enabled(config, "rewrite_check"):
+        return None
+    verdicts: list[Verdict] = []
+
+    def accept(seg, original: str, shorter: str) -> bool:
+        reason = rewrite_rule(original, shorter)
+        if reason is not None:
+            verdict = Verdict("rewrite_check", seg.cue_id, "rejected", 1.0, "rules", True,
+                              f"{reason}: {shorter}")
+        else:
+            answers = oracle.ask("rewrite_check", {"original": original, "shorter": shorter},
+                                 {"same": REWRITE_QUESTION})
+            _value, confidence, outcome = weigh(config, (answers or {}).get("same"),
+                                                value="rejected", yes=False)
+            if outcome == "drop":
+                return True
+            verdict = Verdict("rewrite_check", seg.cue_id, "rejected", round(confidence, 3),
+                              "model", outcome == "apply", f"meaning may have changed: {shorter}")
+        verdicts[:] = [v for v in verdicts if v.cue != seg.cue_id] + [verdict]
+        record(job, verdicts, "rewrite_check", oracle)
+        if verdict.applied:
+            job.metrics["timing_rewrites_rejected"] = (
+                job.metrics.get("timing_rewrites_rejected", 0) + 1)
+            log.info("line %s: timing rewrite rejected (%s)", seg.index, verdict.note)
+        return not verdict.applied
+
+    return accept
