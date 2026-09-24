@@ -220,6 +220,8 @@ def run_job(
                         interjections=config["transcribe"].get(
                             "interjections_as_reactions", True))
             decisions.title_cards(job, oracle, decision_options)
+            decisions.reactions(job, oracle, decision_options, interjections=config[
+                "transcribe"].get("interjections_as_reactions", True))
             save_script(job, work)  # transcript + speakers survive a crash now
 
     def _translate():

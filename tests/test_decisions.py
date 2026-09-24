@@ -235,3 +235,33 @@ def test_without_the_model_only_plain_captions_leave():
     job = job_of("NEW YORK, 1987", "OLD MILL ROAD")
     decisions.title_cards(job, decisions.Oracle({"model": ""}), decisions.settings(None))
     assert [s.text_src for s in job.segments] == ["OLD MILL ROAD"]
+
+
+# -- 4. reaction-only cues -----------------------------------------------------
+
+def test_a_wordless_cue_the_model_is_sure_of_becomes_a_reaction():
+    job = job_of("えっ", "Where is he?", "ハハハ")
+    replies = {"えっ": (0.95, ("gasp", 0.9)), "ハハハ": (0.7, ("laugh", 0.9))}
+    oracle, driver = oracle_with(lambda s, qs: {"reaction": replies[s["line"]][0],
+                                                "kind": replies[s["line"]][1]})
+    assert decisions.reactions(job, oracle, decisions.settings(None)) == 1
+    assert [s.text_src for s in job.segments] == ["Where is he?", "ハハハ"]
+    (event,) = job.nonverbal
+    assert (event.type, event.checks["detected_by"]) == ("gasp", "model")
+    assert event.decision == "unresolved"
+    assert sorted(state["line"] for state, _q in driver.calls) == ["えっ", "ハハハ"]
+    assert job.metrics["reaction_cues_by_model"] == 1
+
+
+def test_a_cue_with_words_is_never_asked_about_or_converted():
+    job = job_of("Oh no, not again")
+    oracle, driver = oracle_with(lambda s, qs: {"reaction": 1.0, "kind": ("laugh", 1.0)})
+    assert decisions.reactions(job, oracle, decisions.settings(None)) == 0
+    assert driver.calls == [] and job.nonverbal == []
+
+
+def test_reactions_follow_the_interjections_setting():
+    job = job_of("えっ")
+    oracle, driver = oracle_with(lambda s, qs: {"reaction": 1.0, "kind": ("gasp", 1.0)})
+    assert decisions.reactions(job, oracle, decisions.settings(None), interjections=False) == 0
+    assert driver.calls == []

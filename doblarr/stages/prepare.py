@@ -109,7 +109,7 @@ REACTION_KINDS = {"laugh": "laugh", "gasp": "gasp", "sigh": "sigh", "scream": "s
                   "interjection": "interjection"}
 
 
-def from_translator(job, flags: dict) -> int:
+def from_translator(job, flags: dict, detected_by: str = "translator") -> int:
     """Turn cues the translator flagged as reactions into reaction events.
 
     `flags` maps a cue id to what the translator said about it. A flagged cue
@@ -131,7 +131,7 @@ def from_translator(job, flags: dict) -> int:
                     job.metrics.get("reaction_flags_kept_as_speech", 0) + 1)
             kept.append(seg)
             continue
-        event = _event(seg, text, 0, "whole", text, detected_by="translator")
+        event = _event(seg, text, 0, "whole", text, detected_by=detected_by)
         kind = REACTION_KINDS.get(str(flag.get("reaction_kind") or ""))
         if event.type == "unknown" or (kind and event.type == "interjection"):
             event.type = kind or "interjection"
@@ -144,8 +144,8 @@ def from_translator(job, flags: dict) -> int:
             known.add(event.event_id)
         converted += 1
     job.segments = kept
-    job.metrics["reaction_cues_by_translator"] = (
-        job.metrics.get("reaction_cues_by_translator", 0) + converted)
+    counter = f"reaction_cues_by_{detected_by}"
+    job.metrics[counter] = job.metrics.get(counter, 0) + converted
     job.metrics["nonverbal_events"] = len(job.nonverbal)
     return converted
 

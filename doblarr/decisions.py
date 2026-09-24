@@ -471,3 +471,46 @@ def title_cards(job, oracle: Oracle, config: dict) -> int:
     job.metrics["captions_removed"] = removed
     record(job, verdicts, "title_cards", oracle)
     return removed
+
+
+# -- 4. reaction-only cues ------------------------------------------------------
+
+REACTION_QUESTIONS = {
+    "reaction": noul("Is this subtitle only a vocal reaction sound (a laugh, gasp, sigh, "
+                     "scream or interjection) with no words in it?"),
+    "kind": choice("Which reaction sound is it?", {
+        "laugh": "laughing or giggling", "gasp": "a sharp breath in, surprise",
+        "sigh": "a long breath out", "scream": "a scream or cry out",
+        "interjection": "a short sound like oh, eh, huh, tsk"}),
+}
+
+
+def reactions(job, oracle: Oracle, config: dict, interjections: bool = True) -> int:
+    """Cues the rules did not know but that are only a reaction sound.
+
+    Asks the model only about cues that the conservative local check
+    (`prepare.wordless`) already finds wordless, and converts one only when the
+    model is confident too, through the same path the translator's flag uses.
+    Without the model this does nothing: the local check alone is not enough.
+    """
+    from .stages.prepare import from_translator, wordless
+
+    if not interjections or not enabled(config, "reactions"):
+        return 0
+    flags, verdicts = {}, []
+    for seg in job.segments:
+        text = (seg.text_src or "").strip()
+        if not seg.cue_id or not wordless(text):
+            continue
+        answers = oracle.ask("reactions", {"line": text}, REACTION_QUESTIONS) or {}
+        _value, confidence, outcome = weigh(config, answers.get("reaction"), value="reaction")
+        if outcome == "drop":
+            continue
+        kind = (answers.get("kind") or {}).get("choice") or "interjection"
+        applied = outcome == "apply"
+        if applied:
+            flags[seg.cue_id] = {"delivery": "reaction", "reaction_kind": kind}
+        verdicts.append(Verdict("reactions", seg.cue_id, kind, round(confidence, 3), "model",
+                                applied))
+    record(job, verdicts, "reactions", oracle)
+    return from_translator(job, flags, detected_by="model") if flags else 0
