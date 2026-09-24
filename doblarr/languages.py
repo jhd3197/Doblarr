@@ -34,18 +34,36 @@ class LanguageEntry:
     supported: bool = True
 
 
+# Where Latin American and Spain Spanish diverge most often, measured by
+# comparing Latino and Spain subtitle tracks of the same English lines across
+# ~50 titles. Shared by every Latin American locale.
+_LATAM_CORE = (
+    "Use ustedes, never vosotros, os, -áis/-éis verb forms or -ad/-ed/-id "
+    "commands (miren, esperen; not mirad, esperad). For completed "
+    "actions prefer the simple past over the present perfect (¿Fue Sam?, te dije, "
+    "¿qué pasó?, not ¿ha sido?, te he dicho, ¿qué ha pasado?), and for \"I thought\" "
+    "use creí que or pensé que, not creía que or pensaba que. Say ir por, never ir "
+    "a por (voy por agua). Never use vale for okay; use bien, está bien, bueno or de "
+    "acuerdo. Use pues and an ¿eh? tag sparingly. Prefer no importa over da igual. "
+    "Say esposa/esposo, mamá/papá and te amo; avoid coche, móvil, ordenador, nevera, "
+    "patatas, zumo, aparcar, guay, pillar, apetece, tío for a guy, joder, puto and "
+    "enhorabuena. Never use coger for take or grab (it means to have sex in much of "
+    "Latin America); use agarrar or tomar."
+)
 _ES_419_DIRECTION = (
-    "Neutral Latin American Spanish for studio dubbing. Use ustedes, not vosotros; "
-    "avoid Spain-specific vocabulary and heavy regional slang."
+    "Neutral Latin American Spanish for studio dubbing. " + _LATAM_CORE + " Prefer "
+    "neutral vocabulary (auto, computadora, lugar, tal vez, todavía, felicidades). "
+    "Avoid "
+    "diminutives unless the source is diminutive "
+    "(ahora, not ahorita; café, not cafecito)."
 )
 _ES_MX_DIRECTION = (
-    "Mexican Spanish for studio dubbing. Use natural Mexican vocabulary "
-    "without adding exaggerated slang or stereotypes."
+    "Mexican Spanish for studio dubbing. Use natural Mexican vocabulary. " + _LATAM_CORE
 )
 _ES_ES_DIRECTION = "Spanish from Spain with consistent regional vocabulary and forms of address."
 _ES_VE_DIRECTION = (
-    "Venezuelan Spanish for studio dubbing. Use natural Venezuelan vocabulary and "
-    "ustedes forms without adding exaggerated slang or stereotypes."
+    "Venezuelan Spanish for studio dubbing. Use natural Venezuelan vocabulary. "
+    + _LATAM_CORE
 )
 
 # The first entries are the validated dubbing targets; the rest keep every base

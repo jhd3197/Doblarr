@@ -68,7 +68,7 @@ def preserve_version(job, config, cast=None) -> dict:
     settings = {
         "translate": {k: config["translate"].get(k) for k in
                       ("provider", "model", "batch_size", "chars_per_second", "glossary",
-                       "locale", "adaptation", "direction", "character_notes")},
+                       "locale", "adaptation", "direction", "character_notes", "slang")},
         "dub": {k: v for k, v in config["dub"].items()
                 if k not in {"version_name", "preserve_versions", "dry_run"}},
         "voicebox": {k: config["voicebox"].get(k) for k in

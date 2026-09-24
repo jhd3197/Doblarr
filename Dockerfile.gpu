@@ -1,0 +1,56 @@
+# Doblarr — GPU image: the app plus the local ML stack (Demucs separation,
+# whisperx transcription, pyannote diarization) on CUDA. voicebox still runs
+# as its own service; this image does not include TTS.
+#
+# Needs an NVIDIA driver and the NVIDIA Container Toolkit on the host:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# then check Settings > Hardware. The image is large (CUDA torch wheels).
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cu128
+
+# Model downloads persist in the data volume instead of the container.
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/data/models/huggingface \
+    TORCH_HOME=/data/models/torch \
+    XDG_CACHE_HOME=/data/models/cache
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3.11-dev ffmpeg git \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.11 -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+
+# CUDA torch first, from the PyTorch index, so the ML extras below reuse it
+# instead of pulling a CPU wheel from PyPI.
+RUN pip install --upgrade pip \
+    && pip install --index-url ${TORCH_INDEX} torch torchaudio
+
+COPY pyproject.toml setup.py MANIFEST.in README.md LICENSE config.example.yaml ./
+COPY requirements.txt .
+COPY doblarr ./doblarr
+COPY web ./web
+RUN pip install -r requirements.txt \
+    && pip install ".[real]"
+
+# Same non-root user, volumes and layout as the app image (Dockerfile).
+RUN groupadd --gid 1000 doblarr \
+    && useradd --uid 1000 --gid doblarr --no-create-home --shell /usr/sbin/nologin doblarr \
+    && mkdir -p /config /data/models \
+    && chown -R doblarr:doblarr /app /config /data
+USER doblarr
+
+EXPOSE 6363
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6363/api/health/ready', timeout=25)" || exit 1
+
+CMD ["python", "-m", "doblarr", "-c", "/config/config.yaml", "serve", "--host", "0.0.0.0", "--port", "6363"]

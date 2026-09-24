@@ -8,9 +8,13 @@ Two operations, both reversible and both owned here:
    timing stage is not asked to compress speech that overruns only because the
    generator left dead air on the front.
 
-2. **Edges** run on the *final* dialogue render, after fitting, and apply a
-   short fade only where the clip would otherwise begin or end on a non-zero
-   sample. An edge that is already smooth is left exactly as it is.
+2. **Edges** run on the *final* dialogue render, after fitting, and ease a
+   voice in and out only where the clip would otherwise begin or end on a
+   non-zero sample. An edge that is already smooth is left exactly as it is.
+   By default the entrance is short (it must not blunt a consonant) and the
+   exit longer, on an S-shaped curve, so a line neither pops in nor is cut
+   off mid-breath. `edge_fade_ms`, when set, is the older single short linear
+   fade exactly as it was.
 
 What this deliberately does not do: it never removes an internal pause, never
 shortens a clip that is merely quiet, never stretches a short utterance to fill
@@ -64,6 +68,10 @@ MIN_INTERNAL_SILENCE = 0.12
 # Longest fade the edge pass will ever apply, and the window it inspects to
 # decide whether an edge is already smooth.
 MAX_FADE_SECONDS = 0.050
+# The exit may be longer: a trailing vowel or breath needs room to die away,
+# and nothing important is ever said in the last few hundredths of a take.
+MAX_FADE_OUT_SECONDS = 0.150
+FADE_CURVES = ("hsin", "qsin", "tri")
 EDGE_WINDOW_SECONDS = 0.002
 # Nothing below this is audible content. It is the same floor the clip checks
 # use to call a generation silent.
@@ -273,8 +281,30 @@ def _settings(options: dict | None) -> dict:
         "threshold_db": float(values.get("threshold_db", 12)),
         "min_separation_db": float(values.get("min_separation_db", 10)),
         "edge_fade_ms": float(values.get("edge_fade_ms", 0)),
+        "edge_fade_in_ms": float(values.get("edge_fade_in_ms", 12)),
+        "edge_fade_out_ms": float(values.get("edge_fade_out_ms", 40)),
+        "edge_fade_curve": str(values.get("edge_fade_curve", "hsin")),
         "edge_threshold_db": float(values.get("edge_threshold_db", -40)),
     }
+
+
+def edge_fades(settings: dict) -> tuple[float, float, str]:
+    """(fade in, fade out) in seconds and the afade curve, from the settings.
+
+    A nonzero `edge_fade_ms` is the older setting and wins: one linear fade
+    of that length at each end, capped at 50 ms, exactly as before. Otherwise
+    the entrance and exit are eased separately.
+    """
+    legacy = settings["edge_fade_ms"] / 1000
+    if legacy > 0:
+        fade = min(MAX_FADE_SECONDS, legacy)
+        return fade, fade, "tri"
+    curve = settings["edge_fade_curve"]
+    if curve not in FADE_CURVES:
+        raise ValueError(f"boundaries.edge_fade_curve must be one of {', '.join(FADE_CURVES)}")
+    return (max(0.0, min(MAX_FADE_SECONDS, settings["edge_fade_in_ms"] / 1000)),
+            max(0.0, min(MAX_FADE_OUT_SECONDS, settings["edge_fade_out_ms"] / 1000)),
+            curve)
 
 
 def _pcm(path: Path, cancel=None) -> Path:
@@ -406,11 +436,23 @@ def edge_peaks(path: Path, window: float = EDGE_WINDOW_SECONDS) -> tuple[float, 
     return head, tail
 
 
-def finish_edges(job, options: dict | None = None, cancel=None, dry_run: bool = False) -> None:
-    """Fade only the edges that would click, on the final dialogue render."""
+# An interrupted line keeps its hard stop: only this much, enough that the
+# cut does not click.
+CUT_FADE_SECONDS = 0.008
+
+
+def finish_edges(job, options: dict | None = None, cancel=None, dry_run: bool = False,
+                 endings: dict[str, str] | None = None) -> None:
+    """Ease in and out only the edges that would click, on the final render.
+
+    `endings` (from doblarr.decisions) marks lines that end on purpose: an
+    `interrupted` line keeps its hard stop, a `trailing` one fades out for
+    twice as long. The older single fade (`edge_fade_ms`) ignores them.
+    """
+    endings = endings or {}
     settings = _settings(options)
-    fade = max(0.0, min(MAX_FADE_SECONDS, settings["edge_fade_ms"] / 1000))
-    if dry_run or fade <= 0:
+    fade_in_at, fade_out_at, curve = edge_fades(settings)
+    if dry_run or (fade_in_at <= 0 and fade_out_at <= 0):
         if not dry_run:
             log.info("edge fades disabled")
         return
@@ -437,26 +479,35 @@ def finish_edges(job, options: dict | None = None, cancel=None, dry_run: bool = 
                 analysed.unlink(missing_ok=True)
         # A fade can never eat more than a tenth of the clip, so a very short
         # utterance is shaped rather than swallowed.
-        length = min(fade, duration / 10)
-        fade_in = length if head > threshold else 0.0
-        fade_out = length if tail > threshold else 0.0
+        fade_in = min(fade_in_at, duration / 10) if head > threshold else 0.0
+        out_at = fade_out_at
+        if curve != "tri" and endings.get(seg.cue_id) == "interrupted":
+            out_at = min(fade_out_at, CUT_FADE_SECONDS)
+        elif curve != "tri" and endings.get(seg.cue_id) == "trailing":
+            out_at = min(MAX_FADE_OUT_SECONDS, fade_out_at * 2)
+        fade_out = min(out_at, duration / 10) if tail > threshold else 0.0
         if duration <= 0 or (fade_in <= 0 and fade_out <= 0):
             # Already smooth at both ends: an audible new fade would only
             # soften a consonant that was fine.
             seg.audio.drop_renders((EDGED,))
             seg.audio_clip = source
             continue
+        # The linear curve keeps the key it always had, so an existing
+        # edge_fade_ms render is still found in the cache.
+        shape = {} if curve == "tri" else {"curve": curve}
         request = {"source": stamp(source), "in": round(fade_in, 4),
-                   "out": round(fade_out, 4), "version": 1}
+                   "out": round(fade_out, 4), "version": 1, **shape}
         dest = source.parent / "edges" / f"{source.stem}.{digest(request)[:12]}.wav"
         if not matches([dest], request):
             dest.parent.mkdir(parents=True, exist_ok=True)
             temp = dest.with_suffix(".partial.wav")
             chain = []
+            bend = "" if curve == "tri" else f":curve={curve}"
             if fade_in:
-                chain.append(f"afade=t=in:st=0:d={fade_in:g}")
+                chain.append(f"afade=t=in:st=0:d={fade_in:g}{bend}")
             if fade_out:
-                chain.append(f"afade=t=out:st={max(0.0, duration - fade_out):g}:d={fade_out:g}")
+                chain.append(f"afade=t=out:st={max(0.0, duration - fade_out):g}"
+                             f":d={fade_out:g}{bend}")
             run_ffmpeg(["-y", "-i", str(source), "-af", ",".join(chain),
                         "-c:a", "pcm_s16le", str(temp)], cancel=cancel)
             temp.replace(dest)
@@ -466,7 +517,7 @@ def finish_edges(job, options: dict | None = None, cancel=None, dry_run: bool = 
             path=str(dest),
             fingerprint=processing_fingerprint({
                 "input": upstream.fingerprint, "in": round(fade_in, 4),
-                "out": round(fade_out, 4), "version": 1}),
+                "out": round(fade_out, 4), "version": 1, **shape}),
             derived_from=upstream.role,
             duration=duration,
             bytes=dest.stat().st_size if dest.exists() else None,

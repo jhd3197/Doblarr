@@ -16,14 +16,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from doblarr.artifacts import digest  # noqa: E402
 from doblarr.clients.translator import PromptureTranslator  # noqa: E402
 from doblarr.clients.voicebox import VoiceboxClient  # noqa: E402
 from doblarr.config import Config  # noqa: E402
+from doblarr.cues import RAW, Artifact, Selection, Take, now  # noqa: E402
 from doblarr.discovery import lang_name  # noqa: E402
 from doblarr.ffmpeg import run_ffmpeg  # noqa: E402
 from doblarr.models import DubJob, Segment, Speaker  # noqa: E402
 from doblarr.stages import fit_timing, mix, mux, quality, synthesize, transcribe  # noqa: E402
 from doblarr.stages.common import save_script  # noqa: E402
+from doblarr.stages.prepare import interjection  # noqa: E402
 from doblarr.versions import preserve_version  # noqa: E402
 
 
@@ -48,11 +51,16 @@ def load_reviewed_script(job: DubJob, path: Path) -> None:
 
 
 def apply_cast(job: DubJob, payload: dict) -> dict:
-    """Require exactly one explicit character assignment for every spoken cue."""
+    """Require exactly one explicit character assignment for every spoken cue.
+
+    An entry is either a preset (`voice`) or a clone of the original actor
+    (`clone: true`, optionally with `reference_line` or `reference: low`, and a
+    `fallback_voice` for a character with no clean reference).
+    """
     assignments = {}
     cast = payload.get("speakers", {})
     for label, entry in cast.items():
-        if not entry.get("voice"):
+        if not entry.get("voice") and not entry.get("clone"):
             raise ValueError(f"missing voice profile for {label}")
         for index in entry.get("segments", []):
             if index in assignments:
@@ -63,12 +71,56 @@ def apply_cast(job: DubJob, payload: dict) -> dict:
         raise ValueError(f"cast must cover exactly the spoken cues; "
                          f"missing={sorted(expected - set(assignments))}, "
                          f"unknown={sorted(set(assignments) - expected)}")
-    job.speakers = {label: Speaker(label, voicebox_profile_id=entry["voice"])
+    job.speakers = {label: Speaker(label, voicebox_profile_id=(
+                        None if entry.get("clone") else entry["voice"]))
                     for label, entry in cast.items()}
+    for entry in cast.values():
+        if entry.get("clone"):
+            # A clone's profile is built by synthesize; a stale preset id left
+            # in the file must not short-circuit that.
+            entry.pop("voice", None)
     for seg in job.segments:
         seg.speaker = assignments[seg.index]
         seg.voice = None  # the reviewed cast takes precedence over old per-line overrides
     return cast
+
+
+def retain_reactions(job: DubJob, work: Path) -> set[int]:
+    """Use the original actor's own sound for lines that are only a reaction.
+
+    "Tsk!" or "Heh heh" is not a line an engine can act — asked for "¡Tsk!" one
+    produced a cheerful laugh. The sound is cut from the separated original
+    dialogue and selected as the line's take, the same `restored` selection
+    synthesize already keeps instead of generating over it.
+    """
+    kept = set()
+    if not job.vocals:
+        return kept
+    folder = work / "reactions"
+    folder.mkdir(parents=True, exist_ok=True)
+    for seg in job.segments:
+        if not interjection(seg.text_src):
+            continue
+        dest = folder / f"line_{seg.index:04d}.wav"
+        length = seg.end - seg.start + 0.1
+        run_ffmpeg(["-y", "-ss", f"{max(0.0, seg.start - 0.05):.3f}", "-t", f"{length:.3f}",
+                    "-i", str(job.vocals), "-ac", "1", "-ar", "48000",
+                    "-af", f"afade=t=in:d=0.02,afade=t=out:st={max(0.0, length - 0.02):.3f}:d=0.02",
+                    "-c:a", "pcm_s16le", str(dest)])
+        fingerprint = digest({"retained": str(job.vocals), "start": seg.start,
+                              "end": seg.end})[:16]
+        identifier = f"retained-{fingerprint[:12]}"
+        seg.audio.takes = [t for t in seg.audio.takes if t.take_id != identifier] + [Take(
+            take_id=identifier, fingerprint=fingerprint, engine="retained-original",
+            profile=seg.speaker, text=seg.text_translated or seg.text_src, origin="import",
+            state="reused", raw=Artifact(role=RAW, path=str(dest), fingerprint=fingerprint,
+                                         bytes=dest.stat().st_size))]
+        seg.audio.selection = Selection(take_id=identifier, reason="restored",
+                                        actor="reaction-retain", at=now())
+        seg.audio_clip = dest
+        kept.add(seg.index)
+    job.metrics["reactions_retained"] = len(kept)
+    return kept
 
 
 def export_mp4(job: DubJob, output: Path, subtitles: Path, title: str | None = None) -> Path:
@@ -111,6 +163,15 @@ def main():
     parser.add_argument("--version-name")
     parser.add_argument("--from", dest="source", default="en",
                         help="Language of the supplied subtitle script")
+    parser.add_argument("--audio-lang",
+                        help="Language of the audio in --stems-dir, when it differs from "
+                             "the script's (e.g. English subtitles over the Japanese "
+                             "original). Clone references are transcribed in it.")
+    parser.add_argument("--voice-mode", choices=["preset", "clone"], default="preset",
+                        help="clone: build each `clone: true` cast voice from the original "
+                             "actor in --stems-dir")
+    parser.add_argument("--retain-reactions", action="store_true",
+                        help="use the original sound for lines that are only a reaction")
     parser.add_argument("--to", dest="target", default="es")
     parser.add_argument("--model", default="ollama/qwen3:8b")
     parser.add_argument("--script-edits", type=Path,
@@ -122,7 +183,8 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     work = args.work_dir
     work.mkdir(parents=True, exist_ok=True)
-    job = DubJob(args.input.resolve(), args.source, args.target, args.subs.resolve())
+    job = DubJob(args.input.resolve(), args.audio_lang or args.source, args.target,
+                 subtitle_file=args.subs.resolve())
     for attr, suffix in [("source_audio", "source"), ("vocals", "vocals"),
                          ("background", "background")]:
         path = (args.stems_dir / f"{args.input.stem}.{suffix}.wav").resolve()
@@ -133,6 +195,7 @@ def main():
         load_reviewed_script(job, args.script)
     else:
         transcribe.run(job, work)
+    job.script_lang = job.script_lang or args.source
     job.speakers = {"NARRATOR": Speaker("NARRATOR", voicebox_profile_id=args.profile)}
     for seg in job.segments:
         seg.speaker = "NARRATOR"
@@ -169,15 +232,25 @@ def main():
         if args.cast_file else None
     save_script(job, work / "effective")
     vb = VoiceboxClient("http://127.0.0.1:17493", timeout=args.timeout)
+    retained = retain_reactions(job, work) if args.retain_reactions else set()
+    # How a name or a short line should be *said* ("Ginko" -> "Guinko" in
+    # Spanish). Captions keep the written form.
+    pronunciations = dict(Config.load()["dub"].get("pronunciations", {}) or {})
 
     def render(segments=None):
         target = job if segments is None else replace(job, segments=segments)
-        synthesize.run(target, vb, work, voice_mode="preset", engine=args.engine, cast=cast,
-                       narrator_speakers=["NARRATOR"], model_size=args.model_size, seed=args.seed)
+        synthesize.run(target, vb, work, voice_mode=args.voice_mode, engine=args.engine,
+                       cast=cast, narrator_speakers=["NARRATOR"],
+                       model_size=args.model_size, seed=args.seed,
+                       pronunciations=pronunciations)
 
     def check(segments=None, retries=1):
-        target = job if segments is None else replace(job, segments=segments)
+        # A retained reaction is the original actor, not a generation: there is
+        # no line for a recognizer to compare it with, and nothing to retake.
+        segments = [s for s in (segments or job.segments) if s.index not in retained]
+        target = replace(job, segments=segments)
         quality.run(target, vb, normalize=args.normalize, asr=args.verify_speech,
+                    pronunciations=pronunciations,
                     max_retries=retries, regenerate=lambda seg: render([seg]),
                     checkpoint=lambda: save_script(job, work / "effective"))
 
@@ -215,7 +288,7 @@ def main():
     mp4 = export_mp4(job, args.mp4, sub_output, title) if args.mp4 else None
     if args.version_name:
         config = Config.load().with_overrides({
-            "dub.version_name": args.version_name, "dub.voice_mode": "preset",
+            "dub.version_name": args.version_name, "dub.voice_mode": args.voice_mode,
             "dub.track_name_template": args.track_name,
             "dub.dry_run": False, "dub.background_volume": 1.0,
             "dub.ducking_ratio": "12:1", "dub.output_codec": "aac",
@@ -239,8 +312,12 @@ def main():
               "mp4": str(mp4.resolve()) if mp4 else None,
               "subtitles": str(sub_output.resolve()),
               "script": str(save_script(job, work / "effective")),
-              "limitations": ["Preset character voices; not actor voice clones" if cast else
-                               "Single preset voice; not an actor voice clone",
+              "voice_mode": args.voice_mode,
+              "reactions_retained": sorted(retained),
+              "limitations": [("Character voices cloned from the original actors"
+                               if args.voice_mode == "clone" else
+                               "Preset character voices; not actor voice clones") if cast else
+                              "Single preset voice; not an actor voice clone",
                               "Translation and performance require listening review"]}
     (work / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     logging.info("Finished: %s", job.output_file)

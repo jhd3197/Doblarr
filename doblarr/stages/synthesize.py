@@ -140,6 +140,70 @@ def clean_reference(source: Path, dest: Path, cancel=None) -> Path:
     return dest
 
 
+def reference_pitch(path: Path) -> float | None:
+    """Median pitch of a reference clip in Hz, or None when it cannot be measured.
+
+    Autocorrelation over voiced frames. Needs numpy, which the separation and
+    recognition stacks already bring; without it the answer is simply unknown.
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    import wave
+
+    try:
+        with wave.open(str(path), "rb") as audio:
+            rate = audio.getframerate()
+            x = np.frombuffer(audio.readframes(audio.getnframes()),
+                              dtype=np.int16).astype(float)
+    except (OSError, EOFError, wave.Error):
+        return None
+    frame, hop = int(0.04 * rate), int(0.01 * rate)
+    peak = np.abs(x).max() + 1 if len(x) else 1
+    low, high = int(rate / 400), int(rate / 70)
+    found = []
+    for i in range(0, len(x) - frame, hop):
+        f = x[i:i + frame]
+        if np.sqrt((f * f).mean()) < peak * 0.08:
+            continue
+        f = f - f.mean()
+        ac = np.correlate(f, f, "full")[frame - 1:]
+        lag = low + int(np.argmax(ac[low:high]))
+        if ac[lag] > 0.45 * ac[0]:
+            found.append(rate / lag)
+    return round(float(np.median(found)), 1) if found else None
+
+
+# The length window a pitch-chosen reference is drawn from, and how many of the
+# best-scored lines are measured. Short lines teach a clone too little voice.
+LOW_REFERENCE_SECONDS = (4.0, 12.0)
+LOW_REFERENCE_MEASURED = 8
+
+
+def _lowest_first(candidates, source, clips_dir, cancel):
+    """Reorder clean candidates so the lowest-pitched reading comes first.
+
+    A light, young original voice can land above where a target-language
+    audience hears a man: Shinra's Japanese reads at ~260 Hz, and a clone of
+    his default reference came out feminine in Spanish. Choosing his calmest,
+    lowest line kept him recognisably himself and fixed it.
+    """
+    low, high = LOW_REFERENCE_SECONDS
+    measured = []
+    for seg in [c for c in candidates if low <= c.duration <= high][:LOW_REFERENCE_MEASURED]:
+        probe = _extract_ref(source, seg.start, seg.end,
+                             clips_dir / "pitch" / f"line_{seg.index:04d}.wav", cancel)
+        pitch = reference_pitch(probe)
+        if pitch:
+            measured.append((pitch, seg))
+    if not measured:
+        return candidates
+    measured.sort(key=lambda item: item[0])
+    first = [seg for _pitch, seg in measured]
+    return first + [c for c in candidates if c not in first]
+
+
 def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=False):
     assigned = cast.get(spk.label, {}).get("voice")
     if assigned:
@@ -156,6 +220,20 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=
     usable = [s for s in candidates if reference_score(s, job)[0]]
     candidates = usable or candidates
     source = job.vocals if job.vocals and job.vocals.exists() else job.source_audio
+    # A cast entry may choose the reference: a line a person picked by ear
+    # (`reference_line`), or the lowest-pitched clean reading (`reference: low`).
+    entry = cast.get(spk.label, {})
+    choice = ""
+    if entry.get("reference_line") is not None:
+        pinned = int(entry["reference_line"])
+        chosen = [s for s in job.segments if s.index == pinned]
+        if not chosen:
+            raise ValueError(f"{spk.label}: reference_line {pinned} is not a line of this job")
+        candidates = chosen + [s for s in candidates if s.index != pinned]
+        choice = f"line:{pinned}"
+    elif entry.get("reference") == "low":
+        candidates = _lowest_first(candidates, source, clips_dir, cancel)
+        choice = "low"
     key = digest(
         {
             "source": stamp(source),
@@ -168,6 +246,7 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=
             # other one must not be reused for it.
             "cleanup": CLEANUP if cleanup else "",
             "references": [(s.start, s.end, s.text_src) for s in candidates[:5]],
+            "choice": choice,
         }
     )
     profile_receipt = clips_dir / f"profile-{key[:16]}.json"
@@ -478,8 +557,21 @@ def run(
             if not cast.get(speaker.label, {}).get("voice"):
                 cast[speaker.label] = {"voice": preset_voices[i % len(preset_voices)]}
     for speaker in job.speakers.values():
-        _resolve_profile(job, speaker, vb, clips_dir, voice_mode, cast or {}, cancel,
-                         cleanup=bool(clone_cleanup))
+        try:
+            _resolve_profile(job, speaker, vb, clips_dir, voice_mode, cast or {}, cancel,
+                             cleanup=bool(clone_cleanup))
+        except RuntimeError:
+            entry = cast.get(speaker.label, {})
+            if not entry.get("fallback_voice"):
+                raise
+            # No clean reference exists for this character (a whisper, a crowd):
+            # the cast named a preset to use instead, and that is recorded.
+            log.warning("no clone reference for %s; using its fallback voice",
+                        speaker.label)
+            entry["voice"] = entry["fallback_voice"]
+            entry["engine"] = entry.get("fallback_engine") or entry.get("engine")
+            speaker.voicebox_profile_id = entry["voice"]
+            job.metrics.setdefault("clone_fallbacks", []).append(speaker.label)
 
     # Generate every line. Per-line resume: clips already on disk from a
     # previous (failed/interrupted) run are kept, not regenerated.

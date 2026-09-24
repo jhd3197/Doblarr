@@ -27,6 +27,7 @@ import threading
 import wave
 from pathlib import Path
 
+from .. import pacing
 from .. import phrases as planner
 from ..artifacts import digest, matches, record, stamp
 from ..cues import PHRASED, Artifact, Selection, now
@@ -280,6 +281,7 @@ def run(
     checkpoint=None,
     max_attempts: int = 2,
     budget=None,
+    accept_rewrite=None,
 ) -> Plan | None:
     config = planner.settings(options)
     if config["mode"] != "phrase":
@@ -293,6 +295,7 @@ def run(
     rendered = repaired = fallbacks = infeasible = 0
     edits = {**{str(k): dict(v) for k, v in config["phrases"].items() if isinstance(v, dict)},
              **job.timing_edits}
+    paced: list[tuple] = []  # (seg, take the plan read, rendered file or None)
     for seg in job.segments:
         if cancel is not None and cancel.is_set():
             raise JobCancelled("cancelled during phrase timing")
@@ -308,7 +311,7 @@ def run(
             if plan.state != "infeasible" or not config["repair"]:
                 break
             repair = _repair(job, seg, plan, config, translator, regenerate,
-                             checkpoint, budget)
+                             checkpoint, budget, accept_rewrite)
             if repair is None:
                 break
             repaired += 1
@@ -322,6 +325,8 @@ def run(
         # the plan's shape rather than its state.
         if len(plan.phrases) == 1 and plan.phrases[0].method == "whole":
             fallbacks += 1
+        if source is not None:
+            paced.append((seg, source, None))
         if plan.state in ("bypassed", "unavailable") or not plan.pieces:
             _forget(seg)
             _findings(seg, plan)
@@ -363,8 +368,10 @@ def run(
             duration=plan.actual_duration or plan.planned_duration,
             bytes=dest.stat().st_size if dest.exists() else None))
         seg.audio_clip = dest
+        paced[-1] = (seg, source, dest)
         rendered += 1
         _findings(seg, plan)
+    _record_pacing(job, paced, options, cancel)
 
     job.metrics["phrase_rendered"] = rendered
     job.metrics["phrase_repairs"] = repaired
@@ -384,7 +391,26 @@ def run(
     return None
 
 
-def _repair(job, seg, plan, config, translator, regenerate, checkpoint, budget):
+def _record_pacing(job, paced, options, cancel) -> None:
+    """Measure the pace each line is heard at; findings only in phrase mode.
+
+    The factor is what the render did to the voiced speech, measured rather
+    than taken from the plan, since a phrase plan compresses unevenly.
+    """
+    threshold = pacing.settings(options)["threshold_db"]
+    lines = []
+    for seg, source, dest in paced:
+        line = pacing.measure(seg, source, 1.0, threshold, cancel)
+        if dest is not None and line.voiced:
+            heard = pacing.voiced_seconds(dest, threshold, cancel)
+            if heard:
+                line.factor = line.voiced / heard
+        lines.append(line)
+    pacing.record(job, lines, options)
+
+
+def _repair(job, seg, plan, config, translator, regenerate, checkpoint, budget,
+            accept_rewrite=None):
     """Make room for a line that does not fit, cheapest option first.
 
     An existing take that already fits costs nothing and is tried first. Only
@@ -427,6 +453,8 @@ def _repair(job, seg, plan, config, translator, regenerate, checkpoint, budget):
         job.metrics.setdefault("timing_translation_usage", []).extend(
             getattr(translator, "last_usage", []) or [None])
     if not shorter.strip() or len(shorter) >= len(current):
+        return None
+    if accept_rewrite is not None and not accept_rewrite(seg, current, shorter):
         return None
     seg.text_translated = shorter
     seg.translation_provenance = {**seg.translation_provenance, "timing_rewritten": True}

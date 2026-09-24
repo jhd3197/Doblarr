@@ -1,0 +1,25 @@
+# GPU override: builds Dockerfile.gpu and gives the container the host's NVIDIA
+# GPUs. Needs the NVIDIA driver and the NVIDIA Container Toolkit on the host.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# Then open Settings > Hardware to see which GPU Doblarr found. Downloaded
+# models persist under ./data/models.
+
+services:
+  doblarr:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    image: doblarr:gpu
+    environment:
+      # pyannote's diarization model is gated: accept its terms on HuggingFace
+      # and pass your token through from the host environment or a .env file.
+      - HF_TOKEN=${HF_TOKEN:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

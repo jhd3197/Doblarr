@@ -23,6 +23,10 @@
     <div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px 20px;">
       <img src="logo.png" alt="" width="26" height="26" style="display: block;">
       <span style="font-family: var(--font-heading); font-weight: 800; font-size: 18px; letter-spacing: -0.015em;">doblarr</span>
+      <a id="brandStar" class="brand-star" href="https://github.com/jhd3197/Doblarr" target="_blank" rel="noopener noreferrer" aria-label="Star Doblarr on GitHub" title="Star on GitHub">
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.56.95-4.75 4.63 1.12 6.54L12 17.5l-5.87 3.08 1.12-6.54L2.5 9.41l6.56-.95z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <span class="star-sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      </a>
     </div>
     <nav class="sidenav" style="display: flex; flex-direction: column; gap: 3px;" id="nav">
       <button type="button" class="navitem" data-page="Overview"><span class="dot9"></span>Overview</button>
@@ -32,10 +36,18 @@
       <button type="button" class="navitem" data-page="Knowledge"><span class="dot9"></span>Knowledge</button>
       <button type="button" class="navitem" data-page="Settings"><span class="dot9"></span>Settings</button>
     </nav>
+    <div id="starNudge" class="star-nudge" role="note" hidden>
+      <p class="star-nudge-title"><span aria-hidden="true">★</span> Enjoying Doblarr?</p>
+      <p class="star-nudge-body">Please don't forget to star the repo. It's free and helps the project go a long way.</p>
+      <div class="star-nudge-actions">
+        <a class="btn btn-primary" data-star-go href="https://github.com/jhd3197/Doblarr" target="_blank" rel="noopener noreferrer">Star on GitHub</a>
+        <button type="button" class="btn btn-ghost" data-star-later>Not now</button>
+      </div>
+    </div>
     <div class="sidefoot panel" style="margin-top: auto; padding: 12px 14px;">
       <div style="display: flex; align-items: center; gap: 8px;">
         <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent); display: block;"></span>
-        <span class="m" style="font-size: 12px;">worker online · cuda:0</span>
+        <span id="workerStatus" class="m" style="font-size: 12px;">worker online</span>
       </div>
       <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 8px;">
         <span style="font-size: 12px; color: var(--muted);">Doblarr stable</span>
@@ -71,8 +83,8 @@
             <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">Flagged <span class="m">needs-dub</span></p>
           </div>
           <div class="panel" style="padding: 18px 20px;">
-            <p class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">74%</p>
-            <p style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">cuda:0 · 11.2 / 16 GB</p>
+            <p id="statGpu" class="m" style="font-family: var(--font-heading); font-weight: 800; font-size: 32px; line-height: 1.1; margin: 0;">—</p>
+            <p id="statGpuLabel" style="margin: 6px 0 0; font-size: 13px; color: var(--muted);">GPU memory</p>
           </div>
         </div>
 
@@ -365,6 +377,7 @@
       <button type="button" id="reviewClose" class="btn btn-secondary">Close</button></div>
     <div class="review-toolbar"><label><input type="checkbox" id="reviewFlagged"> Flagged lines only</label>
       <label class="review-filter">Show <select id="reviewFilter" class="input"></select></label>
+      <label class="review-filter">Order <select id="reviewOrder" class="input"></select></label>
       <span class="hint">Hear the exchange, compare the original with the dub, then render the changed lines.</span></div>
     <div class="review-layout"><nav id="reviewLines" class="review-lines" aria-label="Dialogue lines"></nav>
       <section id="reviewEditor" class="review-editor" aria-label="Line editor"></section></div>

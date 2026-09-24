@@ -6,6 +6,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from doblarr import hardware
 from doblarr.config import Config
 from doblarr.server import create_app
 
@@ -22,6 +23,19 @@ def offline_dependencies():
         patch.delenv("CLAUDE_API_KEY", raising=False)
         patch.setitem(sys.modules, "demucs", None)
         patch.setitem(sys.modules, "demucs.separate", None)
+        # Device choice must not depend on this machine's GPU: no torch, and
+        # CTranslate2 (which can see a GPU next to a CPU torch) sees none.
+        # Tests that need a GPU install a fake torch of their own.
+        patch.setitem(sys.modules, "torch", None)
+        patch.setattr(hardware, "ctranslate2_cuda_devices", lambda: 0)
+        # The decision layer's default model runs in-process; never load real
+        # weights in a test. It falls back to the rules alone, as designed.
+        patch.setitem(sys.modules, "laya", None)
+        # The API reports hardware; never probe the real machine to answer it.
+        patch.setattr(hardware, "_cached", {
+            "source": "none", "devices": [], "libraries": {}, "notes": ["test"],
+            "torch": {"installed": False, "version": None, "cuda": None,
+                      "cuda_available": False}})
         yield
 
 

@@ -5,8 +5,15 @@ const C = (k, l, o, h = "") => ({ k, l, o, h, t: "choice" });
 const B = (k, l, h = "") => C(k, l, ["On", "Off"], h);
 const L = (k, l, h = "") => ({ k, l, h, t: "list" });
 const J = (k, l, h = "") => ({ k, l, h, t: "json" });
+// Read-only status block, drawn by settings.js from `id`; never saved.
+const I = (id, l, h = "") => ({ id, l, h, t: "info" });
 const group = (title, fields) => ({ title, fields });
 const tab = (id, title, groups) => ({ id, title, groups });
+
+// Fallback device choices when the hardware probe is unavailable; the real
+// list comes from /api/capabilities.hardware (applyDeviceOptions).
+const DEVICES = ["auto", "cpu", "cuda", "mps"];
+const STAGE_DEVICES = ["inherit", ...DEVICES];
 
 const TABS = [
   tab("connections", "Connections", [
@@ -36,24 +43,23 @@ const TABS = [
     B("filtering.kometa_handoff", "Hand off to Kometa"), T("filtering.kometa_file", "Kometa file"),
     B("filtering.auto_label", "Auto-apply labels on each scan"),
   ])]),
-  tab("speech", "Transcript", [group("Transcription", [
+  tab("speech", "Transcript", [{ ...group("Transcription", [
     C("transcribe.source", "Transcript from", ["subtitles", "whisper"]),
     T("transcribe.whisper_model", "Whisper model"), B("transcribe.diarize", "Speaker diarization"),
     B("transcribe.clean_cues", "Remove nonspoken cues"),
     B("transcribe.align_subtitles", "Align source-language subtitles to speech"),
     N("transcribe.batch_size", "Transcription batch size"),
-    C("transcribe.device", "Transcription device", ["auto", "cpu", "cuda"]),
-    C("transcribe.compute_type", "Transcription precision", ["auto", "float16", "int8"]),
-    B("transcribe.keep_models_loaded", "Keep local models loaded", "Uses more memory. Enable only when the GPU can hold the active models."),
-  ])]),
+  ]), desc: "The device, precision and memory settings for whisper and diarization are on the Hardware tab." }]),
   tab("translate", "Translation", [group("Provider", [
     C("translate.provider", "Translation provider", ["claude", "prompture", "voicebox", "passthrough"]),
     T("translate.model", "Translation model"),
     T("translate.endpoint", "Translation endpoint"),
     C("translate.locale", "Spanish region", ["auto", "es-419", "es-MX", "es-ES"], "es-419: neutral Latin America. es-MX: Mexico. es-ES: Spain. Wording only; voice accent is set separately."),
     C("translate.adaptation", "Dialogue style", ["natural", "faithful", "localized"]),
+    B("translate.slang", "Allow regional slang", "Off by default. When on, characters may talk the way people in the dub's region do, where their register calls for it. Spain-only Spanish is still flagged in Latin American dubs."),
     B("translate.adapt_region", "Adapt wording to this region", "Also adapt subtitles already in the target language. Original dialogue stays available for comparison."),
     B("translate.reuse_memory", "Reuse reviewed translations", "Opt-in pilot: exact lines with matching scene, register, settings and timing only."),
+    C("translate.prepass", "Read the whole episode first", ["off", "summary", "summary_terms"], "Summary gives the translator a short machine-written synopsis of the episode. Summary and terms also lists names and terms to keep consistent, for review only: they never enter the glossary on their own. Costs extra requests (charged to the shared budget); cached, so a rerun does not pay again."),
     T("translate.direction", "Dialogue direction", "For example: restrained anime dialogue; keep cultural terms; avoid added catchphrases."),
     J("translate.character_notes", "Character dialogue notes", 'By speaker ID, for example {"GINKO": "Calm, concise; never overly formal"}.'),
     N("translate.batch_size", "Lines per translation batch"),
@@ -79,7 +85,7 @@ const TABS = [
     N("dub.background_volume", "Background level", "1 preserves music and effects outside dialogue."),
     N("dub.fallback_volume", "Original-audio fallback level"),
     N("dub.duck_threshold", "Ducking threshold"),
-    N("dub.duck_attack_ms", "Ducking attack (ms)"),
+    N("dub.duck_attack_ms", "Ducking attack (ms)", "How fast music and effects dip when a line starts. 100 eases them down; very low values make an entrance feel like a cut."),
     N("dub.duck_release_ms", "Ducking release (ms)"),
     B("quality.enabled", "Check generated clips"), B("quality.normalize", "Normalize dialogue"),
     N("quality.dialogue_lufs", "Dialogue loudness (LUFS)"),
@@ -115,6 +121,12 @@ const TABS = [
     N("timing.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the phrase boundaries are not knowable and the line is fitted as one whole."),
     N("timing.collision_gap", "Overlap slack before two turns collide (seconds)"),
     B("timing.repair", "Allow a bounded rewrite when a line cannot fit", "Tries an existing take first; a rewrite is charged to the shared request budget."),
+  ]), group("Pace", [
+    C("timing.pacing", "Keep each character's pace steady", ["speaker", "off"], "Speaker keeps one character's lines in a scene near one pace, so a line is not played at natural speed and the next 30% faster. A line that would need more is rewritten first, and a slow take is sped toward the others. Off fits every line on its own, as earlier releases did. Applies to whole-line timing."),
+    N("timing.pace_tolerance", "Flag a line this far off its character's pace", "0.18 means 18% faster or slower than the character's other lines in the scene. Reported for review; it changes no audio."),
+    N("timing.pace_local_range", "How far one line's compression may differ", "0.10 lets a line sit 0.1x either side of its character's compression, unless it needs more to fit its slot."),
+    N("timing.pace_max_speedup", "Most to speed up a slow take", "1.15 means up to 15% faster, toward the character's usual pace."),
+    N("timing.pace_scene_gap", "A silence this long starts a new scene (seconds)", "A character's pace is compared within a scene, not across the whole episode."),
   ]), group("Reactions and background", [
     C("coverage.mode", "Reaction coverage", ["off", "review", "retain"], "Off still lists every laugh, gasp and door the subtitles recorded, and changes no audio. Review prepares the sound so you can hear it next to the scene without it entering the dub. Retain also places it. Nothing is ever inserted without a decision."),
     N("coverage.gain_db", "Level of a placed sound (dB)"),
@@ -148,8 +160,41 @@ const TABS = [
     N("boundaries.min_trim_ms", "Smallest trim worth doing (ms)"),
     N("boundaries.threshold_db", "Speech threshold above noise (dB)"),
     N("boundaries.min_separation_db", "Least speech-to-noise separation (dB)", "Below this the boundary is not knowable and the clip is left alone."),
-    N("boundaries.edge_fade_ms", "Edge fade (ms)", "0 disables it. Applied only where a clip would otherwise start or end on a click."),
+    N("boundaries.edge_fade_in_ms", "Ease a voice in (ms)", "Applied only where a line would start mid-sound; a line that starts in silence is left alone. Keep it short so a consonant keeps its attack. 0 turns it off."),
+    N("boundaries.edge_fade_out_ms", "Ease a voice out (ms)", "Applied only where a line would stop mid-sound, so a vowel or breath dies away instead of being cut. 0 turns it off."),
+    C("boundaries.edge_fade_curve", "Ease shape", ["hsin", "qsin", "tri"], "hsin is an S-curve, the softest start and finish; tri is linear."),
+    N("boundaries.edge_fade_ms", "Edge fade (ms)", "The older single short linear fade at both ends. When above 0 it replaces the two eases above."),
     N("boundaries.edge_threshold_db", "Edge already smooth below (dB)"),
+  ])]),
+  tab("hardware", "Hardware", [group("This machine", [
+    I("hardware", "Detected hardware", "What this Doblarr process can use for separation, diarization and transcription. voicebox is a separate program and picks its own device."),
+  ]), group("Devices", [
+    C("compute.device", "Default device", DEVICES, "Auto uses the first GPU, else the CPU, and never fails. A GPU chosen here that is missing stops the job before the stage starts, instead of quietly running on the CPU."),
+    C("compute.separate_device", "Dialogue separation", STAGE_DEVICES, "Separation is the slowest stage on CPU; a GPU makes it minutes instead of tens of minutes."),
+    C("compute.diarize_device", "Speaker diarization", STAGE_DEVICES),
+    C("compute.transcribe_device", "Transcription", STAGE_DEVICES, "Whisper can use an NVIDIA GPU even when PyTorch is a CPU build. Inherit also honours the older transcribe.device setting."),
+  ]), group("Memory", [
+    B("compute.release_after_stage", "Free GPU memory after each stage", "Leaves room for voicebox, which synthesizes on the same GPU right after."),
+    B("compute.log_memory", "Log GPU memory per stage", "Allocated and reserved memory before and after each stage, in the job log."),
+    C("transcribe.compute_type", "Transcription precision", ["auto", "float16", "int8"], "Auto is float16 on a GPU and int8 on the CPU."),
+    B("transcribe.keep_models_loaded", "Keep local models loaded", "Uses more memory. Enable only when the GPU can hold the active models."),
+    N("separate.chunk_seconds", "Separate long files in windows of (seconds)", "A film is separated in overlapping windows of this length, so it needs the memory of one window, and a cancelled run resumes at the next one. 0 separates in one piece."),
+  ])]),
+  tab("decisions", "Decisions", [{ ...group("Decision model", [
+    B("decisions.enabled", "Use typed decisions", "Rules read what a line's words say; the model is asked only where they are silent. Off turns every decision below off."),
+    T("decisions.model", "Decision model", "laya/router runs locally for free. kev/kev-4b is self-hosted; typesafe/jev-latest is hosted and billed. If the model cannot load, the rules run alone."),
+    N("decisions.apply_confidence", "Apply a model answer this sure", "Between 0 and 1. A rule that fires always applies; this only governs the model."),
+    N("decisions.suggest_confidence", "Suggest one this sure", "Lower answers are dropped. A suggestion shows in review and changes nothing."),
+  ]), desc: "The model reads text only. It never judges how a take sounds; that stays with the audio checks." },
+  group("Decisions", [
+    B("decisions.cutoffs", "Keep a cut-off line's ending", "A line interrupted mid-word keeps its hard stop instead of being eased out; one trailing off gets a longer fade."),
+    B("decisions.delivery", "Whisper, shout or thought from the words", "Sets the delivery only on lines a reviewer has not set, from tags like (whispering) or a line in capitals."),
+    B("decisions.title_cards", "Leave captions unspoken", "A caption such as NEW YORK, 1987 is kept as a timed event instead of being voiced."),
+    B("decisions.reactions", "Reaction-only cues become events", "Only when a local check also finds no real words, as with the translator's flag."),
+    B("decisions.sound_tags", "Name unrecognized sound tags", "Types a tag like [door creaks] so reaction and background coverage can use it."),
+    B("decisions.rewrite_check", "Check timing rewrites", "Rejects a shortened line that dropped a name or a number, or that the model is sure changed the meaning, before paying to regenerate it."),
+    B("decisions.treatments", "Suggest phone, radio or distant", "From the line's own words. Review suggestions only; nothing is applied."),
+    B("decisions.review_order", "Review the likeliest problems first", "Orders review by how much each line's findings and uncertain decisions need a listen."),
   ])]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),
@@ -168,7 +213,7 @@ const TABS = [
 
 // Flat lookup of every settings field by its config key.
 const FIELD_BY_KEY = {};
-TABS.forEach(t => t.groups.forEach(g => g.fields.forEach(f => { FIELD_BY_KEY[f.k] = f; })));
+TABS.forEach(t => t.groups.forEach(g => g.fields.forEach(f => { if (f.k) FIELD_BY_KEY[f.k] = f; })));
 
 function isBoolField(f) { return f.t === "choice" && Array.isArray(f.o) && f.o[0] === "On"; }
 
@@ -177,14 +222,15 @@ const PLAN_FIELDS = [
     h: "Applied when a dub is queued for this title." },
   ...["dub.target_locale", "dub.preset", "dub.voice_mode", "voicebox.default_engine", "dub.cast_group", "dub.character_map", "transcribe.whisper_model", "transcribe.diarize",
     "translate.locale", "translate.adaptation", "translate.direction", "translate.character_notes",
-    "translate.adapt_region", "translate.reuse_memory",
+    "translate.adapt_region", "translate.slang", "translate.reuse_memory",
     "dub.version_name", "dub.preserve_versions",
     "dub.duration_match", "dub.ducking_ratio", "dub.track_name_template", "dub.dry_run",
     // Per-title bypass for boundary preparation; the detector thresholds stay global.
-    "boundaries.trim", "boundaries.edge_fade_ms",
+    "boundaries.trim", "boundaries.edge_fade_ms", "boundaries.edge_fade_in_ms",
+    "boundaries.edge_fade_out_ms",
     // Which timing owner and whether coverage may place a sound are per-title
     // choices; the thresholds behind them stay global.
-    "timing.mode", "coverage.mode",
+    "timing.mode", "timing.pacing", "coverage.mode",
     // Which space a show is played in, and how hard its exports are checked,
     // are per-title choices; the thresholds behind them stay global.
     "treatments.mode", "treatments.default", "delivery.mode"]
@@ -204,4 +250,24 @@ function applyLanguageOptions(langs) {
   if (supported.length) FIELD_BY_KEY["dub.target_locale"].o = ["", ...supported];
 }
 
-export { TABS, FIELD_BY_KEY, PLAN_FIELDS, isBoolField, applyLanguageOptions };
+// Fill the device choices from the hardware probe: each device some stage can
+// use, plus whatever is configured now, so a saved choice never disappears.
+function deviceChoices(hw) {
+  const ids = (hw?.devices || []).filter(d => (d.usable_by || []).length).map(d => d.id);
+  const cuda = ids.filter(id => id.startsWith("cuda:"));
+  return ["auto", "cpu", ...(cuda.length ? ["cuda", ...cuda] : []), ...ids.filter(id => id === "mps")];
+}
+
+function applyDeviceOptions(hw, current = () => undefined) {
+  if (!hw) return;
+  const base = deviceChoices(hw);
+  for (const key of ["compute.device", "compute.separate_device", "compute.diarize_device", "compute.transcribe_device"]) {
+    const field = FIELD_BY_KEY[key];
+    const opts = key === "compute.device" ? [...base] : ["inherit", ...base];
+    const now = current(key);
+    if (now && !opts.includes(now)) opts.push(now);
+    field.o = opts;
+  }
+}
+
+export { TABS, FIELD_BY_KEY, PLAN_FIELDS, isBoolField, applyLanguageOptions, applyDeviceOptions, deviceChoices };

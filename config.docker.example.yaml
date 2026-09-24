@@ -32,6 +32,30 @@ filtering:
   kometa_handoff: true
   auto_label: false
 
+# Where the local model stages run: Demucs separation, pyannote diarization and
+# whisper transcription. voicebox is a separate process with its own device.
+# This image has no ML stack; for a GPU, run the GPU image (Dockerfile.gpu via
+# docker-compose.gpu.yml, see the README).
+compute:
+  device: auto                  # auto | cpu | cuda | cuda:N | mps
+                                # auto: first CUDA GPU, else Apple MPS, else CPU; never fails.
+                                # An explicit GPU that is missing fails the job up front.
+  separate_device: inherit      # inherit (= device) | auto | cpu | cuda | cuda:N | mps
+  diarize_device: inherit
+  transcribe_device: inherit    # while inherit, an older transcribe.device still applies
+  release_after_stage: true     # free GPU memory after each stage so voicebox has room
+  log_memory: true              # log allocated/reserved GPU memory around each stage
+
+translate:
+  prepass: "off"                # off | summary | summary_terms: one bounded read of the
+                                # script before translating (extra provider calls, cached)
+
+# Source separation (Demucs, when installed). Longer sources are separated in
+# overlapping windows, so a film needs the memory of one window.
+separate:
+  chunk_seconds: 600            # 0 = separate in one piece
+  overlap_seconds: 10
+
 # Source-relative dynamics. `legacy` keeps the pre-timing loudness pass exactly
 # as earlier releases ran it. The other modes move loudness ownership to a
 # single pass *after* timing, so a whisper that the original actor played
@@ -74,6 +98,17 @@ timing:
   min_separation_db: 10          # below this, phrase boundaries are not knowable
   collision_gap: 0.0             # extra slack before two turns count as colliding
   repair: true                   # allow a bounded rewrite when a line cannot fit
+  # Pace per character. Without it a line can play at natural speed and the
+  # next one at 1.3x, or a slow take plays slow with a gap after it. `speaker`
+  # keeps one speaker's lines in a scene near one pace (whole mode): a group
+  # compression, each line within pace_local_range of it, a line that needs
+  # more is rewritten first (repair), and a slow take is sped toward the group.
+  # `off` fits every line on its own, exactly as earlier releases did.
+  pacing: speaker                # off | speaker
+  pace_tolerance: 0.18           # a line 18% off its group's pace gets an info finding
+  pace_local_range: 0.10         # how far a line's compression may sit from its group's
+  pace_max_speedup: 1.15         # most a slow take is sped up toward its group
+  pace_scene_gap: 8.0            # seconds of silence that start a new pace group
   phrases: {}                    # per-cue anchors and protected pauses, set in review
   overlaps: {}                   # per-cue accepted intentional overlaps, set in review
 

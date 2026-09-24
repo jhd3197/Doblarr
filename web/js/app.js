@@ -11,6 +11,8 @@ import { TABS } from './settings-model.js';
 import { jobsFor } from './identity.js';
 import { loadLanguages } from './languages.js';
 import { createKnowledge } from './knowledge.js';
+import { initStar } from './star.js';
+import { loadHardware } from './hardware.js';
 
 const { statusTag, langChipsHtml, renderLibrary, fetchPlan, queueDub, loadLibrary } = createLibrary({ goTitle });
 const { jobStatusTag, updateDryRunTag, renderJobs, loadJobs, loadOverview, startEventStream } = createJobs({
@@ -162,7 +164,7 @@ function applyRoute() {
   }
   if (page === "Library" && !library.loaded) loadLibrary();
   if (page === "Knowledge") renderKnowledge();
-  if (page === "Overview") loadOverview();
+  if (page === "Overview") { loadOverview(); loadHardware(); }
   if (page === "Dubs") loadJobs();
 }
 window.addEventListener("popstate", applyRoute);  // back/forward
@@ -341,3 +343,5 @@ const savedTheme = safeGet("doblarr.theme", "light");
 setTheme(savedTheme === "dark" ? "dark" : "light");
 loadLanguages().finally(() => applyRoute());  // open the view named by the URL path
 startEventStream();
+initStar();
+loadHardware();

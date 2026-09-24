@@ -8,14 +8,25 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from . import background, conversation, delivery, levels, phrases, reactions, treatments
+from . import (
+    background,
+    conversation,
+    decisions,
+    delivery,
+    levels,
+    phrases,
+    prepass,
+    reactions,
+    treatments,
+)
 from .artifacts import digest, media_work
 from .budget import RequestBudget
-from .clients.translator import build_translator
+from .clients.translator import build_translator, translation_options
 from .config import Config
 from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
 from .ffmpeg import FFmpegError
+from .hardware import gpu_stage
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
 from .languages import base_language, display_name, resolve_target_locale
@@ -98,11 +109,14 @@ def run_job(
     work = shared_work / locale_ns
     job.artifacts_dir = work
     out = config.output_dir / shared_work.name / locale_ns
-    job.translation_options = dict(config["translate"])
+    job.translation_options = translation_options(config["translate"])
     job.translation_options["target_locale"] = job.target_locale
     edits = config["dub"].get("line_edits", {})
     if edits or job.kind == "audition":
-        effective_work = work / "effective" / digest([edits, config["translate"], job.kind])[:16]
+        # A prep pass that is off leaves the key what it was before it existed.
+        translate_key = {k: v for k, v in dict(config["translate"]).items()
+                         if k != "prepass" or v != "off"}
+        effective_work = work / "effective" / digest([edits, translate_key, job.kind])[:16]
     else:
         effective_work = work
     character_group = config["dub"].get("cast_group", "")
@@ -143,10 +157,43 @@ def run_job(
     # quality retries, timing repairs and, later, extra candidate takes. 0 keeps
     # the historical behavior (counted, never capped).
     budget = RequestBudget(config["quality"].get("request_budget", 0), cancel_event)
+    # Typed decisions about the script: rules first, the decision model only
+    # where they are silent. Loaded on first use; without it the rules run alone.
+    decision_options = decisions.settings(dict(config.get("decisions", {})))
+    oracle = decisions.Oracle(decision_options, cache_dir=work)
 
     log.info("=== Doblarr %s job: %s ===", job.kind, job.summary())
 
     cast_holder: dict = {"cast": None}
+    # Which device each local model stage runs on (hardware.resolve_device).
+    compute = dict(config.get("compute", {}))
+    keep_models = bool(config["transcribe"].get("keep_models_loaded", False))
+
+    def _separate():
+        # Demucs runs in-process and voicebox synthesizes next on the same
+        # GPU: its memory has to be handed back, not left in torch's cache.
+        with gpu_stage("separate", job, compute):
+            separate.run(job, shared_work, model=config["separate"]["model"],
+                         dry_run=dry_run, force=force, compute=compute,
+                         chunk_seconds=float(config["separate"].get("chunk_seconds", 600)),
+                         overlap_seconds=float(config["separate"].get("overlap_seconds", 10)),
+                         cancel=cancel_event)
+
+    def _transcribe():
+        with gpu_stage("transcribe", job, compute, retain=keep_models):
+            transcribe.run(
+                job,
+                work,
+                source=config["transcribe"]["source"],
+                whisper_model=config["transcribe"]["whisper_model"],
+                vb=vb,
+                segment_limit=seg_limit,
+                max_seconds=teaser_s,
+                dry_run=dry_run,
+                options=dict(config["transcribe"]),
+                force=force,
+                compute=compute,
+            )
 
     def _ensure_cast():
         if db is None or dry_run:
@@ -165,9 +212,17 @@ def run_job(
         )
 
     def _diarize():
-        diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run)
+        with gpu_stage("diarize", job, compute, retain=keep_models):
+            diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run,
+                        compute=compute)
         if not dry_run and job.segments:
-            prepare.run(job, enabled=config["transcribe"].get("clean_cues", True))
+            prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
+                        interjections=config["transcribe"].get(
+                            "interjections_as_reactions", True))
+            decisions.title_cards(job, oracle, decision_options)
+            decisions.reactions(job, oracle, decision_options, interjections=config[
+                "transcribe"].get("interjections_as_reactions", True))
+            decisions.sound_tags(job, oracle, decision_options)
             save_script(job, work)  # transcript + speakers survive a crash now
 
     def _translate():
@@ -178,29 +233,47 @@ def run_job(
         )
         if job.kind == "audition" and not edits and not dry_run:
             load_script(job, translation_work, force)
+        glossary = {
+            # Resolved terminology relevant to these segments; the explicit
+            # translate.glossary config always wins on a conflict.
+            **(
+                knowledge.glossary_terms([s.text_src for s in job.segments],
+                                         job.script_lang or job.source_lang)
+                if knowledge is not None
+                else {}
+            ),
+            **config["translate"].get("glossary", {}),
+        }
+        reactions_on = bool(config["transcribe"].get("interjections_as_reactions", True))
+        if hasattr(translator, "flag_reactions"):
+            translator.flag_reactions = reactions_on
+        synopsis = None
+        if not dry_run and (not job.script_is_target
+                            or job.translation_options.get("adapt_region")):
+            synopsis = prepass.apply(job, prepass.analyze(
+                job, translator, config["translate"].get("prepass", "off"),
+                work_dir=work, budget=budget, cancel=cancel_event,
+                corrections=config["transcribe"].get("source") == "whisper",
+                title=job.input_file.stem), glossary)
         translate.run(
             job,
             translator,
             dry_run=dry_run,
             progress=_report("translate"),
             batch_size=config["translate"].get("batch_size", 12),
-            glossary={
-                # Resolved terminology relevant to these segments; the explicit
-                # translate.glossary config always wins on a conflict.
-                **(
-                    knowledge.glossary_terms([s.text_src for s in job.segments],
-                                             job.script_lang or job.source_lang)
-                    if knowledge is not None
-                    else {}
-                ),
-                **config["translate"].get("glossary", {}),
-            },
+            glossary=glossary,
             chars_per_second=config["translate"].get("chars_per_second", 14),
             checkpoint=lambda: save_script(job, translation_work),
             cancel=cancel_event,
             memory_db=db,
+            synopsis=synopsis,
+            flag_reactions=reactions_on,
         )
         if not dry_run and job.segments:
+            # How each line is delivered, where its own words say so; a
+            # reviewer's edit applied afterwards still wins.
+            decisions.delivery(job, oracle, decision_options)
+            decisions.treatments(job, oracle, decision_options)
             save_script(job, translation_work)  # + translations
 
     def _recent_effective_scripts():
@@ -420,6 +493,7 @@ def run_job(
             checkpoint=lambda: save_script(job, effective_work),
             max_attempts=config["dub"].get("max_fit_attempts", 2),
             budget=budget,
+            accept_rewrite=decisions.rewrite_checker(job, oracle, decision_options),
         )
         if not dry_run:
             save_script(job, effective_work)
@@ -498,6 +572,8 @@ def run_job(
             checkpoint=lambda: save_script(job, effective_work),
             max_attempts=config["dub"].get("max_fit_attempts", 2),
             budget=budget,
+            options=timing_options,
+            accept_rewrite=decisions.rewrite_checker(job, oracle, decision_options),
         )
         if not dry_run:
             save_script(job, effective_work)
@@ -514,27 +590,8 @@ def run_job(
                 duration=teaser_s,
             ),
         ),
-        (
-            "separate",
-            lambda: separate.run(
-                job, shared_work, model=config["separate"]["model"], dry_run=dry_run, force=force
-            ),
-        ),
-        (
-            "transcribe",
-            lambda: transcribe.run(
-                job,
-                work,
-                source=config["transcribe"]["source"],
-                whisper_model=config["transcribe"]["whisper_model"],
-                vb=vb,
-                segment_limit=seg_limit,
-                max_seconds=teaser_s,
-                dry_run=dry_run,
-                options=dict(config["transcribe"]),
-                force=force,
-            ),
-        ),
+        ("separate", _separate),
+        ("transcribe", _transcribe),
         ("diarize", _diarize),
         ("cast", _ensure_cast),
         ("translate", _translate),
@@ -554,6 +611,7 @@ def run_job(
                 dict(config.get("boundaries", {})),
                 cancel=cancel_event,
                 dry_run=dry_run,
+                endings=({} if dry_run else decisions.cutoffs(job, oracle, decision_options)),
             ),
         ),
         ("treatments", _treatments),
@@ -568,7 +626,7 @@ def run_job(
                 background_volume=config["dub"].get("background_volume", 1),
                 fallback_volume=config["dub"].get("fallback_volume", 0.2),
                 threshold=config["dub"].get("duck_threshold", 0.05),
-                attack=config["dub"].get("duck_attack_ms", 30),
+                attack=config["dub"].get("duck_attack_ms", 100),
                 release=config["dub"].get("duck_release_ms", 350),
                 dry_run=dry_run,
                 cancel=cancel_event,
@@ -647,10 +705,12 @@ def run_job(
         raise
     finally:
         job.metrics["request_budget"] = budget.snapshot()
+        oracle.close()
         if not dry_run and job.segments:
             ensure_identity(job)
             validate_cues(job.segments, job.cue_lineage)
-            write_review(job, config.work_dir, settings={
+            write_review(job, config.work_dir,
+                         priorities=decisions.review_order(job, decision_options), settings={
                 # What this run actually used, not what is configured now.
                 "levels": {k: level_options.get(k, default) for k, default in (
                     ("mode", "legacy"), ("target_db", -20.0), ("strength", 0.7),
@@ -661,7 +721,8 @@ def run_job(
                 # Phrase timing and coverage policy, frozen the same way: an old
                 # review must show the policy that produced it, not today's.
                 "timing": {k: timing_options.get(k, default) for k, default in (
-                    ("mode", "whole"), ("max_stretch", 1.3), ("min_stretch", 1.0),
+                    ("mode", "whole"), ("pacing", "speaker"),
+                    ("max_stretch", 1.3), ("min_stretch", 1.0),
                     ("protect_pause", 0.45), ("anchor_tolerance", 0.12),
                     ("repair", True))},
                 "coverage": {k: coverage_options.get(k, default) for k, default in (
@@ -679,6 +740,7 @@ def run_job(
                     "catalogue": treatments.catalogue(),
                 },
                 "delivery": delivery.describe(delivery.settings(delivery_options)),
+                "review_order": decisions.enabled(decision_options, "review_order"),
             })
     report.finish()
 

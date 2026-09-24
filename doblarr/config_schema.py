@@ -88,9 +88,16 @@ class TranslateModel(_Section):
     locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
     adaptation: Literal["natural", "faithful", "localized"] = "natural"
     adapt_region: bool = False
+    # Regional slang in the dub. Off keeps wording understandable across the
+    # region; on lets characters talk the way people there do.
+    slang: bool = False
     reuse_memory: bool = False
     direction: str = ""
     character_notes: dict[str, str] = {}
+    # One bounded read of the whole script before translating: a synopsis for
+    # the translator, and with summary_terms, name/term candidates for review.
+    # Costs provider calls, so off by default (see doblarr.prepass).
+    prepass: Literal["off", "summary", "summary_terms"] = "off"
 
 
 class TranscribeModel(_Section):
@@ -98,6 +105,9 @@ class TranscribeModel(_Section):
     whisper_model: str = "large-v3"
     diarize: bool = True
     clean_cues: bool = True
+    # A cue that is only a reaction written as a word ("Tsk!", "Heh heh") becomes
+    # a reaction event instead of a line for the engine to act.
+    interjections_as_reactions: bool = True
     align_subtitles: bool = False
     batch_size: int = 8
     device: str = "auto"
@@ -105,8 +115,30 @@ class TranscribeModel(_Section):
     keep_models_loaded: bool = False
 
 
+class ComputeModel(_Section):
+    """Where the local model stages run (Demucs, pyannote, whisper).
+
+    `auto` picks the first CUDA device, else Apple MPS, else the CPU, and never
+    fails. An explicit device that is not there fails the job before the stage
+    starts instead of silently running an hour on the CPU. `inherit` on a
+    stage means "use `device`"; the older `transcribe.device` still applies to
+    transcription while its own override is `inherit`.
+    """
+
+    device: str = "auto"               # auto | cpu | cuda | cuda:N | mps
+    separate_device: str = "inherit"   # inherit | auto | cpu | cuda | cuda:N | mps
+    diarize_device: str = "inherit"
+    transcribe_device: str = "inherit"
+    release_after_stage: bool = True   # free VRAM after each local model stage
+    log_memory: bool = True            # log allocated/reserved VRAM around them
+
+
 class SeparateModel(_Section):
     model: str = "htdemucs_ft"
+    # A source longer than this is separated in overlapping windows, so a
+    # feature film needs the memory of one window. 0 separates in one piece.
+    chunk_seconds: float = 600
+    overlap_seconds: float = 10
 
 
 class DubModel(_Section):
@@ -124,7 +156,7 @@ class DubModel(_Section):
     background_volume: float = 1.0
     fallback_volume: float = 0.2
     duck_threshold: float = 0.05
-    duck_attack_ms: float = 30
+    duck_attack_ms: float = 100     # the bed eases down under a new line instead of snapping
     duck_release_ms: float = 350
     output_codec: str = "aac"
     output_bitrate: str = "192k"
@@ -184,7 +216,12 @@ class BoundariesModel(_Section):
     min_trim_ms: float = 30         # below this there is nothing worth doing
     threshold_db: float = 12        # dB above the noise floor that counts as speech
     min_separation_db: float = 10   # below this the boundary is not knowable
-    edge_fade_ms: float = 0         # 0 = no edge fade; 8 is a good starting value
+    # Voices ease in and out where a clip would otherwise start or end
+    # mid-sound; an edge that is already silent is never touched.
+    edge_fade_in_ms: float = 12     # short: never blunt a consonant (max 50)
+    edge_fade_out_ms: float = 40    # longer: let a vowel or breath die away (max 150)
+    edge_fade_curve: Literal["hsin", "qsin", "tri"] = "hsin"  # hsin = S-shaped, tri = linear
+    edge_fade_ms: float = 0         # older single linear fade; nonzero overrides the three above
     edge_threshold_db: float = -40  # an edge quieter than this is already smooth
 
 
@@ -229,6 +266,16 @@ class TimingModel(_Section):
     min_separation_db: float = 10
     collision_gap: float = 0.0
     repair: bool = True
+    # Pace per character (doblarr.pacing). A group is one speaker's lines,
+    # split where they fall silent for `pace_scene_gap`; a line heard more
+    # than `pace_tolerance` off its group's median pace is flagged.
+    # `speaker` keeps a group's lines near one pace in whole-clip mode;
+    # `off` fits each line alone, exactly as earlier releases did.
+    pacing: Literal["off", "speaker"] = "speaker"
+    pace_tolerance: float = 0.18
+    pace_local_range: float = 0.10  # how far a line's factor may sit from its group's
+    pace_max_speedup: float = 1.15  # most a slow take is sped toward its group
+    pace_scene_gap: float = 8.0
     phrases: dict[str, dict] = {}   # per-cue anchors/pauses set in review
     overlaps: dict[str, dict] = {}  # per-cue accepted intentional overlaps
 
@@ -293,6 +340,29 @@ class DeliveryModel(_Section):
     check_original_streams: bool = True
 
 
+class DecisionsModel(_Section):
+    """Typed decisions about the script (doblarr.decisions).
+
+    Rules read what the text says; the decision model is asked only where
+    they are silent. A model answer at `apply_confidence` or above is
+    applied, one at `suggest_confidence` or above is a review suggestion.
+    Without the model (not installed, or failing) the rules run alone.
+    """
+
+    enabled: bool = True
+    model: str = "laya/router"      # any Prompture decision model: laya/*, kev/*, typesafe/*
+    apply_confidence: float = 0.9
+    suggest_confidence: float = 0.6
+    cutoffs: bool = True            # a line cut off or trailing away keeps that ending
+    delivery: bool = True           # whisper / shout / thought from the line's own words
+    title_cards: bool = True        # an on-screen caption is not spoken
+    reactions: bool = True          # a cue that is only a reaction sound becomes an event
+    sound_tags: bool = True         # name an unrecognized [sound] tag
+    rewrite_check: bool = True      # reject a timing rewrite that loses names or meaning
+    treatments: bool = True         # suggest phone / radio / distant from the text
+    review_order: bool = True       # the lines most likely wrong come first in review
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -305,6 +375,7 @@ class ConfigModel(_Section):
     translate: TranslateModel = TranslateModel()
     transcribe: TranscribeModel = TranscribeModel()
     separate: SeparateModel = SeparateModel()
+    compute: ComputeModel = ComputeModel()
     dub: DubModel = DubModel()
     knowledge: KnowledgeModel = KnowledgeModel()
     quality: QualityModel = QualityModel()
@@ -314,6 +385,7 @@ class ConfigModel(_Section):
     coverage: CoverageModel = CoverageModel()
     treatments: TreatmentsModel = TreatmentsModel()
     delivery: DeliveryModel = DeliveryModel()
+    decisions: DecisionsModel = DecisionsModel()
 
 
 def validate_config(data: dict) -> None:

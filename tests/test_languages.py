@@ -102,6 +102,27 @@ def test_spanish_direction_texts_match_the_legacy_translator_wording():
     assert get("es").direction == ""
 
 
+def test_latin_american_locales_share_the_spain_contrast_rules():
+    for locale in ("es-419", "es-MX", "es-VE"):
+        direction = get(locale).direction
+        assert "never vosotros" in direction
+        assert "simple past over the present perfect" in direction
+        assert "Never use vale" in direction
+        assert "not mirad" in direction
+        assert "Never use coger for take or grab" in direction
+        assert "creí que" in direction and "never ir a por" in direction
+        # Measured as shared (tags) or judged scene-dependent (lamento/siento).
+        assert "¿verdad? over" not in direction and "lamento" not in direction
+    # Country vocabulary stays out of the country locales (Mexico says carro).
+    assert "auto" in get("es-419").direction
+    assert "auto" not in get("es-MX").direction
+    # Neutral dubbing drops diminutives; they are natural in Mexico and Venezuela.
+    assert "Avoid diminutives" in get("es-419").direction
+    assert "diminutive" not in get("es-MX").direction
+    assert "diminutive" not in get("es-VE").direction
+    assert "vale" not in get("es-ES").direction
+
+
 def test_discovery_maps_delegate_to_the_catalog():
     assert discovery.NAME_TO_ISO2["spanish"] == "es"
     assert discovery.NAME_TO_ISO2["flemish"] == "nl"

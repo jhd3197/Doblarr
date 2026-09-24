@@ -254,3 +254,38 @@
 @media(max-width:760px) { .voice-results { grid-template-columns:1fr; } .voice-picker { padding:16px; } }
 
 .voice-picker > header { position:sticky; top:0; z-index:2; background:var(--panel); padding-block:12px; }
+
+/* ---- GitHub star: brand-row star + one-time sidebar nudge ---- */
+.brand-star { --star: #f59e0b; position:relative; margin-left:auto; display:grid; place-items:center; width:28px; height:28px;
+  border-radius:50%; color:var(--muted); transition:color .2s, background-color .2s, transform .3s cubic-bezier(.34,1.56,.64,1); }
+.brand-star svg { position:relative; z-index:1; fill-opacity:0; transition:fill-opacity .2s, transform .3s cubic-bezier(.34,1.56,.64,1); }
+.brand-star:hover, .brand-star:focus-visible { color:var(--star); background:rgba(245,158,11,.14); }
+.brand-star:hover svg, .brand-star:focus-visible svg { fill-opacity:1; transform:rotate(72deg) scale(1.12); }
+.brand-star:focus-visible { outline:2px solid var(--star); outline-offset:2px; }
+.star-sparks { position:absolute; inset:0; pointer-events:none; }
+.star-sparks i { position:absolute; top:50%; left:50%; width:4px; height:4px; margin:-2px; border-radius:50%; background:var(--star); opacity:0; }
+.brand-star:hover .star-sparks i { animation:star-spark .6s ease-out forwards; }
+.star-sparks i:nth-child(1) { --a:0deg; } .star-sparks i:nth-child(2) { --a:60deg; } .star-sparks i:nth-child(3) { --a:120deg; }
+.star-sparks i:nth-child(4) { --a:180deg; } .star-sparks i:nth-child(5) { --a:240deg; } .star-sparks i:nth-child(6) { --a:300deg; }
+@keyframes star-spark {
+  0% { opacity:1; transform:rotate(var(--a)) translateY(0) scale(1); }
+  100% { opacity:0; transform:rotate(var(--a)) translateY(-17px) scale(.3); }
+}
+
+.star-nudge { position:relative; margin-top:auto; padding:14px; border-radius:14px; overflow:hidden;
+  border:1px solid rgba(245,158,11,.35); background:linear-gradient(160deg, rgba(245,158,11,.14), rgba(245,158,11,.03) 70%);
+  animation:nudge-in .45s cubic-bezier(.34,1.56,.64,1) both; }
+.star-nudge:not([hidden]) + .sidefoot { margin-top:12px !important; }
+.star-nudge-title { margin:0; font-family:var(--font-heading); font-weight:800; font-size:14px; }
+.star-nudge-title span { color:#f59e0b; display:inline-block; animation:nudge-twinkle 2.4s ease-in-out 3; }
+.star-nudge-body { margin:6px 0 12px; font-size:12.5px; line-height:1.45; color:var(--muted); }
+.star-nudge-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.star-nudge-actions .btn { font-size:12.5px; padding:6px 11px; text-decoration:none; }
+@keyframes nudge-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+@keyframes nudge-twinkle { 0%,100% { transform:scale(1) rotate(0); } 50% { transform:scale(1.25) rotate(20deg); } }
+@media (max-width:980px) { .star-nudge { display:none !important; } }
+@media (prefers-reduced-motion:reduce) {
+  .brand-star, .brand-star svg, .star-nudge, .star-nudge-title span { transition:none; animation:none; }
+  .brand-star:hover svg { transform:none; }
+  .brand-star:hover .star-sparks i { animation:none; }
+}

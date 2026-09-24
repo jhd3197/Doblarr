@@ -66,7 +66,7 @@ def test_real_path_with_fake_pipeline(tmp_path, monkeypatch):
             seen["audio"] = audio
             return FakeDiarization([(0.0, 5.0, "SPEAKER_00"), (5.0, 9.0, "SPEAKER_01")])
 
-    def fake_load(token):
+    def fake_load(token, device=None):
         seen["token"] = token
         return FakePipe()
 
@@ -99,3 +99,62 @@ def test_pipeline_load_failure_degrades_to_narrator(tmp_path, monkeypatch):
     job = _job(tmp_path, [])
     diarize.run(job, enabled=True, dry_run=False)
     assert list(job.speakers) == ["NARRATOR"]
+
+
+def _fake_torch(monkeypatch, cuda_devices):
+    torch = types.ModuleType("torch")
+    torch.__version__ = "2.8.0"
+    torch.version = types.SimpleNamespace(cuda="12.4")
+    torch.cuda = types.SimpleNamespace(is_available=lambda: bool(cuda_devices),
+                                       device_count=lambda: cuda_devices,
+                                       empty_cache=lambda: None)
+    torch.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
+    torch.device = lambda name: ("device", name)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+
+def test_pipeline_moves_to_the_chosen_device(tmp_path, monkeypatch):
+    _fake_torch(monkeypatch, 2)
+    moved = []
+
+    class Pipe:
+        def to(self, device):
+            moved.append(device)
+
+    class FakePipeline:
+        @staticmethod
+        def from_pretrained(model_id, use_auth_token=None):
+            return Pipe()
+
+    _fake_pyannote(monkeypatch)
+    sys.modules["pyannote.audio"].Pipeline = FakePipeline
+    device = diarize.hardware.resolve_device("diarize", {"diarize_device": "cuda:1"})
+    diarize._load_pipeline("token", device)
+    assert moved == [("device", "cuda:1")]
+
+
+def test_cpu_pipeline_is_not_moved(monkeypatch):
+    moved = []
+
+    class Pipe:
+        def to(self, device):
+            moved.append(device)
+
+    class FakePipeline:
+        @staticmethod
+        def from_pretrained(model_id, use_auth_token=None):
+            return Pipe()
+
+    _fake_pyannote(monkeypatch)
+    sys.modules["pyannote.audio"].Pipeline = FakePipeline
+    diarize._load_pipeline("token", diarize.hardware.Device())
+    assert moved == []
+
+
+def test_a_missing_explicit_gpu_fails_rather_than_losing_the_cast(tmp_path, monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "fake-token")
+    _fake_pyannote(monkeypatch)
+    job = _job(tmp_path, [Segment(0, 0.0, 4.0, "a")])
+    with pytest.raises(diarize.hardware.DeviceUnavailable, match="diarize"):
+        diarize.run(job, enabled=True, compute={"device": "cuda"})
+    assert not job.speakers

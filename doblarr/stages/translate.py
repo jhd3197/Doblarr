@@ -21,6 +21,8 @@ def run(
     checkpoint=None,
     cancel=None,
     memory_db=None,
+    synopsis=None,
+    flag_reactions=False,
 ):
     if hasattr(translator, "repair_glossary"):
         translator.repair_glossary = dict(glossary or {})
@@ -30,7 +32,7 @@ def run(
         return
     size = max(1, min(32, int(batch_size)))
     for position, seg in enumerate(job.segments):
-        context = memory.scene_context(job, position, glossary)
+        context = memory.scene_context(job, position, glossary, synopsis)
         if ((seg.memory_context and seg.memory_context != context)
                 or (job.script_is_target and job.translation_options.get("adapt_region")
                     and not seg.translation_provenance)):
@@ -43,7 +45,8 @@ def run(
     for seg in pending:
         if cancel is not None and cancel.is_set():
             raise JobCancelled("cancelled during memory lookup")
-        seg.memory_context = memory.scene_context(job, positions[seg.index], glossary)
+        seg.memory_context = memory.scene_context(job, positions[seg.index], glossary,
+                                                  synopsis)
         reason = "reuse-disabled"
         match = None
         if memory_db is not None and job.translation_options.get("reuse_memory"):
@@ -72,6 +75,7 @@ def run(
         if not batches or len(batches[-1]) >= size or seg.start - batches[-1][-1].end > 8:
             batches.append([])
         batches[-1].append(seg)
+    flagged: dict[str, dict] = {}
     for batch in batches:
         if cancel is not None and cancel.is_set():
             raise JobCancelled("cancelled before translation batch")
@@ -108,6 +112,8 @@ def run(
                 job.target_lang,
                 context=context,
                 glossary=glossary,
+                # only when there is one, so translators without it still work
+                **({"synopsis": synopsis} if synopsis else {}),
             )
         else:
             results = [
@@ -123,6 +129,11 @@ def run(
             raise ValueError("translation did not return every spoken line")
         for seg, text in zip(batch, results, strict=True):
             seg.text_translated = text
+        flags = getattr(translator, "last_flags", None) or []
+        if flag_reactions and len(flags) == len(batch):
+            for seg, flag in zip(batch, flags, strict=True):
+                if flag.get("delivery") == "reaction" and seg.cue_id:
+                    flagged[seg.cue_id] = flag
         calls_after = getattr(translator, "provider_calls", None)
         job.metrics["translation_provider_calls"] = (
             (job.metrics.get("translation_provider_calls") or 0) + calls_after - calls_before
@@ -142,3 +153,16 @@ def run(
         if progress:
             done = sum(bool(s.text_translated) for s in job.segments)
             progress(done, len(job.segments), f"translated {done}/{len(job.segments)}")
+    if flagged:
+        # Reaction sounds the rules did not know, confirmed by a local check.
+        from .prepare import from_translator
+
+        if from_translator(job, flagged) and checkpoint:
+            checkpoint()
+    # Text-only and free: whether a Latin American dub slipped into Spain
+    # Spanish. Memory-reused lines are checked too — they were translated once
+    # under older directions.
+    from .. import dialect
+
+    if dialect.check(job) and checkpoint:
+        checkpoint()

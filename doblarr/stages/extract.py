@@ -41,6 +41,18 @@ def _select_audio_stream(job: DubJob, cancel=None) -> int:
     for stream in streams:
         tag = stream.get("tags", {}).get("language", "und").lower()
         if ISO3_TO_ISO2.get(tag, tag) == wanted:
+            others = sorted({ISO3_TO_ISO2.get(t, t) for t in (
+                s.get("tags", {}).get("language", "und").lower() for s in streams
+                if s["index"] != stream["index"]) if t != "und"} - {wanted})
+            if others:
+                # Everything downstream — the bed under the dub, the level each
+                # line follows, the voice a clone learns — comes from this one
+                # track. Dubbing from another dub is a real choice, but it must
+                # be a visible one: it once went unnoticed for a whole episode.
+                job.metrics["source_track_alternatives"] = others
+                log.warning("dubbing from the %s audio track; this file also carries %s. "
+                            "If one of those is the original performance, set the "
+                            "source language to it.", wanted, ", ".join(others))
             return stream["index"]
     if len(streams) == 1 and streams[0].get("tags", {}).get("language", "und") == "und":
         log.warning("using the only untagged audio track as %s", wanted)

@@ -62,6 +62,11 @@ translate:
   batch_size: 12
   chars_per_second: 14
   glossary: {}                 # source name/term: preferred translation
+  prepass: "off"                # off | summary | summary_terms: one bounded read of the
+                                # script first (costs provider calls, charged to
+                                # quality.request_budget, cached). The synopsis guides this
+                                # job's translation; term candidates are listed for review
+                                # and never enter the glossary on their own.
   model: claude-sonnet-5        # claude: Anthropic model id · prompture: provider/model
                                 #   string, e.g. ollama/llama3.1:8b or lmstudio/<model>
   # endpoint: http://127.0.0.1:1234/v1/chat/completions  # prompture URL override
@@ -75,6 +80,8 @@ transcribe:
   whisper_model: large-v3       # used when source = whisper
   diarize: true                 # split speakers with pyannote
   clean_cues: true              # remove recognized nonspoken cues; retain ambiguous text
+  interjections_as_reactions: true  # "Tsk!", "Heh heh", "Oh!" alone -> a reaction event, not TTS
+                                # (pair with coverage.mode: retain to keep the original sound)
   align_subtitles: false        # word alignment only for source-language subtitles
   batch_size: 8
   device: auto
@@ -82,9 +89,24 @@ transcribe:
   keep_models_loaded: false     # opt in only with enough RAM / VRAM
   # hf_token read from HF_TOKEN env var (pyannote needs it)
 
+# Where the local model stages run: Demucs separation, pyannote diarization and
+# whisper transcription. voicebox is a separate process with its own device.
+compute:
+  device: auto                  # auto | cpu | cuda | cuda:N | mps
+                                # auto: first CUDA GPU, else Apple MPS, else CPU; never fails.
+                                # An explicit GPU that is missing fails the job up front.
+  separate_device: inherit      # inherit (= device) | auto | cpu | cuda | cuda:N | mps
+  diarize_device: inherit
+  transcribe_device: inherit    # while inherit, an older transcribe.device still applies
+  release_after_stage: true     # free GPU memory after each stage so voicebox has room
+  log_memory: true              # log allocated/reserved GPU memory around each stage
+
 # Source separation
 separate:
   model: htdemucs_ft            # keep music+FX, replace only dialogue
+  chunk_seconds: 600            # longer sources are separated in windows of this many
+                                # seconds, so a film needs one window's memory; 0 = whole
+  overlap_seconds: 10           # each window reads this much past its end, crossfaded
 
 # Dubbing behaviour
 dub:
@@ -108,7 +130,7 @@ dub:
   background_volume: 1.0
   fallback_volume: 0.2          # original soundtrack when separation is unavailable
   duck_threshold: 0.05
-  duck_attack_ms: 30
+  duck_attack_ms: 100           # how fast the bed dips under a line; 100 eases it down
   duck_release_ms: 350
   output_codec: aac             # aac | flac | copy
   output_bitrate: 192k
@@ -140,7 +162,12 @@ boundaries:
   min_trim_ms: 30                # below this there is nothing worth doing
   threshold_db: 12               # dB above the noise floor that counts as speech
   min_separation_db: 10          # below this the boundary is not knowable; skip
-  edge_fade_ms: 0                # 0 = off; 8 removes cut clicks inaudibly
+  # Voices ease in and out where a clip starts or ends mid-sound; an edge
+  # that is already silent is left alone. 0 for both turns it off.
+  edge_fade_in_ms: 12            # short, so a consonant keeps its attack (max 50)
+  edge_fade_out_ms: 40           # longer, so a vowel or breath dies away (max 150)
+  edge_fade_curve: hsin          # hsin (S-shaped) | qsin | tri (linear)
+  edge_fade_ms: 0                # older single linear fade; nonzero overrides the above
   edge_threshold_db: -40         # an edge quieter than this is already smooth
 
 # Source-relative dynamics. `legacy` keeps the pre-timing loudness pass exactly
@@ -185,6 +212,17 @@ timing:
   min_separation_db: 10          # below this, phrase boundaries are not knowable
   collision_gap: 0.0             # extra slack before two turns count as colliding
   repair: true                   # allow a bounded rewrite when a line cannot fit
+  # Pace per character. Without it a line can play at natural speed and the
+  # next one at 1.3x, or a slow take plays slow with a gap after it. `speaker`
+  # keeps one speaker's lines in a scene near one pace (whole mode): a group
+  # compression, each line within pace_local_range of it, a line that needs
+  # more is rewritten first (repair), and a slow take is sped toward the group.
+  # `off` fits every line on its own, exactly as earlier releases did.
+  pacing: speaker                # off | speaker
+  pace_tolerance: 0.18           # a line 18% off its group's pace gets an info finding
+  pace_local_range: 0.10         # how far a line's compression may sit from its group's
+  pace_max_speedup: 1.15         # most a slow take is sped up toward its group
+  pace_scene_gap: 8.0            # seconds of silence that start a new pace group
   phrases: {}                    # per-cue anchors and protected pauses, set in review
   overlaps: {}                   # per-cue accepted intentional overlaps, set in review
 
@@ -264,3 +302,23 @@ delivery:
   placement_samples: 3           # head/middle/tail cue windows decoded and checked
   silence_db: -50.0              # below this a placed window counts as silent
   check_original_streams: true   # the dub is added; nothing it went in with is dropped
+
+# Typed decisions about the script. Rules read what a line's words say (a
+# trailing dash, a "(whispering)" tag, a caption in capitals); a decision model
+# is asked only where the rules are silent. Confident answers are applied,
+# less confident ones become review suggestions, and without the model the
+# rules run alone. Answers are cached, so a rerun asks nothing again.
+decisions:
+  enabled: true
+  model: laya/router            # any Prompture decision model: laya/router (local, free),
+                                # kev/kev-4b (self-hosted) or typesafe/jev-latest (hosted)
+  apply_confidence: 0.9         # a model answer this sure is applied
+  suggest_confidence: 0.6       # this sure becomes a review suggestion; lower is dropped
+  cutoffs: true                 # a line cut off ("Wait, I—") keeps its hard stop
+  delivery: true                # whisper / shout / thought from the line's own words
+  title_cards: true             # "NEW YORK, 1987" is a caption, not a line to speak
+  reactions: true               # a cue that is only a reaction sound becomes an event
+  sound_tags: true              # name an unrecognized [sound] tag
+  rewrite_check: true           # reject a timing rewrite that loses a name or the meaning
+  treatments: true              # suggest phone / radio / distant from the text (review only)
+  review_order: true            # review lists the lines most likely wrong first

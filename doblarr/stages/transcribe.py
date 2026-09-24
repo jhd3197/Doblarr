@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .. import subtitles
+from .. import hardware, subtitles
 from ..cues import SOURCE, Span, ensure_identity
 from ..discovery import ISO3_TO_ISO2
 from ..model_pool import model as pooled_model
@@ -34,6 +34,7 @@ def run(
     dry_run: bool = False,
     force: bool = False,
     options: dict | None = None,
+    compute: dict | None = None,
 ) -> DryRunPlan | None:
     if dry_run:
         return dry(f"would build timed segments ({source})")
@@ -57,8 +58,17 @@ def run(
         return None
 
     used_lang = None
+    device = None
+    if source == "whisper" or (options or {}).get("align_subtitles"):
+        # The device stays out of transcription_options: it is part of the
+        # script cache key, and moving to a GPU must not re-transcribe.
+        device = hardware.resolve_device(
+            "transcribe", compute, legacy=job.transcription_options.get("device"))
+        job.metrics.setdefault("devices", {})["transcribe"] = device.torch
+        if device.reason:
+            log.info("transcribe: %s", device.reason)
     if source == "whisper":
-        segs = _whisper_segments(job, whisper_model)
+        segs = _whisper_segments(job, whisper_model, device)
     else:
         sub_path = job.subtitle_file
         if not sub_path:
@@ -114,7 +124,7 @@ def run(
     job.script_lang = ISO3_TO_ISO2.get(used_lang, used_lang) if used_lang else job.source_lang
     if source != "whisper" and (options or {}).get("align_subtitles"):
         if job.script_lang == job.source_lang:
-            _align_script(job)
+            _align_script(job, device)
         else:
             log.warning("Cannot align translated subtitles directly to source-language speech")
             for seg in job.segments:
@@ -134,17 +144,29 @@ def run(
     return None
 
 
-def _align_script(job):
+def _torch_device(device: hardware.Device | None) -> str:
+    """The alignment model is torch: a GPU only CTranslate2 can see is CPU here."""
+    if device is None or device.kind == "cpu":
+        return "cpu"
     try:
         import torch
+
+        if device.kind == "cuda" and not torch.cuda.is_available():
+            log.info("alignment runs on CPU: this PyTorch build has no CUDA")
+            return "cpu"
+    except ImportError:
+        return "cpu"
+    return device.torch
+
+
+def _align_script(job, device: hardware.Device | None = None):
+    try:
         import whisperx
 
-        device = job.transcription_options.get("device", "auto")
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+        target = _torch_device(device)
         with pooled_model(
-            ("align", job.source_lang, device),
-            lambda: whisperx.load_align_model(language_code=job.source_lang, device=device),
+            ("align", job.source_lang, target),
+            lambda: whisperx.load_align_model(language_code=job.source_lang, device=target),
             job.transcription_options.get("keep_models_loaded", False),
         ) as loaded:
             result = whisperx.align(
@@ -152,7 +174,7 @@ def _align_script(job):
                 loaded[0],
                 loaded[1],
                 str(job.vocals or job.source_audio),
-                device,
+                target,
             )
             del loaded
         aligned = result["segments"]
@@ -167,7 +189,8 @@ def _align_script(job):
             seg.issues.append("alignment_unavailable")
 
 
-def _whisper_segments(job: DubJob, whisper_model: str) -> list[Segment]:
+def _whisper_segments(job: DubJob, whisper_model: str,
+                      device: hardware.Device | None = None) -> list[Segment]:
     """Transcribe the extracted dialogue with whisperx; fall back to faster-whisper."""
     audio = job.vocals if job.vocals and job.vocals.exists() else job.source_audio
     if audio is None or not audio.exists():
@@ -176,11 +199,11 @@ def _whisper_segments(job: DubJob, whisper_model: str) -> list[Segment]:
             "the extract stage must run first"
         )
     try:
-        return _whisperx_segments(job, audio, whisper_model)
+        return _whisperx_segments(job, audio, whisper_model, device)
     except ImportError:
         pass
     try:
-        return _faster_whisper_segments(job, audio, whisper_model)
+        return _faster_whisper_segments(job, audio, whisper_model, device)
     except ImportError:
         raise RuntimeError(
             "transcribe.source is 'whisper' but no whisper backend is installed. "
@@ -209,27 +232,28 @@ def _to_segments(raw: list[dict]) -> list[Segment]:
     return segs
 
 
-def _whisperx_segments(job: DubJob, audio: Path, whisper_model: str) -> list[Segment]:
+def _compute_type(device: hardware.Device, options: dict) -> str:
+    chosen = options.get("compute_type", "auto")
+    if chosen != "auto":
+        return chosen
+    return "float16" if device.kind == "cuda" else "int8"
+
+
+def _whisperx_segments(job: DubJob, audio: Path, whisper_model: str,
+                       device: hardware.Device | None = None) -> list[Segment]:
     import whisperx  # lazy — heavy ML dep
 
-    try:
-        import torch
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    except ImportError:
-        device = "cpu"
-    compute_type = "float16" if device == "cuda" else "int8"
+    device = device or hardware.Device()
     options = job.transcription_options
-    if options.get("device", "auto") != "auto":
-        device = options["device"]
-    if options.get("compute_type", "auto") != "auto":
-        compute_type = options["compute_type"]
+    compute_type = _compute_type(device, options)
     keep = options.get("keep_models_loaded", False)
     log.info("whisperx transcribe (%s on %s) -> %s", whisper_model, device, audio.name)
+    # whisperx's ASR model is CTranslate2: a device kind plus an index.
     with pooled_model(
-        ("whisperx", whisper_model, device, compute_type, job.source_lang),
+        ("whisperx", whisper_model, device.torch, compute_type, job.source_lang),
         lambda: whisperx.load_model(
-            whisper_model, device, compute_type=compute_type, language=job.source_lang
+            whisper_model, device.kind, device_index=device.device_index,
+            compute_type=compute_type, language=job.source_lang
         ),
         keep,
     ) as model:
@@ -241,27 +265,30 @@ def _whisperx_segments(job: DubJob, audio: Path, whisper_model: str) -> list[Seg
     # Align against the audio for word-accurate timings — fit_timing and diarize
     # downstream key off these start/end values.
     lang = result.get("language") or job.source_lang
+    align_device = _torch_device(device)
     try:
         with pooled_model(
-            ("align", lang, device),
-            lambda: whisperx.load_align_model(language_code=lang, device=device),
+            ("align", lang, align_device),
+            lambda: whisperx.load_align_model(language_code=lang, device=align_device),
             keep,
         ) as loaded:
-            result = whisperx.align(result["segments"], loaded[0], loaded[1], str(audio), device)
+            result = whisperx.align(result["segments"], loaded[0], loaded[1], str(audio),
+                                    align_device)
             del loaded
     except Exception as exc:  # noqa: BLE001 — no align model for some languages; keep raw timings
         log.warning("whisperx alignment failed (%s) — using raw segment timings", exc)
     return _to_segments(result["segments"])
 
 
-def _faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str) -> list[Segment]:
+def _faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str,
+                             device: hardware.Device | None = None) -> list[Segment]:
     from faster_whisper import WhisperModel  # lazy — heavy ML dep
 
-    log.info("faster-whisper transcribe (%s) -> %s", whisper_model, audio.name)
+    device = device or hardware.Device()
+    log.info("faster-whisper transcribe (%s on %s) -> %s", whisper_model, device, audio.name)
     options = job.transcription_options
-    kwargs = {"device": options.get("device", "auto")}
-    if options.get("compute_type", "auto") != "auto":
-        kwargs["compute_type"] = options["compute_type"]
+    kwargs = {"device": device.kind, "device_index": device.device_index,
+              "compute_type": _compute_type(device, options)}
     with pooled_model(
         ("faster-whisper", whisper_model, str(kwargs)),
         lambda: WhisperModel(whisper_model, **kwargs),

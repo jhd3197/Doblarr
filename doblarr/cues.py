@@ -131,8 +131,8 @@ PAUSE_KINDS = ("padding", "pause", "hesitation", "breath", "response", "unknown"
 # Nonverbal events. `type` is what the evidence says was heard; `unknown` is a
 # real and common answer, because a subtitle tag is not a detector.
 EVENT_TYPES = ("laugh", "sigh", "gasp", "cry", "scream", "cough", "breath",
-               "effort", "applause", "music", "footsteps", "door", "silence",
-               "inaudible", "unknown")
+               "effort", "interjection", "applause", "music", "footsteps", "door",
+               "silence", "inaudible", "unknown")
 # A vocal reaction belongs to a person; a background event belongs to the bed.
 EVENT_CATEGORIES = ("vocal", "background", "unknown")
 # What was decided about covering an event. `unresolved` is the default and is

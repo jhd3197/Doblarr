@@ -377,13 +377,15 @@ def _fold(row: dict, findings: list, entry: dict, current) -> None:
             finding["disposition"] = verdict["disposition"]
 
 
-def write_review(job, root, settings=None):
+def write_review(job, root, settings=None, priorities=None):
     """Write the immutable snapshot of this run for review.
 
     `settings` are the effective settings the run used. They are frozen here
     rather than read back from live config, so opening an old review shows the
     policy that produced it instead of whatever is configured today.
+    `priorities` ({cue id: {"score", "reasons"}}) orders the review list.
     """
+    priorities = priorities or {}
     if not job.report_file:
         return
     ensure_identity(job)
@@ -411,6 +413,8 @@ def write_review(job, root, settings=None):
         for owned in ("lineage", "source", "placement", "audio", "findings"):
             row.pop(owned, None)
         row["cue"] = cue_payload(seg)
+        if seg.cue_id in priorities:
+            row["review_priority"] = priorities[seg.cue_id]
         rows.append(row)
     write_json(
         job.review_file,
