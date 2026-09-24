@@ -763,6 +763,12 @@ def check_takes(scene: Scene, vb, language: str) -> list[dict]:
             entry["reason"] = "no recognizer is configured"
             rows.append(entry)
             continue
+        if _retained(Path(row["clip"])):
+            # The original actor's own reaction, not generated speech: a
+            # target-language recognizer has nothing true to say about it.
+            entry.update(state="retained", reason="the original performance, kept")
+            rows.append(entry)
+            continue
         try:
             heard = (vb.transcribe(Path(row["clip"]), language=language) or {}).get("text", "")
         except Exception as exc:  # noqa: BLE001 - any failure is the same answer
@@ -784,6 +790,16 @@ def check_takes(scene: Scene, vb, language: str) -> list[dict]:
             entry["extra"] = vocalization.describe(extra)
         rows.append(entry)
     return rows
+
+
+def _retained(clip: Path) -> bool:
+    """Whether a take is a kept piece of the original rather than a generation."""
+    receipt = Path(clip).with_suffix(".json")
+    try:
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (payload.get("request") or {}).get("engine") == "retained-original"
 
 
 def take_findings(scene_rows: list[dict], labels: dict | None = None) -> list[str]:
