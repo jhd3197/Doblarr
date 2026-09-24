@@ -709,7 +709,8 @@ def run_job(
         if not dry_run and job.segments:
             ensure_identity(job)
             validate_cues(job.segments, job.cue_lineage)
-            write_review(job, config.work_dir, settings={
+            write_review(job, config.work_dir,
+                         priorities=decisions.review_order(job, decision_options), settings={
                 # What this run actually used, not what is configured now.
                 "levels": {k: level_options.get(k, default) for k, default in (
                     ("mode", "legacy"), ("target_db", -20.0), ("strength", 0.7),
@@ -739,6 +740,7 @@ def run_job(
                     "catalogue": treatments.catalogue(),
                 },
                 "delivery": delivery.describe(delivery.settings(delivery_options)),
+                "review_order": decisions.enabled(decision_options, "review_order"),
             })
     report.finish()
 

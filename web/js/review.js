@@ -2,6 +2,7 @@ import { api } from './api.js';
 import { escapeHtml as esc } from './dom.js';
 import { openCorrection } from './knowledge-correction.js';
 import { FILTERS, createSceneSection, matchesFilter } from './review-scene.js';
+import { ORDERS, defaultOrder, orderRows } from './review-order.js';
 
 export function createReview({ onQueued }) {
   const $ = id => document.getElementById(id);
@@ -35,8 +36,9 @@ export function createReview({ onQueued }) {
 
   function renderList() {
     if (!data) return;
-    const rows = data.segments.filter(s => matchesFilter(s, filter()));
-    list.innerHTML = rows.map(s => `<button type="button" class="review-line" data-line="${s.index}" aria-pressed="${s.index === selected}">
+    const rows = orderRows(data.segments.filter(s => matchesFilter(s, filter())),
+      $('reviewOrder')?.value || 'timeline');
+    list.innerHTML = rows.map(s => `<button type="button" class="review-line" data-line="${s.index}" aria-pressed="${s.index === selected}"${s.review_priority ? ` title="${esc(s.review_priority.reasons.join(', '))}"` : ''}>
       <span class="m">${clock(s.source_start ?? s.start)}</span><span><strong>${esc(s.speaker)}</strong>
       <span class="review-excerpt">${esc(s.text_translated || s.text_src)}</span></span>
       <span class="review-marker">${pending.has(s.index) ? 'Edited' : s.issues.length ? 'Review' : ''}</span></button>`).join('')
@@ -214,6 +216,7 @@ export function createReview({ onQueued }) {
     if (chosen) chosen.value = $('reviewFlagged').checked ? 'flagged' : 'all';
     renderList();
   });
+  $('reviewOrder')?.addEventListener('change', () => renderList());
   $('reviewFilter')?.addEventListener('change', () => {
     $('reviewFlagged').checked = $('reviewFilter').value !== 'all';
     renderList();
@@ -320,6 +323,12 @@ export function createReview({ onQueued }) {
         chooser.innerHTML = FILTERS.map(([value, label]) =>
           `<option value="${value}">${esc(label)}</option>`).join('');
         chooser.value = data.flagged > 0 ? 'flagged' : 'all';
+      }
+      const order = $('reviewOrder');
+      if (order) {
+        order.innerHTML = ORDERS.map(([value, label]) =>
+          `<option value="${value}">${esc(label)}</option>`).join('');
+        order.value = defaultOrder(data);
       }
       voices = [];
       select((data.segments.find(s => s.issues.length) || data.segments[0])?.index);

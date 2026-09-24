@@ -367,3 +367,36 @@ def test_treatments_are_only_ever_suggested():
     from doblarr.cues import Treatment
 
     assert all(s.treatment == Treatment() for s in job.segments)  # nothing applied
+
+
+# -- 8. review order -----------------------------------------------------------
+
+def test_review_order_weighs_open_findings_and_unsure_decisions():
+    from doblarr.stages.quality import apply_findings
+
+    job = job_of("clean", "overflows", "unsure", "accepted")
+    clean, over, unsure, accepted = job.segments
+    apply_findings(over, "fit", "x", [("timing_overflow", "timing", "warning", None, {})])
+    decisions.record(job, [
+        decisions.Verdict("delivery", unsure.cue_id, "shout", 0.7, "model", False),
+        decisions.Verdict("delivery", clean.cue_id, "whisper", 1.0, "rules", True)], "delivery")
+    apply_findings(accepted, "fit", "x", [("timing_overflow", "timing", "warning", None, {})])
+    accepted.findings[0].disposition = "accepted"
+    order = decisions.review_order(job, decisions.settings(None))
+    assert order == {over.cue_id: {"score": 3.0, "reasons": ["timing_overflow"]},
+                     unsure.cue_id: {"score": 2.0, "reasons": ["unsure: delivery"]}}
+    assert decisions.review_order(job, decisions.settings({"review_order": False})) == {}
+
+
+def test_the_review_snapshot_carries_each_lines_priority(tmp_path):
+    import json
+
+    from doblarr.review import write_review
+
+    job = job_of("a", "b")
+    job.report_file = tmp_path / "run.json"
+    write_review(job, tmp_path, priorities={job.segments[1].cue_id: {"score": 3.0,
+                                                                     "reasons": ["x"]}})
+    rows = json.loads(job.review_file.read_text(encoding="utf-8"))["segments"]
+    assert "review_priority" not in rows[0]
+    assert rows[1]["review_priority"] == {"score": 3.0, "reasons": ["x"]}

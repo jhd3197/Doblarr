@@ -755,3 +755,39 @@ def treatments(job, oracle: Oracle, config: dict) -> int:
                                 False, "suggested; review to apply"))
     record(job, verdicts, "treatments", oracle)
     return len(verdicts)
+
+
+# -- 8. review order ----------------------------------------------------------------
+
+_SEVERITY_WEIGHT = {"error": 5.0, "warning": 3.0, "info": 1.0}
+# A decision the model was unsure of needs a person more than one it applied.
+_SUGGESTION_WEIGHT = 2.0
+
+
+def review_order(job, config: dict) -> dict[str, dict]:
+    """How much each line needs a listen, for ordering the review.
+
+    From evidence the run already has: every open finding weighted by
+    severity, and every decision that was only suggested. Deliberately not a
+    model guess: the model cannot hear the take, so it has no business
+    ranking one. Returns {cue id: {"score", "reasons"}} for lines above zero.
+    """
+    if not enabled(config, "review_order"):
+        return {}
+    out: dict[str, dict] = {}
+    for seg in job.segments:
+        score, reasons = 0.0, []
+        for found in seg.findings:
+            if found.disposition != "open":
+                continue
+            if found.code.startswith("decision_"):
+                if (found.evidence or {}).get("applied"):
+                    continue
+                score += _SUGGESTION_WEIGHT
+                reasons.append(f"unsure: {found.code.removeprefix('decision_')}")
+                continue
+            score += _SEVERITY_WEIGHT.get(found.severity, 1.0)
+            reasons.append(found.code)
+        if score > 0 and seg.cue_id:
+            out[seg.cue_id] = {"score": score, "reasons": sorted(set(reasons))}
+    return out
