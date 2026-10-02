@@ -35,7 +35,7 @@ real = [
 # Optional visual analysis (doblarr/vision): shots, faces, tracks, active speaker.
 # OpenCV 5 dropped the cascade classifier the anime detector needs, so stay on 4.
 vision = [
-    "opencv-python-headless>=4.8,<5",
+    "opencv-python-headless>=4.8,<6",
 ]
 # Optional: how each line sounds (doblarr/emotion.py) with emotion2vec. The
 # picture side needs only a model that sees (analysis.emotion_model).
