@@ -13,7 +13,7 @@ RUN npm ci --no-audit --no-fund
 COPY ui ./ui
 RUN npm run build:ui
 
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.9.2-cudnn-runtime-ubuntu22.04
 
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cu128
 
