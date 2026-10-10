@@ -20,7 +20,6 @@ from . import (
     prepass,
     reactions,
     romaji,
-    treatments,
     voice_models,
 )
 from .artifacts import digest, media_work
@@ -37,7 +36,7 @@ from .languages import base_language, display_name, resolve_target_locale
 from .languages import parse as parse_language_tag
 from .models import DubJob
 from .presets import effective_config
-from .review import apply_edits, write_review
+from .review import apply_edits, policy_settings, write_review
 from .services import Services
 from .stages import (
     audition,
@@ -1247,40 +1246,10 @@ def run_job(
             write_review(job, config.work_dir,
                          priorities=decisions.review_order(job, decision_options), settings={
                 # What this run actually used, not what is configured now.
-                "levels": {k: level_options.get(k, default) for k, default in (
-                    ("mode", "legacy"), ("target_db", -20.0), ("strength", 0.7),
-                    ("max_boost_db", 4.0), ("max_cut_db", 8.0))},
-                "verification_policy": config["quality"].get("asr", "off"),
-                "candidate_limit": int(config["dub"].get("candidate_limit", 4)),
-                "clone_cleanup": bool(config["dub"].get("clone_cleanup", False)),
-                # Phrase timing and coverage policy, frozen the same way: an old
-                # review must show the policy that produced it, not today's.
-                "timing": {k: timing_options.get(k, default) for k, default in (
-                    ("mode", "whole"), ("pacing", "speaker"),
-                    ("max_stretch", 1.3), ("min_stretch", 1.0), ("stretcher", "atempo"),
-                    ("protect_pause", 0.45), ("anchor_tolerance", 0.12),
-                    ("repair", True))},
-                "coverage": {k: coverage_options.get(k, default) for k, default in (
-                    ("mode", "off"), ("gain_db", 0.0), ("handle_ms", 80),
-                    ("fade_ms", 25), ("max_seconds", 4.0),
-                    ("leakage_check", False), ("generate", False))},
+                **policy_settings(config),
                 "background": background.kind(job),
-                # Plan 05. Which acoustic space this run put around the lines,
-                # and what the delivered file was graded against. Frozen the
-                # same way: an old review shows the profile that produced it.
-                "treatments": {
-                    **{k: treatment_options.get(k, default) for k, default in (
-                        ("mode", "off"), ("default", "dry"), ("intensity", 1.0))},
-                    "scenes": treatments.settings(treatment_options)["scenes"],
-                    "catalogue": treatments.catalogue(),
-                },
                 "delivery": delivery.describe(delivery.settings(delivery_options)),
                 "review_order": decisions.enabled(decision_options, "review_order"),
-                # Adaptive audio, frozen the same way: which mode, judge and
-                # bed policy produced this run's envelopes.
-                "adaptive": {k: adaptive_options.get(k, default) for k, default in (
-                    ("mode", "off"), ("judge", "retrieval"), ("background_policy", ""),
-                    ("envelope_strength", 1.0), ("max_envelope_db", 6.0))},
             })
     report.finish()
 

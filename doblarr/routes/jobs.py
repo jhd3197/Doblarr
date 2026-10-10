@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .. import delivery as export_delivery
 from .. import preview as scene_preview
-from .. import treatments
 from ..artifacts import read_json
 from ..config import Config
 from ..cues import (
@@ -31,7 +30,7 @@ from ..jobs import JobStore, Worker
 from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language, normalize
 from ..models import DubJob, Segment, Speaker
-from ..review import load_decisions, merge_decisions, record_decision
+from ..review import load_decisions, merge_decisions, policy_settings, record_decision
 from ..voices import cast_key
 from .media_delivery import allowed_path, ranged_response
 
@@ -480,6 +479,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         # availability flags computed from them instead.
         data.pop("media", None)
         reference_clips = data.pop("references", None) or {}
+        current = policy_settings(effective)
         payload = {
             **data,
             "title": job.title,
@@ -487,37 +487,23 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "title_ref": cast_key(path=str(job.input_file)) if job.input_file else "",
             "show_ref": effective["dub"].get("cast_group", ""),
             "previews": previews,
-            "levels": frozen.get("levels") or {
-                k: effective["levels"].get(k) for k in
-                ("mode", "target_db", "strength", "max_boost_db", "max_cut_db")},
-            "verification_policy": frozen.get(
-                "verification_policy", effective["quality"].get("asr", "off")),
-            "candidate_limit": int(frozen.get(
-                "candidate_limit", effective["dub"].get("candidate_limit", 4))),
+            "levels": frozen.get("levels") or current["levels"],
+            "verification_policy": frozen.get("verification_policy",
+                                              current["verification_policy"]),
+            "candidate_limit": int(frozen.get("candidate_limit", current["candidate_limit"])),
             "references": sorted(reference_clips),
             "frozen_settings": bool(frozen),
             # Plan 04. The timing owner and the coverage policy this run used,
             # the event ledger, and what the bed under the dub actually is.
-            "timing": frozen.get("timing") or {
-                k: effective["timing"].get(k) for k in
-                ("mode", "max_stretch", "min_stretch", "protect_pause",
-                 "anchor_tolerance", "repair")},
-            "coverage": frozen.get("coverage") or {
-                k: effective["coverage"].get(k) for k in
-                ("mode", "gain_db", "handle_ms", "fade_ms", "max_seconds",
-                 "leakage_check", "generate")},
+            "timing": frozen.get("timing") or current["timing"],
+            "coverage": frozen.get("coverage") or current["coverage"],
             "background": frozen.get("background") or {},
             "nonverbal": _redact_events(data),
             "coverage_summary": (data.get("metrics") or {}).get("coverage") or {},
             "conversation": (data.get("metrics") or {}).get("conversation") or {},
             # Plan 05. Which acoustic space this run used and what it could
             # render here, plus what the exported file was measured to be.
-            "treatments": frozen.get("treatments") or {
-                **{k: effective["treatments"].get(k)
-                   for k in ("mode", "default", "intensity")},
-                "scenes": treatments.settings(dict(effective["treatments"]))["scenes"],
-                "catalogue": treatments.catalogue(),
-            },
+            "treatments": frozen.get("treatments") or current["treatments"],
             "treatment_summary": (data.get("metrics") or {}).get("treatments") or {},
             "treatment_edits": dict(data.get("treatment_edits") or {}),
             "envelope_edits": dict(data.get("envelope_edits") or {}),

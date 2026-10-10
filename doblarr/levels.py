@@ -148,40 +148,31 @@ def owns_processing(options: dict | None) -> bool:
 # Measurement
 # --------------------------------------------------------------------------
 
-def _frames(path: Path) -> tuple[list[float], float]:
-    """Per-frame peak amplitude and the clip's duration.
+def frame_peaks(path: Path, frame_seconds: float) -> tuple[list[float], int, float, float]:
+    """Per-frame peak amplitude (0..1), sample rate, duration and clipped share.
 
     Channel policy: channels are combined by maximum, never averaged, so a
     performance panned into one channel does not read as half as loud. The
-    policy that ran is recorded on the measurement.
+    clipped share is the fraction of sample frames at full scale.
     """
+    import numpy as np
+
     with wave.open(str(path), "rb") as audio:
         if audio.getsampwidth() != 2:
             raise wave.Error("level analysis requires 16-bit PCM")
         rate = audio.getframerate()
         channels = max(1, audio.getnchannels())
-        block = max(1, int(round(rate * FRAME_SECONDS)))
-        import array
-        import sys
-
-        peaks: list[float] = []
-        pending, pending_count = 0.0, 0
-        while raw := audio.readframes(block * 16):
-            samples = array.array("h", raw)
-            if sys.byteorder != "little":
-                samples.byteswap()
-            for offset in range(0, len(samples), channels):
-                frame = samples[offset:offset + channels]
-                if not frame:
-                    break
-                pending = max(pending, max(abs(v) for v in frame) / 32768)
-                pending_count += 1
-                if pending_count >= block:
-                    peaks.append(pending)
-                    pending, pending_count = 0.0, 0
-        if pending_count:
-            peaks.append(pending)
-        return peaks, audio.getnframes() / rate
+        raw = audio.readframes(audio.getnframes())
+    samples = np.frombuffer(raw, dtype="<i2")
+    samples = samples[:len(samples) - len(samples) % channels].reshape(-1, channels)
+    loudest = np.abs(samples.astype(np.int32)).max(axis=1)
+    block = max(1, int(round(rate * frame_seconds)))
+    whole = len(loudest) // block * block
+    peaks = loudest[:whole].reshape(-1, block).max(axis=1).tolist()
+    if whole < len(loudest):
+        peaks.append(int(loudest[whole:].max()))
+    clipped = float((loudest >= 32760).sum()) / max(1, len(loudest))
+    return [p / 32768 for p in peaks], rate, len(loudest) / rate, clipped
 
 
 def analyze(path: Path, min_separation_db: float = MIN_SEPARATION_DB) -> dict:
@@ -196,7 +187,7 @@ def analyze(path: Path, min_separation_db: float = MIN_SEPARATION_DB) -> dict:
     clip with no such frames has no measurable floor, and `separation` is
     `None` — unknown, which is not the same as zero.
     """
-    peaks, duration = _frames(Path(path))
+    peaks, _rate, duration, _clipped = frame_peaks(Path(path), FRAME_SECONDS)
     if not peaks:
         return {"speech_db": None, "noise_db": None, "peak": 0.0,
                 "active_seconds": 0.0, "duration": duration, "separation": None,

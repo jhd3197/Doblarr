@@ -105,6 +105,31 @@ class AudioCache:
         write_json(self.path, self.data, indent=None)
 
 
+def read_audio(client, cache: AudioCache, leaves: list[dict]) -> None:
+    """Ask Plex for the audio streams of `leaves` and store them in `cache`.
+
+    Files are read in parallel; one Plex cannot read never ends the scan, it is
+    simply asked again next time.
+    """
+    if not leaves:
+        return
+    log.info("plex: reading audio streams of %d new or changed file(s)", len(leaves))
+
+    def probe(leaf):
+        try:
+            meta = client.metadata(leaf["ratingKey"])
+            return leaf, client.audio_languages(meta), audio_tracks(meta)
+        except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
+            log.warning("plex: %s: %s", leaf.get("title"), exc)
+            return leaf, None, None
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for leaf, langs, tracks in pool.map(probe, leaves):
+            if langs is not None:
+                cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs, tracks)
+    cache.save()
+
+
 def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: set[int],
               known_paths: set[str], cache: AudioCache, include_unmatched: bool = False,
               treat_undefined_as: str = "original") -> list[LibraryItem]:
@@ -129,22 +154,7 @@ def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: s
 
     missing = [leaf for _i, _d, _s, leaves in titles for leaf in leaves
                if cache.get(leaf["ratingKey"], leaf.get("updatedAt")) is None]
-    if missing:
-        log.info("plex: reading audio streams of %d new or changed file(s)", len(missing))
-
-        def probe(leaf):
-            try:
-                meta = client.metadata(leaf["ratingKey"])
-                return leaf, client.audio_languages(meta), audio_tracks(meta)
-            except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
-                log.warning("plex: %s: %s", leaf.get("title"), exc)
-                return leaf, None, None
-
-        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            for leaf, langs, tracks in pool.map(probe, missing):
-                if langs is not None:
-                    cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs, tracks)
-        cache.save()
+    read_audio(client, cache, missing)
 
     items = []
     for item, ids, section, leaves in titles:

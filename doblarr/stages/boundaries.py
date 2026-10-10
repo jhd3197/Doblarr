@@ -51,6 +51,7 @@ from ..cues import (
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
 from ..fingerprints import processing as processing_fingerprint
+from ..levels import frame_peaks
 
 log = logging.getLogger("doblarr.boundaries")
 
@@ -103,47 +104,6 @@ def _db(value: float) -> float:
     return 20 * math.log10(max(value, 1e-10))
 
 
-def _read_frames(path: Path):
-    """Per-frame peak amplitude, 0..1, using the loudest channel at each frame.
-
-    Channel policy: a take whose speech sits in one channel must not read as
-    silence because the other channel is empty, so channels are combined by
-    maximum rather than averaged.
-    """
-    with wave.open(str(path), "rb") as audio:
-        if audio.getsampwidth() != 2:
-            raise wave.Error("boundary analysis requires 16-bit PCM")
-        rate = audio.getframerate()
-        channels = max(1, audio.getnchannels())
-        block = max(1, int(round(rate * FRAME_SECONDS)))
-        peaks: list[float] = []
-        clipped = 0
-        total = 0
-        pending = 0.0
-        pending_count = 0
-        while raw := audio.readframes(block * 16):
-            samples = array.array("h", raw)
-            if sys.byteorder != "little":
-                samples.byteswap()
-            total += len(samples)
-            for offset in range(0, len(samples), channels):
-                frame = samples[offset:offset + channels]
-                if not frame:
-                    break
-                loudest = max(abs(v) for v in frame)
-                if loudest >= 32760:
-                    clipped += 1
-                pending = max(pending, loudest / 32768)
-                pending_count += 1
-                if pending_count >= block:
-                    peaks.append(pending)
-                    pending, pending_count = 0.0, 0
-        if pending_count:
-            peaks.append(pending)
-        duration = audio.getnframes() / rate
-    return peaks, rate, duration, clipped / max(1, total)
-
-
 def _active_region(peaks, noise_db: float, threshold_db: float):
     """First/last speech frame and the gaps between them, at this threshold."""
     limit = noise_db + threshold_db
@@ -176,7 +136,7 @@ def _active_region(peaks, noise_db: float, threshold_db: float):
 
 def measure(path: Path, threshold_db: float = 12.0) -> Bounds:
     """Measure one take's noise floor, speech level and speech-active bounds."""
-    peaks, rate, duration, clipped_fraction = _read_frames(Path(path))
+    peaks, rate, duration, clipped_fraction = frame_peaks(Path(path), FRAME_SECONDS)
     if not peaks:
         return Bounds(duration, 0, rate, -100.0, -100.0, None, None, False, [])
     ordered = sorted(peaks)

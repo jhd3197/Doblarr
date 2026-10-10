@@ -28,7 +28,6 @@ import shutil
 import subprocess
 import threading
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import plex_library
@@ -138,22 +137,7 @@ def read_tracks(client, cache: plex_library.AudioCache,
 
     missing = [leaf for _i, leaf, _m, _o in leaves
                if cache.tracks(leaf["ratingKey"], leaf.get("updatedAt")) is None]
-    if missing:
-        log.info("plex: reading audio tracks of %d file(s)", len(missing))
-
-        def probe(leaf):
-            try:
-                meta = client.metadata(leaf["ratingKey"])
-                return leaf, client.audio_languages(meta), plex_library.audio_tracks(meta)
-            except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
-                log.warning("plex: %s: %s", leaf.get("title"), exc)
-                return leaf, None, None
-
-        with ThreadPoolExecutor(max_workers=plex_library.WORKERS) as pool:
-            for leaf, langs, tracks in pool.map(probe, missing):
-                if tracks is not None:
-                    cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs, tracks)
-        cache.save()
+    plex_library.read_audio(client, cache, missing)
 
     rows = []
     for item, leaf, movie, original in leaves:

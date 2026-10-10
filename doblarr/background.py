@@ -182,7 +182,7 @@ def _leakage(job, config: dict, root: Path, vb, budget, cancel, bed_kind: dict):
                 {"window": [span.start, span.end], "error": str(exc)}))
             inputs[seg.index] = key
             continue
-        text = str((heard or {}).get("text") or "").strip()
+        text = str(heard.get("text") or "").strip()
         inputs[seg.index] = key
         if not text:
             continue
