@@ -6,7 +6,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 # then check Settings > Hardware. The image is large (CUDA torch wheels).
 # The web UI (React), built once and copied into the app image.
-FROM node:22-slim AS ui
+FROM node:25-slim AS ui
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
