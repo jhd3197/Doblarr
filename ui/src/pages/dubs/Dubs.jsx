@@ -32,7 +32,7 @@ function JobRow({ job: j, onReview, onStudio, onWatch }) {
 
   async function remove() {
     setBusy(true);
-    try { await api('api/jobs/' + j.id, { method: 'DELETE' }); } catch (err) { setBusy(false); window.alert(err.message); }
+    try { await api('api/jobs/' + j.id, { method: 'DELETE' }); } catch (err) { window.alert(err.message); } finally { setBusy(false); }
     refreshJobs();
   }
 

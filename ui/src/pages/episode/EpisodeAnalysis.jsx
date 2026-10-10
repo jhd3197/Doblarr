@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
+import { catalogQuery } from '../voices/queries.js';
 import { Breakdown } from './Breakdown.jsx';
 
 // One episode broken down line by line: the voices found in it (with how much
@@ -27,7 +28,6 @@ const tracksQuery = path => ({ queryKey: ['analysis', path, 'tracks'],
 const visualQuery = path => ({ queryKey: ['analysis', path, 'visual'],
   queryFn: () => api(`analysis/visual?path=${q(path)}`).catch(() => null) });
 const modelsQuery = { queryKey: ['voice-models'], queryFn: () => api('voice-models').then(r => r.models).catch(() => []) };
-const catalogQuery = { queryKey: ['voice-catalog'], queryFn: () => api('voice-catalog') };
 
 function Pending({ job }) {
   return (
@@ -99,7 +99,7 @@ export function EpisodeAnalysis({ item, target = 'es' }) {
 
   return (
     <Breakdown key={path} data={analysis.data} path={path} target={target} tvdb={tvdb}
-      models={models.data || []} found={tracks.data} visual={visual.data} voices={catalog.data?.voices || []}
+      models={models.data || []} found={tracks.data} visual={visual.data} voices={catalog.data || []}
       status={status} say={setStatus} reload={reload} start={start} busy={busy} />
   );
 }
