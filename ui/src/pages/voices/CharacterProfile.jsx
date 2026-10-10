@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLoaderData } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery, queryClient } from '../../lib/queries.js';
@@ -70,21 +70,42 @@ export async function characterLoader({ params }) {
   return { id };
 }
 
-// One field of the description: uncontrolled, read back on save like a form.
-function Control({ spec: [path, label, kind], profile, locked }) {
-  const value = get(profile, path);
+// One field of the description, shown as the text its control holds.
+function display(kind, value) {
+  if (Array.isArray(kind)) return kind.includes(value) ? value : kind[0];
+  if (kind === 'check') return Boolean(value);
+  if (kind === 'number') return value == null ? '' : String(value);
+  if (kind === 'list') return (value || []).join(', ');
+  if (kind === 'tri') return value === true ? 'yes' : value === false ? 'no' : '';
+  return value || '';
+}
+
+// The stored value for what a control holds.
+function stored(kind, shown) {
+  if (kind === 'number') return shown === '' ? null : Number(shown);
+  if (kind === 'list') return shown.split(',').map(s => s.trim()).filter(Boolean);
+  if (kind === 'tri') return shown === '' ? null : shown === 'yes';
+  return shown;
+}
+
+// Every editable field of a profile: the described groups and the performance range.
+const SPECS = [
+  ...GROUPS.flatMap(([, , list]) => list),
+  ...VARIATIONS.flatMap(v => [[`variations.${v}.desired`, '', 'tri'], [`variations.${v}.auditioned`, '', VERDICTS]]),
+];
+
+function Control({ spec: [path, label, kind], value, onChange, locked, onLock }) {
+  const set = e => onChange(path, kind === 'check' ? e.target.checked : e.target.value);
   let input;
   if (Array.isArray(kind)) {
-    input = <select className="input" data-field={path} defaultValue={kind.includes(value) ? value : kind[0]}>
+    input = <select className="input" data-field={path} value={value} onChange={set}>
       {kind.map(o => <option key={o}>{o}</option>)}</select>;
   } else if (kind === 'check') {
-    input = <input type="checkbox" data-field={path} data-kind="check" defaultChecked={Boolean(value)} />;
+    input = <input type="checkbox" data-field={path} checked={value} onChange={set} />;
   } else if (kind === 'number') {
-    input = <input className="input m" type="number" step="any" data-field={path} data-kind="number" defaultValue={value ?? ''} />;
-  } else if (kind === 'list') {
-    input = <input className="input" data-field={path} data-kind="list" defaultValue={(value || []).join(', ')} />;
+    input = <input className="input m" type="number" step="any" data-field={path} value={value} onChange={set} />;
   } else {
-    input = <input className="input" data-field={path} defaultValue={value || ''} />;
+    input = <input className="input" data-field={path} value={value} onChange={set} />;
   }
   // Two labels side by side, never one inside the other: the field's name must
   // not be read as "… lock", and a click on "lock" must not reach the field.
@@ -92,19 +113,10 @@ function Control({ spec: [path, label, kind], profile, locked }) {
     <div className="review-field">
       <label>{label} {input}</label>
       <label className="hint profile-lock" title="Locked fields are never changed by suggestions">
-        <input type="checkbox" data-lock={path} defaultChecked={locked(path)} /> lock</label>
+        <input type="checkbox" data-lock={path} checked={locked} onChange={e => onLock(path, e.target.checked)} /> lock</label>
     </div>
   );
 }
-
-function read(field) {
-  const kind = field.dataset.kind;
-  if (kind === 'check') return field.checked;
-  if (kind === 'number') return field.value === '' ? null : Number(field.value);
-  if (kind === 'list') return field.value.split(',').map(s => s.trim()).filter(Boolean);
-  return field.value;
-}
-const fieldState = f => JSON.stringify(f.dataset.kind === 'tri' ? f.value : read(f));
 
 // What is known about the voice, as short facts ("Pace: quick"), group by group.
 function Described({ profile, locked }) {
@@ -125,32 +137,30 @@ function Described({ profile, locked }) {
 // The description editor; remounted per profile revision so fields show what was saved.
 function DescriptionEditor({ characterId, data, templates, locked, open, onToggle, say, refresh }) {
   const { profile } = data;
-  const formRef = useRef(null);
-  const original = useRef(new Map());
-  useLayoutEffect(() => {
-    original.current = new Map([...formRef.current.querySelectorAll('[data-field]')].map(f => [f.dataset.field, fieldState(f)]));
-  }, []);
+  const picked = kind => (profile.templates[kind] || []).map(p => p.template).filter(id => templates.some(t => t.id === id));
+  const [initial] = useState(() => ({
+    fields: Object.fromEntries(SPECS.map(([path, , kind]) => [path, display(kind, get(profile, path))])),
+    locks: Object.fromEntries(SPECS.map(([path]) => [path, locked(path)])),
+    templates: { favored: picked('favored'), discouraged: picked('discouraged') },
+  }));
+  const [form, setForm] = useState(initial);
+  const setField = (path, value) => setForm(f => ({ ...f, fields: { ...f.fields, [path]: value } }));
+  const setLock = (path, value) => setForm(f => ({ ...f, locks: { ...f.locks, [path]: value } }));
+  const setTemplates = (kind, ids) => setForm(f => ({ ...f, templates: { ...f.templates, [kind]: ids } }));
 
   async function save() {
-    const root = formRef.current;
     const set = {};
-    root.querySelectorAll('[data-field]').forEach(f => {
-      if (fieldState(f) === original.current.get(f.dataset.field)) return;
-      const value = f.dataset.kind === 'tri' ? f.value : read(f);
-      set[f.dataset.field] = f.dataset.kind === 'tri' ? (value === '' ? null : value === 'yes') : value;
-    });
+    for (const [path, , kind] of SPECS) {
+      if (form.fields[path] !== initial.fields[path]) set[path] = stored(kind, form.fields[path]);
+    }
     ['favored', 'discouraged'].forEach(kind => {
-      const box = root.querySelector(`[data-templates="${kind}"]`);
-      const picked = [...box.selectedOptions].map(o => o.value);
+      const ids = form.templates[kind];
       const before = (profile.templates[kind] || []).map(p => p.template);
-      if (JSON.stringify(picked) !== JSON.stringify(before))
-        set[`templates.${kind}`] = picked.map(id => (profile.templates[kind] || []).find(p => p.template === id) || { template: id });
+      if (JSON.stringify(ids) !== JSON.stringify(before))
+        set[`templates.${kind}`] = ids.map(id => (profile.templates[kind] || []).find(p => p.template === id) || { template: id });
     });
-    const lock = [], unlock = [];
-    root.querySelectorAll('[data-lock]').forEach(b => {
-      if (b.checked && !locked(b.dataset.lock)) lock.push(b.dataset.lock);
-      if (!b.checked && locked(b.dataset.lock)) unlock.push(b.dataset.lock);
-    });
+    const lock = SPECS.map(([path]) => path).filter(path => form.locks[path] && !locked(path));
+    const unlock = SPECS.map(([path]) => path).filter(path => !form.locks[path] && locked(path));
     if (!Object.keys(set).length && !lock.length && !unlock.length) { say('Nothing changed.'); return; }
     try {
       await api(`characters/${encodeURIComponent(characterId)}/profile`, { method: 'PATCH',
@@ -162,27 +172,30 @@ function DescriptionEditor({ characterId, data, templates, locked, open, onToggl
     }
   }
 
-  const triValue = d => (d === true ? 'yes' : d === false ? 'no' : '');
   return (
-    <details className="profile-edit" data-profile-edit open={open} onToggle={e => onToggle(e.currentTarget.open)} ref={formRef}>
+    <details className="profile-edit" data-profile-edit open={open} onToggle={e => onToggle(e.currentTarget.open)}>
       <summary>Edit the description</summary>
       {GROUPS.map(([id, title, list]) => (
         <div key={id}><h4 className="voice-subhead">{title}</h4>
-          <div className="voice-form">{list.map(spec => <Control key={spec[0]} spec={spec} profile={profile} locked={locked} />)}</div></div>
+          <div className="voice-form">{list.map(spec => (
+            <Control key={spec[0]} spec={spec} value={form.fields[spec[0]]} onChange={setField}
+              locked={form.locks[spec[0]]} onLock={setLock} />))}</div></div>
       ))}
       <h4 className="voice-subhead">Performance range</h4>
       <p className="hint">What you want, what the cast engine can be asked for, and what an audition proved, kept apart.</p>
       <div className="table-wrap"><table className="table"><thead><tr><th>State</th><th>Wanted</th><th>Engine can be asked</th><th>Auditioned</th></tr></thead><tbody>
         {VARIATIONS.map(v => {
-          const row = profile.variations[v] || {};
           const support = (data.assignments[0]?.variations || {})[v] || 'unknown';
           return (
             <tr key={v}><td>{v}</td>
-              <td><select className="input" data-field={`variations.${v}.desired`} data-kind="tri" defaultValue={triValue(row.desired)}>
+              <td><select className="input" data-field={`variations.${v}.desired`}
+                value={form.fields[`variations.${v}.desired`]}
+                onChange={e => setField(`variations.${v}.desired`, e.target.value)}>
                 {['', 'yes', 'no'].map(o => <option key={o} value={o}>{o || 'unknown'}</option>)}</select></td>
               <td className="m">{support}</td>
               <td><select className="input" data-field={`variations.${v}.auditioned`}
-                defaultValue={VERDICTS.includes(row.auditioned) ? row.auditioned : VERDICTS[0]}>
+                value={form.fields[`variations.${v}.auditioned`]}
+                onChange={e => setField(`variations.${v}.auditioned`, e.target.value)}>
                 {VERDICTS.map(o => <option key={o}>{o}</option>)}</select></td></tr>
           );
         })}</tbody></table></div>
@@ -191,8 +204,8 @@ function DescriptionEditor({ characterId, data, templates, locked, open, onToggl
       <div className="voice-form">
         {[['favored', 'Favoured'], ['discouraged', 'Avoid']].map(([kind, label]) => (
           <label key={kind} className="review-field">{label}
-            <select className="input" multiple size={5} data-templates={kind}
-              defaultValue={(profile.templates[kind] || []).map(p => p.template).filter(id => templates.some(t => t.id === id))}>
+            <select className="input" multiple size={5} data-templates={kind} value={form.templates[kind]}
+              onChange={e => setTemplates(kind, [...e.target.selectedOptions].map(o => o.value))}>
               {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>
         ))}
       </div>
