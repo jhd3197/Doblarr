@@ -133,7 +133,7 @@ def test_show_voices_count_named_characters_across_episodes(client_factory, tmp_
     client.app.state.services._cache["speech"] = SimpleNamespace(
         voice_profiles=lambda: [], preset_engines=(), preset_voices=lambda e: [])
     client.put("/api/analysis/names", json={"path": str(first), "names": {"SPEAKER_00": "KAITO"}})
-    rows = {r["speaker"]: r for r in client.get("/api/series/79214/voices").json()["speakers"]}
+    rows = {r["speaker"]: r for r in client.get("/api/series/81234/voices").json()["speakers"]}
     assert rows["KAITO"]["share"] == 0.8 and "SPEAKER_00" not in rows
 
 

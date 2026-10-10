@@ -233,7 +233,7 @@ def main():
     save_script(job, work / "effective")
     vb = VoiceboxClient("http://127.0.0.1:17493", timeout=args.timeout)
     retained = retain_reactions(job, work) if args.retain_reactions else set()
-    # How a name or a short line should be *said* ("Ginko" -> "Guinko" in
+    # How a name or a short line should be *said* ("Sora" -> "Zora" in
     # Spanish). Captions keep the written form.
     pronunciations = dict(Config.load()["dub"].get("pronunciations", {}) or {})
 

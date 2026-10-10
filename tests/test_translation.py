@@ -97,8 +97,8 @@ def test_translation_direction_survives_batch_and_timing_rewrite(setup_driver):
     driver, _ = setup_driver([reply("Hola"), reply("Hola")])
     translator = build_translator("prompture", "local/test", direction={
         "locale": "es-419", "adaptation": "faithful", "direction": "Quiet anime dialogue",
-        "character_notes": {"GINKO": "Calm and concise"}})
-    translator.translate_batch([{"text": "Hello", "speaker": "GINKO"}], "en", "es")
+        "character_notes": {"SORA": "Calm and concise"}})
+    translator.translate_batch([{"text": "Hello", "speaker": "SORA"}], "en", "es")
     translator.shorten("Hola", "es", 10)
     for prompt, _ in driver.calls:
         assert "Neutral Latin American Spanish" in prompt

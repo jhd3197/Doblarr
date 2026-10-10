@@ -45,7 +45,7 @@ const REVIEW = {
   },
   segments: [
     {
-      index: 0, start: 192.1, end: 194.7, speaker: 'Ginko', text_src: 'Someone is coming.',
+      index: 0, start: 192.1, end: 194.7, speaker: 'Sora', text_src: 'Someone is coming.',
       text_translated: 'Alguien viene hacia nosotros.', has_audio: true,
       issues: ['text_mismatch'],
       cue: {
@@ -69,7 +69,7 @@ const REVIEW = {
       },
     },
     {
-      index: 1, start: 197, end: 199.4, speaker: 'Shinra', text_src: 'I see.',
+      index: 1, start: 197, end: 199.4, speaker: 'Tomoe', text_src: 'I see.',
       text_translated: 'Entiendo.', has_audio: true, issues: [],
       cue: { cue_id: 'cue-bbb', source: { spans: [] }, preparation: { decision: 'kept' },
         intent: {}, level: {}, measurement: {}, verification: {},

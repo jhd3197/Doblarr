@@ -9,7 +9,7 @@ Three things it refuses to do, because each one manufactures evidence:
 
 - It never compares display wording. The comparison is against the *effective
   spoken text* the engine was actually given, so an approved pronunciation
-  spelling ("Ginko" spoken as "Guinko") is a match, not an error.
+  spelling ("Sora" spoken as "Zora") is a match, not an error.
 - It never lets a whole-line similarity score decide. A single flipped negation
   scores ~0.95 and changes the meaning of the line, so critical terms are
   compared term by term and reported on their own.

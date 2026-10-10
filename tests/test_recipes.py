@@ -37,7 +37,7 @@ def test_recipe_export_contains_only_portable_settings(client):
                 "dub.line_edits": {"0": {"text": "copyright dialogue"}},
                 "dub.narrator_voice": "private-profile",
                 "dub.dry_run": False,
-                "dub.pronunciations": {"Ginko": "Gheen-ko"},
+                "dub.pronunciations": {"Sora": "Soh-rah"},
                 "target_lang": "es",
             },
         },
@@ -52,7 +52,7 @@ def test_recipe_export_contains_only_portable_settings(client):
         "dub.dry_run",
     ]:
         assert excluded not in text
-    assert recipe["settings"]["dub.pronunciations"] == {"Ginko": "Gheen-ko"}
+    assert recipe["settings"]["dub.pronunciations"] == {"Sora": "Soh-rah"}
     assert recipe["target_language"] == "es"
     DubRecipe.model_validate(recipe)
     assert client.get("/api/recipes/schema").status_code == 200

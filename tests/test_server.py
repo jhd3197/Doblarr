@@ -89,7 +89,7 @@ def test_config_get_redacts_secrets(client):
 def test_job_crud_and_404(client):
     assert client.post("/api/jobs", headers=HEADERS, json={}).status_code == 422
     r = client.post("/api/jobs", headers=HEADERS,
-                    json={"title": "Godzilla", "source_lang": "ja"})
+                    json={"title": "Tidewater", "source_lang": "ja"})
     assert r.status_code == 200
     job = r.json()["job"]
     assert job["target_lang"] == "en"  # first target language is the default

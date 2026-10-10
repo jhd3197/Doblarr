@@ -890,7 +890,7 @@ _HTML = """<!doctype html>
       <div id="issues" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
                               gap:12px"></div>
       <textarea class="note" id="sceneNote" placeholder="What did you hear? e.g. B rushes
-Ginko's second line, A breathes more naturally"></textarea>
+Sora's second line, A breathes more naturally"></textarea>
     </div>
 
     <div class="panel" style="padding:18px 20px 20px;display:flex;flex-direction:column;

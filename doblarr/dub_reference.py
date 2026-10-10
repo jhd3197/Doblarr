@@ -1,7 +1,7 @@
 """What a published dub of this episode says, line by line.
 
 A file that carries a professional dub in the target language is the best
-evidence there is of how that audience hears the show: the names, the jutsu,
+evidence there is of how that audience hears the show: the names, the invented terms,
 the catchphrases, and how long each line runs when a person performs it. This
 transcribes that track (faster-whisper, word timestamps) and gives each script
 line the words spoken during it, mapped through the track's verified alignment

@@ -14,8 +14,8 @@ def setup_job(tmp_path):
     output.parent.mkdir()
     output.write_bytes(b"first rendered dub")
     job = DubJob(source, "en", "es", output_file=output)
-    job.segments = [Segment(0, 1, 2, "Hello", text_translated="Hola", speaker="GINKO")]
-    job.speakers = {"GINKO": Speaker("GINKO", voicebox_profile_id="voice-1")}
+    job.segments = [Segment(0, 1, 2, "Hello", text_translated="Hola", speaker="SORA")]
+    job.speakers = {"SORA": Speaker("SORA", voicebox_profile_id="voice-1")}
     config = Config.load(tmp_path / "config.yaml").with_overrides({
         "dub.version_name": "LATAM quiet", "translate.locale": "es-419",
         "connect.plex_token": "private-token", "translate.endpoint": "private-endpoint"})
@@ -28,7 +28,7 @@ def test_script_and_dub_versions_are_independent_and_old_media_survives(tmp_path
     saved = job.output_file
     working_output.write_bytes(b"different voice take")
     job.output_file = working_output
-    job.speakers["GINKO"].voicebox_profile_id = "voice-2"
+    job.speakers["SORA"].voicebox_profile_id = "voice-2"
     second = preserve_version(job, config)
     assert second["translation_id"] == first["translation_id"]
     assert second["version_id"] != first["version_id"]

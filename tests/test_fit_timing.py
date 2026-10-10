@@ -235,7 +235,7 @@ def test_fit_fingerprint_follows_the_pacing_settings(tmp_path, monkeypatch):
 
 def test_a_rejected_rewrite_is_never_regenerated(tmp_path, monkeypatch):
     job = _job(tmp_path, [(0.0, 2.0)])
-    job.segments[0].text_translated = "Tell Ginko we leave at five tonight."
+    job.segments[0].text_translated = "Tell Sora we leave at five tonight."
     _spy(monkeypatch, {"line_0000": 3.0})
     regenerated, seen = [], []
 
@@ -247,4 +247,4 @@ def test_a_rejected_rewrite_is_never_regenerated(tmp_path, monkeypatch):
                    regenerate=lambda seg: regenerated.append(seg.index),
                    options={"pacing": "speaker"}, accept_rewrite=accept)
     assert seen and regenerated == []
-    assert job.segments[0].text_translated == "Tell Ginko we leave at five tonight."
+    assert job.segments[0].text_translated == "Tell Sora we leave at five tonight."

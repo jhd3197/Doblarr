@@ -2,14 +2,14 @@ import { test, expect } from '@playwright/test';
 import { mockEpisodeLookup, mockLibraryItems } from './title-mocks.js';
 
 const LIBRARY = { items: [{
-  title: 'Mushi-Shi', tvdb_id: 79214, media_type: 'show', source: 'Sonarr · Shows',
-  original: 'ja', path: '/shows/Mushi-Shi', audio_langs: ['en', 'ja'], label: 'available',
+  title: 'Harbor Lights', tvdb_id: 81234, media_type: 'show', source: 'Sonarr · Shows',
+  original: 'ja', path: '/shows/Harbor Lights', audio_langs: ['en', 'ja'], label: 'available',
 }], target_languages: ['en', 'es'], counts: {} };
 
-const episodesFor = target => ({ title: 'Mushi-Shi', total: 3, downloaded: 1, dubbed: target === 'en' ? 1 : 0,
+const episodesFor = target => ({ title: 'Harbor Lights', total: 3, downloaded: 1, dubbed: target === 'en' ? 1 : 0,
   episodes: [
     { id: 1, season: 1, episode: 1, title: 'The Green Seat', downloaded: true,
-      path: '/shows/Mushi-Shi/first.mkv', audio_langs: ['en', 'ja'], status: target === 'en' ? 'audio-present' : 'needs-dub', dubbed: target === 'en' },
+      path: '/shows/Harbor Lights/first.mkv', audio_langs: ['en', 'ja'], status: target === 'en' ? 'audio-present' : 'needs-dub', dubbed: target === 'en' },
     { id: 2, season: 1, episode: 2, title: 'The Light of the Eyelid', downloaded: false, audio_langs: [], status: 'not-downloaded' },
     { id: 3, season: 2, episode: 1, title: 'Banquet', downloaded: false, audio_langs: [], status: 'not-downloaded' },
   ] });
@@ -17,11 +17,11 @@ const episodesFor = target => ({ title: 'Mushi-Shi', total: 3, downloaded: 1, du
 async function showPage(page) {
   await page.route('**/api/library', route => route.fulfill({ json: LIBRARY }));
   await mockLibraryItems(page, LIBRARY);
-  await page.route('**/api/series/79214/episodes?*', route =>
+  await page.route('**/api/series/81234/episodes?*', route =>
     route.fulfill({ json: episodesFor(new URL(route.request().url()).searchParams.get('target_lang')) }));
-  await mockEpisodeLookup(page, 79214, episodesFor);
+  await mockEpisodeLookup(page, 81234, episodesFor);
   await page.route('**/api/voices', route => route.fulfill({ json: { voices: [{ id: 'warm', name: 'Warm storyteller' }] } }));
-  await page.goto('/title/tvdb-79214');
+  await page.goto('/title/tvdb-81234');
   await expect(page.getByRole('heading', { name: 'Episodes', exact: true })).toBeVisible();
 }
 
@@ -37,7 +37,7 @@ test('show page lists seasons and queues explicit episodes in the chosen languag
   await page.getByText('Season 2', { exact: false }).click();
   await expect(page.getByText('Banquet', { exact: true })).toBeVisible();
   let request;
-  await page.route('**/api/series/79214/queue', route => {
+  await page.route('**/api/series/81234/queue', route => {
     request = route.request().postDataJSON();
     return route.fulfill({ json: { queued: [{ episode_id: 1, job_id: 'test' }], skipped: [] } });
   });
@@ -102,9 +102,9 @@ test('episode voice catalog ranks character traits, previews and saves the selec
   await page.getByRole('button',{name:'Save cast',exact:true}).click();
   const response=await saved;
   expect(response.request().postDataJSON().cast[0]).toMatchObject({voice:'elder-profile',engine:'qwen_custom_voice'});
-  expect(response.request().postDataJSON().path).toBe('/shows/Mushi-Shi/first.mkv');
-  await page.getByRole('button',{name:'← Mushi-Shi',exact:true}).click();
-  await expect(page).toHaveURL(/\/title\/tvdb-79214\/episodes$/);
+  expect(response.request().postDataJSON().path).toBe('/shows/Harbor Lights/first.mkv');
+  await page.getByRole('button',{name:'← Harbor Lights',exact:true}).click();
+  await expect(page).toHaveURL(/\/title\/tvdb-81234\/episodes$/);
   await expect(page.getByRole('heading',{name:'Episodes',exact:true})).toBeVisible();
 });
 
@@ -113,7 +113,7 @@ test('show and episode tabs survive refresh and browser history', async ({ page 
   await showPage(page);
   for (const tab of ['plan', 'voices', 'jobs', 'meta', 'episodes']) {
     await page.locator(`[data-dtab="${tab}"]`).click();
-    await expect(page).toHaveURL(new RegExp(`/title/tvdb-79214/${tab}$`));
+    await expect(page).toHaveURL(new RegExp(`/title/tvdb-81234/${tab}$`));
     await page.reload();
     await expect(page.locator(`[data-dtab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
   }
@@ -132,8 +132,8 @@ test('show and episode tabs survive refresh and browser history', async ({ page 
   await page.goForward();
   await expect(page).toHaveURL(/episode\/1\/meta$/);
   await expect(page.locator('[data-dtab="meta"]')).toHaveAttribute('aria-current', 'page');
-  await page.goto('/title/tvdb-79214/episode/1');
+  await page.goto('/title/tvdb-81234/episode/1');
   await expect(page).toHaveURL(/episode\/1\/analysis$/);
-  await page.goto('/title/tvdb-79214/episode/invalid/jobs');
+  await page.goto('/title/tvdb-81234/episode/invalid/jobs');
   await expect(page.locator('#titleRoot')).toContainText('URL is invalid');
 });

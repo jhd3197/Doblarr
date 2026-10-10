@@ -62,7 +62,7 @@ def test_a_voice_has_an_identity_and_says_where_it_is_cast(client_factory):
     key = "profile:saved"
     named = client.put("/api/voice-catalog/traits", json={
         "key": key, "gender": "male", "age": "young", "display_name": "Kaito",
-        "character": "KAITO", "show": "tvdb-79214", "show_name": "Harbor Lights"})
+        "character": "KAITO", "show": "tvdb-81234", "show_name": "Harbor Lights"})
     assert named.status_code == 200
     db = client.app.state.jobs.db
     db.save_cast("e02", "S01E02", [{"speaker_id": "KAITO", "label": "Kaito",
@@ -70,7 +70,7 @@ def test_a_voice_has_an_identity_and_says_where_it_is_cast(client_factory):
     db.save_cast("e01", "S01E01", [{"speaker_id": "MINA", "voice": "other"}])
     detail = client.get("/api/voice-catalog/voice", params={"key": key}).json()
     assert detail["voice"]["display_name"] == "Kaito"
-    assert detail["voice"]["show"] == "tvdb-79214" and detail["voice"]["gender"] == "male"
+    assert detail["voice"]["show"] == "tvdb-81234" and detail["voice"]["gender"] == "male"
     assert [u["title_key"] for u in detail["used_in"]] == ["e02"]
     assert detail["used_in"][0]["pitch_semitones"] == 2
     assert client.get("/api/voice-catalog/voice", params={"key": "profile:nope"}).status_code == 404

@@ -1,6 +1,6 @@
 """Bring earlier listening experiments into the studio without redoing any of them.
 
-The Mushishi comparison and voice audition were built by scripts before the
+The Harbor Lights comparison and voice audition were built by scripts before the
 studio existed. Their files stay exactly where they are; importing reads their
 manifests, shows what is there and what is missing, and asks a person to map
 each legacy identity (a speaker label, a source track) to a studio identity

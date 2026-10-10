@@ -60,7 +60,7 @@ def test_asr_flags_mismatch_without_modifying_script(tmp_path):
 
 
 def test_pronunciation_uses_whole_terms_once():
-    assert quality.spoken_form("Ginko met Ginkos.", {"Ginko": "Gheen-ko"}) == "Gheen-ko met Ginkos."
+    assert quality.spoken_form("Sora met Soras.", {"Sora": "Soh-rah"}) == "Soh-rah met Soras."
     assert quality.spoken_form("A B", {"A": "B", "B": "C"}) == "B C"
 
 

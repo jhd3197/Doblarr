@@ -57,7 +57,7 @@ def test_worked_example_has_no_ambiguous_times(tmp_path):
     job = example_script(tmp_path)
     payload = [cue_payload(s) for s in job.segments]
 
-    assert {s.speaker for s in job.segments} == {"GINKO", "NUI"}
+    assert {s.speaker for s in job.segments} == {"SORA", "MINA"}
     first, second, moved, montage = job.segments
 
     # Overlapping source intervals belong to different speakers.

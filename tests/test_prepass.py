@@ -95,17 +95,17 @@ def test_without_a_synopsis_the_context_key_is_unchanged():
 
 
 def test_term_candidates_never_enter_the_glossary_and_the_glossary_wins(tmp_path):
-    terms = [{"source": "Ginko", "target": "Guinko", "kind": "name", "confidence": 0.9},
-             {"source": "Mushi", "target": "Mushi", "kind": "term", "confidence": 0.7},
-             {"source": "Tanyuu", "target": "Tanyu", "kind": "name", "confidence": 0.8}]
+    terms = [{"source": "Sora", "target": "Zora", "kind": "name", "confidence": 0.9},
+             {"source": "Tidekin", "target": "Tidekin", "kind": "term", "confidence": 0.7},
+             {"source": "Tomoyuu", "target": "Tomoyu", "kind": "name", "confidence": 0.8}]
     job, fake = _job(), FakeTranslator(terms=terms)
-    glossary = {"Ginko": "Ginko", "Mushi": "Mushi"}
+    glossary = {"Sora": "Sora", "Tidekin": "Tidekin"}
     prepass.apply(job, prepass.analyze(job, fake, "summary_terms", work_dir=tmp_path), glossary)
     status = {t["source"]: t["status"] for t in job.metrics["prepass"]["terms"]}
-    assert status == {"Ginko": "superseded", "Mushi": "confirmed", "Tanyuu": "candidate"}
-    assert glossary == {"Ginko": "Ginko", "Mushi": "Mushi"}  # untouched
+    assert status == {"Sora": "superseded", "Tidekin": "confirmed", "Tomoyuu": "candidate"}
+    assert glossary == {"Sora": "Sora", "Tidekin": "Tidekin"}  # untouched
     translate.run(job, fake, glossary=glossary)
-    assert "Tanyuu" not in fake.batches[0]["glossary"]
+    assert "Tomoyuu" not in fake.batches[0]["glossary"]
 
 
 def test_summary_mode_asks_for_no_terms(tmp_path):

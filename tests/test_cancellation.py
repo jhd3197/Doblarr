@@ -59,7 +59,7 @@ def test_worker_marks_job_cancelled_not_failed(tmp_path, monkeypatch):
     store = JobStore(tmp_path / "jobs.db")
     bus = EventBus()
     worker = Worker(store, Config.load("nope.yaml"), events=bus)
-    job = store.add(title="Godzilla", source="t", source_lang="ja", target_lang="en")
+    job = store.add(title="Tidewater", source="t", source_lang="ja", target_lang="en")
     worker.start()
     try:
         _wait_for(lambda: worker.current_id == job.id)
@@ -86,7 +86,7 @@ def test_delete_running_job_cancels_via_route(tmp_path, monkeypatch):
     p.write_text(yaml.safe_dump({}), encoding="utf-8")
     app = create_app(Config.load(p))
     with TestClient(app) as c:  # lifespan starts the worker
-        jid = c.post("/api/jobs", json={"title": "Godzilla"}).json()["job"]["id"]
+        jid = c.post("/api/jobs", json={"title": "Tidewater"}).json()["job"]["id"]
         _wait_for(lambda: app.state.worker.current_id == jid)
         r = c.delete(f"/api/jobs/{jid}")
         assert r.json() == {"ok": True, "cancelled": True}

@@ -7,7 +7,7 @@
         --clips  work/media/<id>/es-MX/clips/<name>-<hash>/es
 
     # render the comparison
-    python scripts/quality_compare.py run --id 2026-09-22-mushi \
+    python scripts/quality_compare.py run --id 2026-09-22-tidekin \
         --source work/input/<episode>.mkv \
         --script work/media/<id>/es-MX/<name>.script.json \
         --clips  work/media/<id>/es-MX/clips/<name>-<hash>/es \

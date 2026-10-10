@@ -21,7 +21,7 @@ READER = "dialogue-clues/1"
 ANSWER_GAP = 6.0         # seconds: a reply later than this is not an answer
 LOOKAHEAD = 2            # lines after a call where the answer may come
 
-# Sibling honorifics are also written as their own word: "Naruto Nii-chan".
+# Sibling honorifics are also written as their own word: "Kaito Nii-chan".
 _SIBLING = r"(?:[Oo]?[Nn](?:ii|ee)(?:-?(?:chan|san|sama))?)"
 HONORIFIC = (r"(?:-(?:sama|sensei|san|kun|chan|dono|senpai|sempai|nee|nii|neechan|niichan"
              rf"|nee-chan|nii-chan)|\s{_SIBLING}\b)")

@@ -60,31 +60,31 @@ def test_a_clone_entry_needs_no_preset_and_ignores_a_stale_one(tmp_path):
     job = DubJob(tmp_path / "episode.mkv", "en", "es")
     job.segments = [Segment(1, 0, 2, "Hello"), Segment(2, 3, 5, "Hi")]
     cast = apply_cast(job, {"speakers": {
-        "GINKO": {"clone": True, "voice": "old-preset", "segments": [1]},
-        "SHINRA": {"voice": "preset-b", "segments": [2]}}})
-    assert job.speakers["GINKO"].voicebox_profile_id is None
-    assert "voice" not in cast["GINKO"]
-    assert job.speakers["SHINRA"].voicebox_profile_id == "preset-b"
+        "SORA": {"clone": True, "voice": "old-preset", "segments": [1]},
+        "TOMOE": {"voice": "preset-b", "segments": [2]}}})
+    assert job.speakers["SORA"].voicebox_profile_id is None
+    assert "voice" not in cast["SORA"]
+    assert job.speakers["TOMOE"].voicebox_profile_id == "preset-b"
 
 
 def test_a_pinned_reference_line_is_the_one_cloned(tmp_path, monkeypatch):
-    job = _job(tmp_path, [(10, 0, 8, "Long clean line", "SHINRA"),
-                          (95, 20, 26, "The line chosen by ear", "SHINRA")])
+    job = _job(tmp_path, [(10, 0, 8, "Long clean line", "TOMOE"),
+                          (95, 20, 26, "The line chosen by ear", "TOMOE")])
     _fake_extract(monkeypatch, {})
     vb = Voicebox()
-    cast = {"SHINRA": {"clone": True, "reference_line": 95}}
-    synthesize._resolve_profile(job, job.speakers["SHINRA"], vb, tmp_path / "clips",
+    cast = {"TOMOE": {"clone": True, "reference_line": 95}}
+    synthesize._resolve_profile(job, job.speakers["TOMOE"], vb, tmp_path / "clips",
                                 "clone", cast, None)
-    assert job.metrics["clone_references"]["SHINRA"]["cue"] == job.segments[1].cue_id
+    assert job.metrics["clone_references"]["TOMOE"]["cue"] == job.segments[1].cue_id
 
 
 def test_a_pinned_line_that_does_not_exist_is_refused(tmp_path, monkeypatch):
-    job = _job(tmp_path, [(10, 0, 8, "Line", "SHINRA")])
+    job = _job(tmp_path, [(10, 0, 8, "Line", "TOMOE")])
     _fake_extract(monkeypatch, {})
     with pytest.raises(ValueError):
-        synthesize._resolve_profile(job, job.speakers["SHINRA"], Voicebox(),
+        synthesize._resolve_profile(job, job.speakers["TOMOE"], Voicebox(),
                                     tmp_path / "clips", "clone",
-                                    {"SHINRA": {"reference_line": 7}}, None)
+                                    {"TOMOE": {"reference_line": 7}}, None)
 
 
 def test_a_character_with_only_short_lines_has_no_clone_reference(tmp_path, monkeypatch):
@@ -135,14 +135,14 @@ def test_a_rejected_sample_does_not_leave_an_empty_profile(tmp_path):
 
 def test_a_low_reference_prefers_the_lowest_clean_reading(tmp_path, monkeypatch):
     pytest.importorskip("numpy")
-    job = _job(tmp_path, [(1, 0, 8, "Eight seconds, high", "SHINRA"),
-                          (2, 20, 26, "Six seconds, low", "SHINRA"),
-                          (3, 40, 45, "Five seconds, middle", "SHINRA")])
+    job = _job(tmp_path, [(1, 0, 8, "Eight seconds, high", "TOMOE"),
+                          (2, 20, 26, "Six seconds, low", "TOMOE"),
+                          (3, 40, 45, "Five seconds, middle", "TOMOE")])
     _fake_extract(monkeypatch, {0: 280, 20: 180, 40: 230})
     vb = Voicebox()
-    synthesize._resolve_profile(job, job.speakers["SHINRA"], vb, tmp_path / "clips",
-                                "clone", {"SHINRA": {"reference": "low"}}, None)
-    assert job.metrics["clone_references"]["SHINRA"]["cue"] == job.segments[1].cue_id
+    synthesize._resolve_profile(job, job.speakers["TOMOE"], vb, tmp_path / "clips",
+                                "clone", {"TOMOE": {"reference": "low"}}, None)
+    assert job.metrics["clone_references"]["TOMOE"]["cue"] == job.segments[1].cue_id
 
 
 def test_reference_pitch_reads_a_tone(tmp_path):
@@ -156,12 +156,12 @@ def test_a_voiceless_cast_entry_keeps_its_clone_settings():
 
     own = [{"speaker_id": "KAITO", "voice": "", "reference": "low"},
            {"speaker_id": "SHIORI", "voice": "", "fallback_voice": "preset-f"},
-           {"speaker_id": "GINKO", "voice": ""}]
-    inherited = [{"speaker_id": "GINKO", "voice": "series-ginko"}]
+           {"speaker_id": "SORA", "voice": ""}]
+    inherited = [{"speaker_id": "SORA", "voice": "series-sora"}]
     merged = {e["speaker_id"]: e for e in merge_cast(own, inherited)}
     assert merged["KAITO"]["reference"] == "low"
     assert merged["SHIORI"]["fallback_voice"] == "preset-f"
-    assert merged["GINKO"]["voice"] == "series-ginko"   # a blank entry does not unset it
+    assert merged["SORA"]["voice"] == "series-sora"   # a blank entry does not unset it
     assert merge_cast(None, []) == []
 
 

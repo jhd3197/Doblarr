@@ -4,13 +4,13 @@
     # generate every audition take (resumable; rerun to continue)
     python scripts/voice_audition.py generate \
         --from work/benchmarks/quality-final/<comparison>/manifest.json \
-        --id 2026-09-22-mushishi-voices \
+        --id 2026-09-22-harbor-lights-voices \
         --cast work/episode-es-latam-v1/cast.json \
         --vocals work/stems-ja/<episode>.ja.vocals.wav \
         --background work/stems-ja/<episode>.ja.background.wav
 
     # render the blind listening page once the takes exist
-    python scripts/voice_audition.py render --id 2026-09-22-mushishi-voices ...
+    python scripts/voice_audition.py render --id 2026-09-22-harbor-lights-voices ...
 
 A comparison (`quality_compare.py`) changes processing and keeps the takes.
 This changes the *performance*: each approach below generates its own takes
@@ -629,7 +629,7 @@ def main(argv=None) -> int:
                                        help="comma-separated scene indexes; default all")
     gen.add_argument("--recast", metavar="BASE:SPEAKER:MODE", action="append",
                      help="redo one character's lines in BASE with a `low` or "
-                          "`blend` reference, e.g. clone:SHINRA:low; repeatable")
+                          "`blend` reference, e.g. clone:TOMOE:low; repeatable")
     args = parser.parse_args(argv)
     if args.command == "render":
         return render(args)

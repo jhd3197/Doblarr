@@ -18,7 +18,7 @@ def client_factory(client_factory):
 
 def add(
     client,
-    phrase="Ginko",
+    phrase="Sora",
     kind="pronunciation",
     locale="es-MX",
     scope="personal",
@@ -48,7 +48,7 @@ def test_entry_crud_revisions_and_validation(client_factory):
 
     updated = client.put(
         f"/api/knowledge/entries/{entry['id']}",
-        json={"phrase": "Ginko", "kind": "pronunciation", "locale": "es-MX", "usage": "anime only"},
+        json={"phrase": "Sora", "kind": "pronunciation", "locale": "es-MX", "usage": "anime only"},
     )
     assert updated.json()["entry"]["revision"] == 2
     detail = client.get(f"/api/knowledge/entries/{entry['id']}").json()
@@ -100,7 +100,7 @@ def test_realization_crud(client_factory):
         json={
             "entry_id": entry["id"],
             "engine": "chatterbox",
-            "replacement": "Guin-ko",
+            "replacement": "Zo-ra",
             "evidence": "listened 2026-09",
         },
     ).json()["realization"]
@@ -198,27 +198,27 @@ def test_preview_resolves_draft_against_sample(client_factory):
     response = client.post(
         "/api/knowledge/preview",
         json={
-            "entry": {"phrase": "Ginko", "kind": "pronunciation", "locale": "es-MX"},
-            "realization": {"entry_id": "x", "engine": "chatterbox", "replacement": "Guin-ko"},
-            "text": "Ginko camina con Mushi.",
+            "entry": {"phrase": "Sora", "kind": "pronunciation", "locale": "es-MX"},
+            "realization": {"entry_id": "x", "engine": "chatterbox", "replacement": "Zo-ra"},
+            "text": "Sora camina con Tidekin.",
             "engine": "chatterbox",
         },
     )
-    assert response.json()["after"] == "Guin-ko camina con Mushi."
+    assert response.json()["after"] == "Zo-ra camina con Tidekin."
     none = client.post(
         "/api/knowledge/preview",
         json={
             "entry": {"phrase": "Ausente", "kind": "pronunciation", "locale": "es-MX"},
-            "text": "Ginko camina.",
+            "text": "Sora camina.",
             "engine": "chatterbox",
         },
     )
-    assert none.json()["after"] == "Ginko camina."
+    assert none.json()["after"] == "Sora camina."
 
 
 def test_preview_surfaces_conflicts_with_existing_rules(client_factory):
     client = client_factory()
-    existing = add(client, phrase="Ginko", status="reviewed")
+    existing = add(client, phrase="Sora", status="reviewed")
     client.post(
         "/api/knowledge/realizations",
         json={"entry_id": existing["id"], "engine": "chatterbox", "replacement": "OLD"},
@@ -226,9 +226,9 @@ def test_preview_surfaces_conflicts_with_existing_rules(client_factory):
     response = client.post(
         "/api/knowledge/preview",
         json={
-            "entry": {"phrase": "Ginko", "kind": "pronunciation", "locale": "es-MX"},
+            "entry": {"phrase": "Sora", "kind": "pronunciation", "locale": "es-MX"},
             "realization": {"entry_id": "x", "engine": "chatterbox", "replacement": "NEW"},
-            "text": "Ginko camina.",
+            "text": "Sora camina.",
             "engine": "chatterbox",
         },
     )
@@ -244,8 +244,8 @@ def test_review_rerender_inherits_or_updates_knowledge(client_factory, tmp_path)
     original_snapshot = {"version": 1, "entries": {}, "realizations": {}}
     store.update(queued.id, knowledge_snapshot=original_snapshot)
     db = store.db
-    entry = save_entry(db, Entry(phrase="Ginko", locale="es"))
-    save_realization(db, Realization(entry_id=entry.id, replacement="Guin-ko", engine="chatterbox"))
+    entry = save_entry(db, Entry(phrase="Sora", locale="es"))
+    save_realization(db, Realization(entry_id=entry.id, replacement="Zo-ra", engine="chatterbox"))
     edit = {"edits": [{"index": 0, "text": "buenas", "regenerate": True}]}
     inherited = client.post(f"/api/jobs/{queued.id}/review", json=edit).json()["job"]
     assert inherited["knowledge_snapshot"] == original_snapshot

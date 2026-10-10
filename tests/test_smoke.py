@@ -85,7 +85,7 @@ def test_job_store_persist():
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "jobs.db"
         s = JobStore(p)
-        j = s.add(title="Godzilla", source="Radarr", source_lang="ja", target_lang="en")
+        j = s.add(title="Tidewater", source="Radarr", source_lang="ja", target_lang="en")
         assert s.counts()["queued"] == 1
         assert s.next_queued().id == j.id
         s.update(j.id, status="done", progress=100)

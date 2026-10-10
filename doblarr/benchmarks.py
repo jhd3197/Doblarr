@@ -150,12 +150,12 @@ def example_script(root: Path) -> DubJob:
     """
     job = DubJob(input_file=Path(root) / "example.mkv", source_lang="ja", target_lang="es",
                  subtitle_file=Path(root) / "example.srt")
-    job.speakers = {"GINKO": Speaker("GINKO"), "NUI": Speaker("NUI")}
+    job.speakers = {"SORA": Speaker("SORA"), "MINA": Speaker("MINA")}
     job.segments = [
-        Segment(0, 1.0, 3.0, "Primera", speaker="GINKO", text_translated="Primera"),
-        Segment(1, 2.5, 4.2, "Segunda", speaker="NUI", text_translated="Segunda"),
-        Segment(2, 6.0, 8.0, "Tercera", speaker="GINKO", text_translated="Tercera"),
-        Segment(3, 0.0, 1.7, "Cuarta", speaker="NUI", text_translated="Cuarta"),
+        Segment(0, 1.0, 3.0, "Primera", speaker="SORA", text_translated="Primera"),
+        Segment(1, 2.5, 4.2, "Segunda", speaker="MINA", text_translated="Segunda"),
+        Segment(2, 6.0, 8.0, "Tercera", speaker="SORA", text_translated="Tercera"),
+        Segment(3, 0.0, 1.7, "Cuarta", speaker="MINA", text_translated="Cuarta"),
     ]
     ensure_identity(job)
 
