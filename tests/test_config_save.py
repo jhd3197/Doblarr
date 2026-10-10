@@ -53,3 +53,23 @@ def test_settings_route_answers_422_for_an_invalid_value(tmp_path, monkeypatch):
     r = client.post("/api/config", json={"dub": {"dry_run": "sometimes"}})
     assert r.status_code == 422
     assert "dub.dry_run" in r.json()["error"]
+
+
+def test_moving_a_service_url_drops_its_saved_key(tmp_path):
+    from doblarr.config import SECRET_SENTINEL
+
+    cfg = Config.load(tmp_path / "config.yaml")
+    cfg.apply_and_save({"connect": {"sonarr_url": "http://s:8989", "sonarr_api_key": "KEY1",
+                                    "plex_url": "http://p:32400", "plex_token": "TOKEN"}})
+    cfg.apply_and_save({"connect": {"sonarr_url": "http://elsewhere:8989",
+                                    "sonarr_api_key": SECRET_SENTINEL,
+                                    "plex_url": "http://p:32400", "plex_token": SECRET_SENTINEL}})
+    assert cfg["connect"]["sonarr_api_key"] == ""
+    assert cfg["connect"]["plex_token"] == "TOKEN"          # its URL did not change
+
+
+def test_a_new_key_sent_with_a_new_url_is_kept(tmp_path):
+    cfg = Config.load(tmp_path / "config.yaml")
+    cfg.apply_and_save({"connect": {"radarr_url": "http://r:7878", "radarr_api_key": "OLD"}})
+    cfg.apply_and_save({"connect": {"radarr_url": "http://new:7878", "radarr_api_key": "NEW"}})
+    assert cfg["connect"]["radarr_api_key"] == "NEW"

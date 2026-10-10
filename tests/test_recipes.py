@@ -27,13 +27,14 @@ def exported(client):
 
 
 def test_recipe_export_contains_only_portable_settings(client):
+    refused = client.put("/api/plan", json={"path": "/private/movie.mkv", "plan": {
+        "paths.output_dir": "/private/output", "translate.endpoint": "https://secret.example"}})
+    assert refused.status_code == 422          # a title plan cannot redirect files or servers
     client.put(
         "/api/plan",
         json={
             "path": "/private/movie.mkv",
             "plan": {
-                "paths.output_dir": "/private/output",
-                "translate.endpoint": "https://secret.example",
                 "dub.line_edits": {"0": {"text": "copyright dialogue"}},
                 "dub.narrator_voice": "private-profile",
                 "dub.dry_run": False,

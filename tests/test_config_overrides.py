@@ -3,6 +3,7 @@
 import pytest
 
 from doblarr.config import Config
+from doblarr.errors import InvalidSettings
 from doblarr.jobs import JobStore, Worker
 
 
@@ -40,3 +41,16 @@ def test_worker_applies_title_settings(tmp_path, monkeypatch, overrides):
         assert config["general"]["target_languages"] == ["en", "es"]
     finally:
         store.close()
+
+
+def test_a_job_cannot_redirect_files_or_servers(tmp_path):
+    store = JobStore(tmp_path / "jobs.db")
+    for overrides in ({"paths.output_dir": "/anywhere"},
+                      {"connect": {"sonarr_url": "http://elsewhere"}},
+                      {"translate.endpoint": "http://elsewhere"}):
+        with pytest.raises(InvalidSettings):
+            store.add(title="Harbor Lights", source="t", source_lang="ja", target_lang="es",
+                      overrides=overrides)
+    job = store.add(title="Harbor Lights", source="t", source_lang="ja", target_lang="es",
+                    overrides={"dub.voice_mode": "preset", "translate": {"model": "m"}})
+    assert job.overrides == {"dub.voice_mode": "preset", "translate": {"model": "m"}}

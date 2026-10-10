@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .clients.plex import PlexError
+from .config import check_overrides
 from .errors import ConfigError, JobCancelled
 from .knowledge import snapshot as knowledge_snapshot
 from .languages import resolve_target_locale
@@ -121,6 +122,7 @@ class JobStore:
     def add(self, **kwargs) -> Job:
         from .knowledge.store import with_pack_releases
 
+        check_overrides(kwargs.get("overrides") or {})
         releases = (kwargs.get("overrides") or {}).get("knowledge.pack_releases", {})
         if releases:
             kwargs["knowledge_snapshot"] = with_pack_releases(

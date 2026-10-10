@@ -25,9 +25,8 @@ def test_config_save_and_redact():
         # secret is redacted on read-out
         assert cfg.as_dict(redact_secrets=True)["connect"]["radarr_api_key"] == SECRET_SENTINEL
         # a sentinel value on save must NOT overwrite the real key
-        cfg.apply_and_save({"connect": {"radarr_api_key": SECRET_SENTINEL, "radarr_url": "http://y:7878"}})
+        cfg.apply_and_save({"connect": {"radarr_api_key": SECRET_SENTINEL, "radarr_url": "http://x:7878"}})
         assert cfg["connect"]["radarr_api_key"] == "SECRET123"
-        assert cfg["connect"]["radarr_url"] == "http://y:7878"
         # persisted to disk
         assert Config.load(p)["connect"]["radarr_api_key"] == "SECRET123"
 

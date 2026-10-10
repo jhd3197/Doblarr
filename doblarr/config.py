@@ -36,6 +36,16 @@ SECRET_KEYS = {
 }
 SECRET_SENTINEL = "••••••"
 
+# Each service URL and the secret Doblarr sends to it. A changed URL without a
+# new secret drops the stored one, so editing a URL cannot send a saved key to
+# another server.
+URL_SECRETS = {
+    "connect.radarr_url": "connect.radarr_api_key",
+    "connect.sonarr_url": "connect.sonarr_api_key",
+    "connect.plex_url": "connect.plex_token",
+    "voicestudio.base_url": "voicestudio.api_key",
+}
+
 # Environment variables that override the matching YAML value when set
 # (documented in config.example.yaml).
 ENV_OVERRIDES = {
@@ -120,6 +130,61 @@ def _strip_sentinels(d: Any) -> Any:
     return out
 
 
+# Settings a queued job or a saved title plan may never change: where files are
+# written, which servers are called, and the secrets sent to them. Only Settings
+# can. Checked where overrides arrive (JobStore.add, the title plan route).
+PROTECTED_OVERRIDES = ("paths.", "connect.", "web.", "speech.",
+                       "research.opensubtitles_api_key", "research.tmdb_api_key",
+                       "voicebox.base_url", "voicestudio.base_url", "voicestudio.api_key",
+                       "translate.endpoint", "knowledge.pack_distribution_url")
+
+
+def _protected(dotted: str) -> bool:
+    return any(dotted.startswith(rule) if rule.endswith(".") else dotted == rule
+               for rule in PROTECTED_OVERRIDES)
+
+
+def check_overrides(overrides: dict) -> None:
+    """Raise InvalidSettings when an override touches a protected setting."""
+    keys = []
+    for key, value in overrides.items():
+        # {"paths": {"output_dir": …}} is the nested form of "paths.output_dir".
+        if isinstance(value, dict) and "." not in key:
+            keys += [f"{key}.{inner}" for inner in value]
+        else:
+            keys.append(key)
+    refused = sorted(k for k in keys if _protected(k))
+    if refused:
+        raise InvalidSettings(f"a job cannot override {', '.join(refused)}; "
+                              "change it in Settings")
+
+
+def _dotted(data: dict, dotted: str) -> Any:
+    node: Any = data
+    for part in dotted.split("."):
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node
+
+
+def _drop_secrets_for_moved_urls(current: dict, changes: dict) -> dict:
+    """Blank the secret of every service whose URL `changes` moves elsewhere."""
+    out = copy.deepcopy(changes)
+    for url_key, secret_key in URL_SECRETS.items():
+        new_url = _dotted(changes, url_key)
+        if new_url is None or new_url == _dotted(current, url_key):
+            continue
+        if _dotted(changes, secret_key) not in (None, SECRET_SENTINEL):
+            continue        # a new secret arrived with the new URL
+        section, key = secret_key.split(".")
+        out.setdefault(section, {})[key] = ""
+        if _dotted(current, secret_key):
+            log.warning("config: %s changed, so the saved %s was cleared; enter it again",
+                        url_key, secret_key)
+    return out
+
+
 def load_user_data(path: str | Path) -> dict:
     p = Path(path)
     if p.exists():
@@ -188,8 +253,8 @@ class Config:
         Raises InvalidSettings, and saves nothing, when the change adds a value
         the schema rejects. Problems the file already had do not block a save.
         """
-        clean = _strip_sentinels(changes)
         with self._save_lock:
+            clean = _strip_sentinels(_drop_secrets_for_moved_urls(self._data, changes))
             merged_user = _deep_merge(load_user_data(self._path), clean)
             data = _deep_merge(DEFAULTS, merged_user)
             _apply_env_overrides(data)
