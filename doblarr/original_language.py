@@ -21,10 +21,10 @@ serves every episode, and a person can always set it.
 
 from __future__ import annotations
 
-import json
 import re
-import subprocess
 from pathlib import Path
+
+from .ffmpeg import probe_json
 
 DETECTOR = "original-audio/1"
 MARGIN = 2.0
@@ -40,13 +40,11 @@ def probe(path: Path) -> list[dict]:
     """Audio and subtitle streams: {index, kind, lang, title, default, original, forced}."""
     from .discovery import ISO3_TO_ISO2
 
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries",
-         "stream=index,codec_type:stream_tags=language,title:stream_disposition=default,"
-         "original,forced,comment,hearing_impaired,visual_impaired", "-of", "json", str(path)],
-        capture_output=True, check=False, text=True, timeout=120).stdout
+    found = probe_json(path, "-show_entries",
+                       "stream=index,codec_type:stream_tags=language,title:stream_disposition="
+                       "default,original,forced,comment,hearing_impaired,visual_impaired")
     streams = []
-    for row in json.loads(out or "{}").get("streams") or []:
+    for row in found.get("streams") or []:
         kind = row.get("codec_type")
         if kind not in ("audio", "subtitle"):
             continue

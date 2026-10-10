@@ -108,3 +108,21 @@ def test_ffmpeg_killed_on_cancel(tmp_path):
                     "-ac", "1", "-ar", "8000", str(tmp_path / "out.wav")],
                    cancel=cancel)
     assert time.time() - start < 10  # the 60s render was actually stopped
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+def test_a_stalled_ffmpeg_run_times_out(tmp_path):
+    from doblarr.ffmpeg import FFmpegError, run_ffmpeg
+    start = time.time()
+    with pytest.raises(FFmpegError, match="no result within"):
+        run_ffmpeg(["-y", "-re", "-f", "lavfi", "-i", "anullsrc", "-t", "60",
+                    "-ac", "1", "-ar", "8000", str(tmp_path / "out.wav")], timeout=0.5)
+    assert time.time() - start < 10
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+def test_decoded_audio_comes_back_as_bytes():
+    from doblarr.ffmpeg import run_ffmpeg_bytes
+    pcm = run_ffmpeg_bytes(["-v", "error", "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono",
+                            "-t", "0.5", "-f", "s16le", "-"])
+    assert isinstance(pcm, bytes) and len(pcm) == 8000   # 0.5 s of 16-bit mono at 8 kHz

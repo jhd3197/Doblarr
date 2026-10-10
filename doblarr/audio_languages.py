@@ -345,7 +345,7 @@ def rewrite(path: Path, edits: list[dict]) -> str:
             args += ["--edit", f"track:a{e['pos'] + 1}", "--set", f"language={e['tag']}"]
             args += ["--set", f"name={e['title']}"] if e["title"] else ["--delete", "name"]
         done = subprocess.run(args, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", check=False)
+                              errors="replace", check=False, timeout=300)
         if done.returncode not in (0, 1):   # 1 is mkvpropedit's "finished with warnings"
             tail = (done.stdout or done.stderr).strip().splitlines()
             raise RuntimeError(tail[-1] if tail else "mkvpropedit failed")

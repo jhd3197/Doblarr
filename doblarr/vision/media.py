@@ -15,23 +15,21 @@ analysis uses (both come from the same file, decoded from its start).
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
+from ..ffmpeg import probe_json
+
 SCENE_THRESHOLD = 0.32
 MIN_SHOT = 0.4          # cuts closer than this are flashes, merged into one shot
 
 
 def probe_video(path: Path) -> dict:
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-         "stream=width,height,avg_frame_rate:format=duration", "-of", "json", str(path)],
-        capture_output=True, check=False, text=True, timeout=60).stdout
-    data = json.loads(out or "{}")
+    data = probe_json(path, "-select_streams", "v:0", "-show_entries",
+                      "stream=width,height,avg_frame_rate:format=duration")
     stream = (data.get("streams") or [{}])[0]
     try:
         num, den = str(stream.get("avg_frame_rate") or "0/1").split("/")

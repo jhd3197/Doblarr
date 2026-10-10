@@ -33,12 +33,12 @@ import json
 import logging
 import os
 import re
-import subprocess
 import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
+from .ffmpeg import FFmpegError, probe_json
 from .fileio import write_json
 from .studio import records
 
@@ -82,14 +82,11 @@ def _read_cache(path: Path | None) -> dict:
 def probe_streams(path: Path) -> tuple[float | None, list[dict]]:
     """Duration and stream layout from ffprobe; (None, []) when it cannot read it."""
     try:
-        out = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries",
-             "format=duration:stream=index,codec_type,codec_name,channels,sample_rate,"
-             "avg_frame_rate,width,height:stream_tags=language,title",
-             "-of", "json", str(path)],
-            capture_output=True, check=False, text=True, timeout=60).stdout
-        data = json.loads(out or "{}")
-    except (OSError, ValueError, subprocess.SubprocessError):
+        data = probe_json(path, "-show_entries",
+                          "format=duration:stream=index,codec_type,codec_name,channels,"
+                          "sample_rate,avg_frame_rate,width,height:stream_tags=language,title")
+    except (OSError, ValueError, FFmpegError) as exc:
+        log.warning("identity: could not probe %s: %s", Path(path).name, exc)
         return None, []
     streams = []
     for row in data.get("streams") or []:

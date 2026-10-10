@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import threading
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -50,6 +49,7 @@ from .. import (
     voice_models,
     voice_tags,
 )
+from ..ffmpeg import run_ffmpeg, run_ffmpeg_bytes
 from ..fileio import read_json
 from ..studio import records
 
@@ -57,6 +57,10 @@ MAX_CLIP = 30.0
 CLIP_CACHE = 400          # watched clips kept on disk, newest first
 VIDEO_HEIGHT = 540        # clips are for recognising who talks, not for archiving
 FRAME_CACHE = 5000        # stills of lines kept on disk (a few KB each)
+# Seconds a request may wait on ffmpeg before it answers with an error; a
+# stalled network share must not hold a server thread forever.
+CLIP_TIMEOUT = 120.0
+FRAME_TIMEOUT = 30.0
 
 
 class NamesIn(BaseModel):
@@ -1091,18 +1095,16 @@ def build_router(config, store) -> APIRouter:
             temp = cache / f"{key}.{threading.get_ident()}.part"
             mapping = ["-map", "0:v:0"] + (["-map", f"0:{audio}"] if audio is not None
                                            else ["-map", "0:a:0?"])
-            result = subprocess.run(
-                ["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(source),
-                 "-t", f"{end - start:.3f}", *mapping, "-sn",
-                 "-vf", f"scale=-2:'min({VIDEO_HEIGHT},ih)'", "-c:v", "libx264",
-                 "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
-                 "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart",
-                 "-f", "mp4", str(temp)], capture_output=True, check=False)
-            if result.returncode or not temp.is_file():
+            try:
+                run_ffmpeg(["-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(source),
+                            "-t", f"{end - start:.3f}", *mapping, "-sn",
+                            "-vf", f"scale=-2:'min({VIDEO_HEIGHT},ih)'", "-c:v", "libx264",
+                            "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
+                            "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart",
+                            "-f", "mp4", str(temp)], timeout=CLIP_TIMEOUT)
+                temp.replace(clip)
+            finally:
                 temp.unlink(missing_ok=True)
-                raise HTTPException(500, "could not cut the clip: "
-                                    + result.stderr.decode(errors="replace")[-300:])
-            temp.replace(clip)
             with cutting:
                 kept = sorted(cache.glob("*.mp4"), key=lambda f: f.stat().st_mtime,
                               reverse=True)
@@ -1124,16 +1126,14 @@ def build_router(config, store) -> APIRouter:
         if not still.is_file():
             cache.mkdir(parents=True, exist_ok=True)
             temp = cache / f"{key}.{threading.get_ident()}.part"
-            result = subprocess.run(
-                ["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(source),
-                 "-frames:v", "1", "-an", "-sn", "-vf", f"scale=-2:{height}", "-q:v", "4",
-                 "-f", "image2", "-c:v", "mjpeg", str(temp)], capture_output=True,
-                check=False)
-            if result.returncode or not temp.is_file():
+            try:
+                run_ffmpeg(["-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(source),
+                            "-frames:v", "1", "-an", "-sn", "-vf", f"scale=-2:{height}",
+                            "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", str(temp)],
+                           timeout=FRAME_TIMEOUT)
+                temp.replace(still)
+            finally:
                 temp.unlink(missing_ok=True)
-                raise HTTPException(500, "could not read the frame: "
-                                    + result.stderr.decode(errors="replace")[-300:])
-            temp.replace(still)
             with cutting:
                 kept = sorted(cache.glob("*.jpg"), key=lambda f: f.stat().st_mtime,
                               reverse=True)
@@ -1157,10 +1157,10 @@ def build_router(config, store) -> APIRouter:
             source.resolve().relative_to(Path(config.work_dir).resolve())
         except ValueError as exc:
             raise HTTPException(403, "outside the work folder") from exc
-        audio = subprocess.run(
-            ["ffmpeg", "-v", "error", "-ss", f"{max(0.0, start - 0.15):.3f}",
+        audio = run_ffmpeg_bytes(
+            ["-v", "error", "-ss", f"{max(0.0, start - 0.15):.3f}",
              "-t", f"{end - start + 0.3:.3f}", "-i", str(source), "-ac", "1", "-ar", "24000",
-             "-f", "wav", "-"], capture_output=True, check=False).stdout
+             "-f", "wav", "-"], timeout=FRAME_TIMEOUT)
         if not audio:
             raise HTTPException(500, f"could not cut {stem}")
         return Response(content=audio, media_type="audio/wav")

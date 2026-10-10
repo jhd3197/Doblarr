@@ -719,13 +719,14 @@ def run_job(
         the names and terms its translators chose, for a person to adopt."""
         from . import dub_text, speakers
         from .artifacts import read_json
+        from .ffmpeg import FFmpegError
         from .stages.common import work_stem
 
         if not job.segments or not job.input_file or not job.input_file.is_file():
             return
         try:
             tracks = speakers.audio_tracks(job.input_file)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, FFmpegError) as exc:
             analysis.record(db, job, "dub_text", "failed", error=str(exc))
             return
         track = dub_text.pick_track(tracks, job.target_locale or job.target_lang,

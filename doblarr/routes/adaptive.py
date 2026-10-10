@@ -28,6 +28,9 @@ from ..studio import records
 from .media_delivery import allowed_path
 
 # What each kind of change costs (docs/adaptive-audio.md, plan §8).
+# Seconds a request waits on ffmpeg for one line's audio.
+REQUEST_TIMEOUT = 30.0
+
 IMPACT = {
     "template": ("processing", "Reprocesses the existing take and remixes. No speech."),
     "strength": ("processing", "Reprocesses the existing take and remixes. No speech."),
@@ -216,12 +219,11 @@ def build_router(config, store, bus) -> APIRouter:
             config, media.get("dubbed_track") or "")
         if source is None or not source.is_file():
             raise HTTPException(404, f"no {kind} audio for this run")
-        import subprocess
+        from ..ffmpeg import run_ffmpeg_bytes
 
-        clip = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{max(0.0, seg.start - 0.2):.3f}",
-                               "-t", f"{seg.duration + 0.4:.3f}", "-i", str(source), "-ac", "2",
-                               "-ar", "48000", "-f", "wav", "-"], capture_output=True,
-                              check=False).stdout
+        clip = run_ffmpeg_bytes(["-v", "error", "-ss", f"{max(0.0, seg.start - 0.2):.3f}",
+                                 "-t", f"{seg.duration + 0.4:.3f}", "-i", str(source), "-ac", "2",
+                                 "-ar", "48000", "-f", "wav", "-"], timeout=REQUEST_TIMEOUT)
         if not clip:
             raise HTTPException(500, "could not cut the line")
         return Response(content=clip, media_type="audio/wav",
