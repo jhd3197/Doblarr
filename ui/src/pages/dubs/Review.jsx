@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { createScenePlayer } from '../../lib/scene-player.js';
 import { defaultOrder, FILTERS, matchesFilter, ORDERS, orderRows } from '../../lib/review.js';
@@ -63,7 +63,7 @@ function deliveryNote(report) {
   return ` · ${state}${loudness}. Technical checks are not a listening pass.`;
 }
 
-export const Review = forwardRef(function Review({ jobId, embedded = false, onClose, onSelect, onQueued }, ref) {
+export function Review({ jobId, embedded = false, onClose, onSelect, onQueued, ref }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
@@ -96,10 +96,13 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
   const [updatedKnowledge, setUpdatedKnowledge] = useState(false);
   const listRef = useRef(null);
   const sceneDataRef = useRef(null);
-  sceneDataRef.current = scene.data;
   const callbacks = useRef({ onSelect, onQueued });
-  callbacks.current = { onSelect, onQueued };
   const rerender = () => setTick(t => t + 1);
+  // Refreshed after each render, never during one.
+  useLayoutEffect(() => {
+    sceneDataRef.current = scene.data;
+    callbacks.current = { onSelect, onQueued };
+  });
 
   useEffect(() => {
     const scenes = sceneEpoch;
@@ -337,7 +340,7 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
       </div>
     </>
   );
-});
+}
 
 // The review as a modal, opened from Dubs. Focus returns to the button that
 // opened it (or that job's Review button) when it closes.
