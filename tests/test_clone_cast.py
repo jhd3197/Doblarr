@@ -7,8 +7,8 @@ import wave
 import pytest
 
 from doblarr.models import DubJob, Segment, Speaker
+from doblarr.recovery import apply_cast
 from doblarr.stages import synthesize
-from scripts.finish_episode import apply_cast
 
 RATE = 16000
 

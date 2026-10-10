@@ -160,8 +160,8 @@ def test_discovery_maps_delegate_to_the_catalog():
 def test_mux_lang3_comes_from_the_catalog():
     from doblarr.stages import mux
 
-    assert mux._LANG3["fr"] == "fre"
-    assert mux._LANG3["zh"] == "chi"
+    assert mux.LANG3["fr"] == "fre"
+    assert mux.LANG3["zh"] == "chi"
 
 
 def test_resolver_prefers_explicit_matching_locale():
