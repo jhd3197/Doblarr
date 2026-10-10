@@ -459,3 +459,15 @@ class Worker(threading.Thread):
             self._cancel_evt = None
         if refresh_plex:
             self._plex_refresh(job)
+        self._tidy()
+
+    def _tidy(self) -> None:
+        """Trim regenerable work output; never a reason for a job to fail."""
+        from . import retention
+
+        try:
+            referenced = {Path(j["report_file"]) for j in self.store.list()
+                          if j.get("report_file")}
+            retention.tidy(self.config, referenced)
+        except Exception:  # noqa: BLE001 - housekeeping only
+            log.exception("could not tidy the work folder")

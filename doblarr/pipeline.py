@@ -19,6 +19,7 @@ from . import (
     phrases,
     prepass,
     reactions,
+    retention,
     romaji,
     voice_models,
 )
@@ -978,6 +979,17 @@ def run_job(
         if not dry_run and job.segments:
             save_script(job, effective_work)
 
+    def _mux():
+        if not dry_run and job.input_file.is_file():
+            # The muxed copy is about the size of the input, and a saved version
+            # copies it again; a full disk takes the database down with it.
+            copies = 2 if config["dub"].get("preserve_versions", True) else 1
+            retention.require_space(out, int(job.input_file.stat().st_size * 1.1 * copies))
+        return mux.run(job, out, track_name_template=config["dub"]["track_name_template"],
+                       dry_run=dry_run, cancel=cancel_event, force=force, duration=teaser_s,
+                       audio_codec=config["dub"].get("output_codec", "aac"),
+                       bitrate=config["dub"].get("output_bitrate", "192k"))
+
     def _background():
         background.check(job, coverage_options, cancel=cancel_event, work_dir=work,
                          vb=vb, budget=budget, dry_run=dry_run)
@@ -1118,20 +1130,7 @@ def run_job(
                                      work_dir=work, dry_run=dry_run),
         ),
         ("background", _background),
-        (
-            "mux",
-            lambda: mux.run(
-                job,
-                out,
-                track_name_template=config["dub"]["track_name_template"],
-                dry_run=dry_run,
-                cancel=cancel_event,
-                force=force,
-                duration=teaser_s,
-                audio_codec=config["dub"].get("output_codec", "aac"),
-                bitrate=config["dub"].get("output_bitrate", "192k"),
-            ),
-        ),
+        ("mux", _mux),
         ("validate", _validate),
     ]
     if job.kind == "analyze":
@@ -1224,7 +1223,10 @@ def run_job(
                 # is what "this render is a deliverable" means here, and a
                 # truncated or mis-tagged track has not earned that word.
                 if job.delivery.get("publishable", True):
-                    preserve_version(job, config, cast=cast_holder["cast"])
+                    saved = Path(preserve_version(job, config, cast=cast_holder["cast"])["output"])
+                    retention.trim_versions(saved.parent.parent,
+                                            int(config["dub"].get("versions_kept", 0)),
+                                            current=saved.parent)
                 else:
                     log.warning(
                         "not saving a version: export validation failed (%s). The "
@@ -1241,16 +1243,22 @@ def run_job(
         job.metrics["request_budget"] = budget.snapshot()
         oracle.close()
         if not dry_run and job.segments:
-            ensure_identity(job)
-            validate_cues(job.segments, job.cue_lineage)
-            write_review(job, config.work_dir,
-                         priorities=decisions.review_order(job, decision_options), settings={
-                # What this run actually used, not what is configured now.
-                **policy_settings(config),
-                "background": background.kind(job),
-                "delivery": delivery.describe(delivery.settings(delivery_options)),
-                "review_order": decisions.enabled(decision_options, "review_order"),
-            })
+            # Best effort: a review that cannot be written must neither replace
+            # the error a failed stage is raising nor fail a finished dub.
+            try:
+                ensure_identity(job)
+                validate_cues(job.segments, job.cue_lineage)
+                write_review(job, config.work_dir,
+                             priorities=decisions.review_order(job, decision_options), settings={
+                    # What this run actually used, not what is configured now.
+                    **policy_settings(config),
+                    "background": background.kind(job),
+                    "delivery": delivery.describe(delivery.settings(delivery_options)),
+                    "review_order": decisions.enabled(decision_options, "review_order"),
+                })
+            except Exception as exc:  # noqa: BLE001 - see above
+                log.exception("could not write the review for %s", job.input_file)
+                job.metrics["review_error"] = str(exc)
     report.finish()
 
     log.info("=== done -> %s ===", job.output_file)

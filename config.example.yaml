@@ -417,3 +417,10 @@ adaptive:
   max_envelope_db: 6.0          # no envelope moves a line further than this
   background_policy: ""         # e.g. background/strong-ducking; "" keeps sidechain ducking
   max_bed_attenuation_db: 18.0
+
+# How much regenerable output the work folder keeps; older items are deleted
+# after each job. Saved dub versions are kept unless dub.versions_kept > 0.
+retention:
+  watch_copies: 10              # browser copies of finished dubs
+  edit_sets: 5                  # work folders per title for re-rendered edits (14+ days old)
+  reports: 500                  # run reports; one a listed job points to is never removed

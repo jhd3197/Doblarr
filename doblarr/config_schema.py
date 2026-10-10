@@ -204,6 +204,7 @@ class SeparateModel(_Section):
 class DubModel(_Section):
     version_name: str = ""
     preserve_versions: bool = True
+    versions_kept: int = 0           # saved versions kept per output; 0 keeps all
     narrator_voice: str = ""
     narrator_delivery: str = ""
     preset: str = "custom"
@@ -521,6 +522,14 @@ class AdaptiveModel(_Section):
     lines: dict[str, dict] = {}       # per-cue manual selection {template, strength, locked}
 
 
+class RetentionModel(_Section):
+    """How much regenerable output the work folder keeps (doblarr.retention)."""
+
+    watch_copies: int = 10      # browser copies of finished dubs, newest kept
+    edit_sets: int = 5          # work folders per title for re-rendered edit sets
+    reports: int = 500          # run reports, never one a listed job points to
+
+
 class ResearchModel(_Section):
     """Title research from public sources (docs/title-research.md).
 
@@ -569,6 +578,7 @@ class ConfigModel(_Section):
     vision: VisionModel = VisionModel()
     adaptive: AdaptiveModel = AdaptiveModel()
     research: ResearchModel = ResearchModel()
+    retention: RetentionModel = RetentionModel()
 
 
 def config_problems(data: dict) -> list[str]:

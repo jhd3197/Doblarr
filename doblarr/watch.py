@@ -23,6 +23,7 @@ import logging
 import os
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from .ffmpeg import FFmpegError, probe_json, run_ffmpeg, run_ffmpeg_bytes
@@ -41,7 +42,10 @@ TRANSCODE_TIMEOUT = 3 * 3600.0
 
 _lock = threading.Lock()
 _building: dict[str, threading.Thread] = {}
-_failed: dict[str, str] = {}
+_failed: dict[str, tuple[str, float]] = {}
+# A failed watch copy is retried after this long, so a share that was briefly
+# offline does not leave the page failed until someone clicks retry.
+RETRY_AFTER = 600.0
 
 
 def folder(cache: Path, output: Path) -> Path:
@@ -168,8 +172,10 @@ def ensure(output: Path, where: Path, original: int | None, ours: int | None) ->
             (where / "loudness.json").is_file() or original is None or ours is None):
         return "ready"
     with _lock:
-        if key in _failed:
-            return "failed: " + _failed[key]
+        failed = _failed.get(key)
+        if failed is not None and time.monotonic() - failed[1] < RETRY_AFTER:
+            return "failed: " + failed[0]
+        _failed.pop(key, None)
         thread = _building.get(key)
         if thread is None or not thread.is_alive():
             def work():
@@ -178,7 +184,7 @@ def ensure(output: Path, where: Path, original: int | None, ours: int | None) ->
                 except Exception as exc:  # noqa: BLE001 - reported to the page, retried on demand
                     log.warning("watch: %s", exc)
                     with _lock:
-                        _failed[key] = str(exc)
+                        _failed[key] = (str(exc), time.monotonic())
             thread = threading.Thread(target=work, name="watch-copy", daemon=True)
             _building[key] = thread
             thread.start()
