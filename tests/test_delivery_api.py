@@ -1,4 +1,4 @@
-"""The Plan 05 user path: treatments and export findings through the real API.
+"""The treatment and export user path: treatments and export findings through the real API.
 
 Everything here goes through the HTTP surface a browser uses, because a record
 nobody can reach is not a feature. The point of most of these is separation:

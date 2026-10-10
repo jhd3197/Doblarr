@@ -301,7 +301,7 @@ def test_a_version_one_snapshot_still_loads_and_gains_no_invented_evidence(tmp_p
         assert seg.measurement.state == "unknown" and seg.measurement.speech_db is None
         assert seg.level.outcome == "unknown"
         assert seg.verification.state == "unknown" and not seg.verification.checked
-        # Plan 04's records are equally empty: that run fitted whole clips and
+        # The phrase timing records are equally empty: that run fitted whole clips and
         # never planned a phrase, which is what an empty plan says.
         assert seg.phrasing.mode == "unknown" and not seg.phrasing.phrases
     # And it round-trips forward without inventing anything.

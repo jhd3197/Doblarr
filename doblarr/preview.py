@@ -40,9 +40,9 @@ SCENE_GAP_SECONDS = 2.5
 MAX_WINDOW_SECONDS = 90.0
 # Context kept outside the first and last cue so a line does not start abruptly.
 PAD_SECONDS = 0.6
-# Plan 04 adds the three the coverage review needs: the separated dialogue
+# Three more serve the coverage review: the separated dialogue
 # stem on its own, the bed the dub sits over, and one reaction's own audio.
-# Plan 05 adds the two halves of a treatment decision: the finished *dry*
+# Treatments add the two halves of a treatment decision: the finished *dry*
 # line, and the same line with the space around it. Together with `source`
 # and `dub` that is the four-way audition D09 asks for — original, dry,
 # treated, final — and it is four playable files rather than a description.

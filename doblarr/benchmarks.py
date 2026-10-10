@@ -72,13 +72,13 @@ class Cue:
     gap: float = 0.0
 
 
-# One scene covering the cases Plan 01 must keep reproducible: two speakers, an
+# One scene covering the cases the cue schema must keep reproducible: two speakers, an
 # overlapping pair, a quiet onset and tail, a clip that overruns its slot, and a
 # non-spoken cue that must survive as evidence without being synthesized.
 SCENE: tuple[Cue, ...] = (
     Cue(1.0, 3.0, "Primera linea", "SPEAKER_00", level=0.30, spoken=1.8),
     Cue(3.2, 5.0, "Segunda linea", "SPEAKER_01", level=0.12, lead=0.35, tail=0.40, spoken=1.0),
-    # Fallthrough note: SCENE stays exactly as Plan 01 recorded it so the
+    # Fallthrough note: SCENE stays exactly as first recorded so the
     # reference baseline keeps its meaning. New cases go in BOUNDARY_SCENE.
     # Deliberately overlapping the cue above: two speakers talking across each
     # other is a case the mix and any future collision review must handle.
@@ -99,7 +99,7 @@ BOUNDARY_SCENE: tuple[Cue, ...] = tuple(
     for index, cue in enumerate(SCENE)
 )
 
-# A scene built for phrase timing and reaction coverage (Plan 04). Every spoken
+# A scene built for phrase timing and reaction coverage. Every spoken
 # cue has real internal silence, so a planner has padding it may spend and a
 # pause it must not: cues 0 and 2 hold a long beat (protected), cues 1 and 3
 # hold a short one (redistributable). Cue 3 still cannot fit after all of that,
@@ -114,7 +114,7 @@ PHRASE_SCENE: tuple[Cue, ...] = (
     Cue(9.0, 10.5, "[laughter]", "SPEAKER_00", level=0.20, spoken=1.0),
 )
 
-# A scene for acoustic treatments and export checks (Plan 05). The cues are
+# A scene for acoustic treatments and export checks. The cues are
 # spread out, so an effect tail rings into a real gap instead of straight into
 # the next line, and two of them sit close enough together to exercise the
 # transition finding when a scene rule changes the space between them.
@@ -318,7 +318,7 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
             "issues": sorted(seg.issues),
             "findings": sorted(
                 (f.code, f.disposition) for f in seg.findings),
-            # Plan 03 records. Every one of them is a *decision* or a *state*,
+            # Every cue record here is a *decision* or a *state*,
             # not a measured dB value: two machines measure the same tone
             # identically, but a comparison that included raw levels would
             # still be comparing the fixture, not the behaviour.
@@ -333,7 +333,7 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
             "level_peak_limited": seg.level.peak_limited,
             "verification": seg.verification.state,
             "verification_checked": seg.verification.checked,
-            # Plan 04 records. Decisions and structure, deliberately not the
+            # Decisions and structure, deliberately not the
             # measured millisecond: two machines render the same tone to the
             # same length, and a comparison including raw durations would be
             # comparing FFmpeg builds rather than behaviour.
@@ -343,7 +343,7 @@ def observations(job: DubJob, engine: ToneEngine) -> dict:
             "protected_pauses": sum(1 for p in seg.phrasing.pauses if p.protected),
             "anchors": sorted((a.kind, a.origin) for a in seg.phrasing.anchors),
             "timing_conflicts": sorted(c["code"] for c in seg.phrasing.conflicts),
-            # Plan 05 records. The decision and its capability, never the
+            # The decision and its capability, never the
             # measured makeup in dB: two FFmpeg builds resolve the same echo
             # to very slightly different energy, and a comparison carrying
             # that number would report a build difference as a behaviour

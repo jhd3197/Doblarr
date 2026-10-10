@@ -111,7 +111,7 @@ class LineEditIn(BaseModel):
     delivery: str | None = Field(default=None, max_length=500)
     exclude: bool | None = None
     regenerate: bool = False
-    # Plan 03: structured acting direction, a chosen take, a per-line gain and
+    # Structured acting direction, a chosen take, a per-line gain and
     # a request for alternatives. All optional; omitting one leaves whatever
     # the run already decided untouched.
     mode: str | None = Field(default=None, max_length=32)
@@ -120,13 +120,13 @@ class LineEditIn(BaseModel):
     take: str | None = Field(default=None, max_length=64)
     gain_db: float | None = Field(default=None, ge=-24, le=24)
     candidates: int | None = Field(default=None, ge=0, le=4)
-    # Plan 04: phrase timing decisions. None of them generates speech — they
+    # Phrase timing decisions. None of them generates speech — they
     # change how the take that already exists is cut and placed.
     anchors: list[AnchorIn] | None = Field(default=None, max_length=32)
     pauses: list[PauseIn] | None = Field(default=None, max_length=32)
     bypass_timing: bool | None = None
     overlap: bool | None = None
-    # Plan 05: which space or device this line is played through. Like the
+    # Which space or device this line is played through. Like the
     # timing edits it generates no speech — it re-renders the dry line that
     # already exists.
     treatment: TreatmentIn | None = None
@@ -493,7 +493,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "candidate_limit": int(frozen.get("candidate_limit", current["candidate_limit"])),
             "references": sorted(reference_clips),
             "frozen_settings": bool(frozen),
-            # Plan 04. The timing owner and the coverage policy this run used,
+            # The timing owner and the coverage policy this run used,
             # the event ledger, and what the bed under the dub actually is.
             "timing": frozen.get("timing") or current["timing"],
             "coverage": frozen.get("coverage") or current["coverage"],
@@ -501,7 +501,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "nonverbal": _redact_events(data),
             "coverage_summary": (data.get("metrics") or {}).get("coverage") or {},
             "conversation": (data.get("metrics") or {}).get("conversation") or {},
-            # Plan 05. Which acoustic space this run used and what it could
+            # Which acoustic space this run used and what it could
             # render here, plus what the exported file was measured to be.
             "treatments": frozen.get("treatments") or current["treatments"],
             "treatment_summary": (data.get("metrics") or {}).get("treatments") or {},
@@ -663,7 +663,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                (t["checks"] or {}).get("state") == "defective",
                                t["attempt"])),
             "selection": (seg.audio.selection.as_dict() if seg.audio.selection else None),
-            # Plan 04: how this line's internal timing was decided, what it
+            # How this line's internal timing was decided, what it
             # collides with, and which reactions sit inside the window.
             "phrasing": _phrasing(seg),
             "collisions": [
@@ -675,7 +675,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "events": [_event_row(event, rebuilt)
                        for event in scene_preview.events_in(rebuilt, frame)],
             "timing_edit": rebuilt.timing_edits.get(seg.cue_id) or {},
-            # Plan 05: the space this line was played through, what it could
+            # The space this line was played through, what it could
             # not do here, and the findings a reviewer should listen for.
             "treatment": seg.treatment.as_dict(),
             "treatment_edit": rebuilt.treatment_edits.get(seg.cue_id) or {},

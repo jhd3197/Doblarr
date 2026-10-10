@@ -1,6 +1,6 @@
 """One request budget shared by every stage that may ask for more audio.
 
-Quality retries, timing repairs and (from Plan 06) extra candidate takes all
+Quality retries, timing repairs and extra candidate takes all
 spend the same provider quota. Without a shared counter the nested stages
 multiply: a per-line quality retry that is itself re-checked, inside a timing
 repair loop that regenerates the line again. `RequestBudget` makes that cost

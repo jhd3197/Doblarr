@@ -440,7 +440,7 @@ def run(
     issue. When a line was generated more than once, the best attempt is kept
     rather than the last one: fewest retryable issues, then closest voice.
 
-    `own_levels` hands loudness to the post-fit level owner (Plan 03): the
+    `own_levels` hands loudness to the post-fit level owner: the
     pre-fit normalization below is the legacy path and the two never both run,
     because a second loudness pass after a performance gain would erase it.
     """

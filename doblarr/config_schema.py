@@ -235,7 +235,7 @@ class DubModel(_Section):
     cast_group: str = ""
     character_map: dict[str, str] = {}
     audition_lines: int = 8
-    # Acting direction and alternate takes (Plan 03). `candidates` maps a cue
+    # Acting direction and alternate takes. `candidates` maps a cue
     # id to how many extra takes to generate for it; a reviewer sets it and it
     # is spent once, under the shared request budget.
     locale_direction: str = ""       # "" derives accent guidance from the target locale
@@ -279,7 +279,7 @@ class QualityModel(_Section):
 
 
 class BoundariesModel(_Section):
-    """Speech-boundary preparation and protected clip edges (Plan 02).
+    """Speech-boundary preparation and protected clip edges.
 
     Defaults are off. Both operations change audio, and the roadmap only allows
     a new DSP default once audio and regression evidence back the rollout.
@@ -301,7 +301,7 @@ class BoundariesModel(_Section):
 
 
 class LevelsModel(_Section):
-    """Source-relative dynamics and the one post-fit level owner (Plan 03).
+    """Source-relative dynamics and the one post-fit level owner.
 
     `mode` defaults to `legacy`, which keeps the pre-fit `quality.normalize`
     loudness pass exactly as it was. The other modes move loudness ownership
@@ -321,7 +321,7 @@ class LevelsModel(_Section):
 
 
 class TimingModel(_Section):
-    """Phrase timing and conversation checks (Plan 04).
+    """Phrase timing and conversation checks.
 
     `mode` defaults to `whole`, which is whole-clip fitting exactly as earlier
     releases ran it. `phrase` hands timing to the phrase owner; only one of the
@@ -362,7 +362,7 @@ class TimingModel(_Section):
 
 
 class CoverageModel(_Section):
-    """Reaction and background coverage (Plan 04).
+    """Reaction and background coverage.
 
     `off` keeps the event ledger and changes no audio. Nothing is ever inserted
     without an explicit decision, and an unsupported engine capability is
@@ -387,7 +387,7 @@ class CoverageModel(_Section):
 
 
 class TreatmentsModel(_Section):
-    """Scene space and device voice treatments (Plan 05).
+    """Scene space and device voice treatments.
 
     `mode` defaults to `off`, which renders dry dialogue exactly as earlier
     releases did. A treatment is a place or a device, never a performance: it
@@ -404,7 +404,7 @@ class TreatmentsModel(_Section):
 
 
 class DeliveryModel(_Section):
-    """Checks run on the actual exported track (Plan 05).
+    """Checks run on the actual exported track.
 
     `measure` reports everything and blocks nothing. `enforce` lets a
     structural failure withhold the saved version and the library refresh.

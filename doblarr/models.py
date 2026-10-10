@@ -59,7 +59,7 @@ class Segment:
     translation_provenance: dict = field(default_factory=dict)
     memory_context: dict = field(default_factory=dict)
 
-    # Typed cue records (Plan 01). Empty values are valid: "unknown" is a real
+    # Typed cue records. Empty values are valid: "unknown" is a real
     # state and no stage is required to fill every field on first import.
     cue_id: str = ""
     lineage: CueLineage = field(default_factory=CueLineage)
@@ -69,7 +69,7 @@ class Segment:
     preparation: SpeechPreparation = field(default_factory=SpeechPreparation)
     findings: list[Finding] = field(default_factory=list)
 
-    # Plan 03 records. `intent` is how the line should be acted, `measurement`
+    # `intent` is how the line should be acted, `measurement`
     # is how loud the original actor was, `level` is what the one level owner
     # did about it, and `verification` is what recognition heard against what
     # was asked for. All four default to their "nothing established" state.
@@ -78,13 +78,13 @@ class Segment:
     level: LevelDecision = field(default_factory=LevelDecision)
     verification: Verification = field(default_factory=Verification)
 
-    # Plan 04. `phrasing` is how this line's internal timing was decided: which
+    # `phrasing` is how this line's internal timing was decided: which
     # phrases were found, which pauses were protected, which anchors they were
     # asked to land on and what the rendered output actually measured. Its
     # empty state means whole-clip fitting owned the run.
     phrasing: TimingPlan = field(default_factory=TimingPlan)
 
-    # Plan 05. Which acoustic space or device this line was played through,
+    # Which acoustic space or device this line was played through,
     # how much ring-out it added past the dry speech, and whether this FFmpeg
     # build could actually do it. Its empty state means dry dialogue.
     treatment: Treatment = field(default_factory=Treatment)
@@ -148,7 +148,7 @@ class DubJob:
     narrative_snapshot: dict | None = None   # frozen accepted narrative revision ({} = none)
     show_ref: str = ""                     # stable series id for show-scope rules
 
-    # Plan 01 identity. `source_reference` records which media/stream the source
+    # Identity. `source_reference` records which media/stream the source
     # evidence came from; `cue_lineage` maps a retired cue id to the cues that
     # replaced it, so an old edit cannot silently land on a different line.
     source_reference: SourceReference | None = None
@@ -169,7 +169,7 @@ class DubJob:
 
     # Non-spoken cues dropped before TTS, kept as timed evidence for reaction
     # coverage. Excluding a cue from synthesis is not the same as not knowing
-    # that something was heard there. Plan 04 made these typed records with an
+    # that something was heard there. Coverage made these typed records with an
     # explicit retain/replace/omit/unresolved decision on each one.
     nonverbal: list[NonverbalEvent] = field(default_factory=list)
 
