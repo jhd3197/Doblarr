@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery } from '../../lib/queries.js';
 import { characterFor, seriesOfShow, showOfSeries, voiceFor } from '../../lib/voices.js';
@@ -114,9 +114,9 @@ export function VoicesList() {
         <div className="panel voices-table"><div className="table-wrap"><table className="table">
           <thead><tr><th>Voice</th><th>Engine</th><th>Kind</th><th>Language</th></tr></thead>
           <tbody>{loose.map(v => (
-            <tr key={v.key} data-voice={v.key} tabIndex={0} onClick={() => navigate(voiceHref(v.key))}
-              onKeyDown={e => { if (e.key === 'Enter') navigate(voiceHref(v.key)); }}>
-              <td><span className="voice-dot" style={dotStyle(v)} />{voiceTitle(v)}</td>
+            <tr key={v.key} data-voice={v.key} onClick={() => navigate(voiceHref(v.key))}>
+              <td><span className="voice-dot" style={dotStyle(v)} />
+                <Link to={voiceHref(v.key)} onClick={e => e.stopPropagation()}>{voiceTitle(v)}</Link></td>
               <td className="m">{v.engine || ''}</td><td>{v.kind || ''}</td><td className="m">{v.language || '—'}</td></tr>
           ))}</tbody>
         </table></div></div>

@@ -260,7 +260,7 @@ function Player({ jobId, data, reload }) {
           </div>
 
           <div className="watch-timeline">
-            <div className="watch-lanes" ref={lanes} onClick={onLanes} role="presentation"
+            <div className="watch-lanes" ref={lanes} onClick={onLanes} role="img"
               aria-label="Where the dub is quieter than the original, and notes">
               {lines.length > 0 && (
                 <div className="watch-lane">{lines.map(l => <span key={l.start} className="watch-tick" style={mark(l.start, l.end - l.start)} />)}</div>

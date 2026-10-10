@@ -63,10 +63,15 @@ function usePlexLabels() {
 function PosterCard({ item, targets }) {
   const navigate = useNavigate();
   return (
-    <div className="poster-card library-card" onClick={() => navigate(titleHref(item))}>
+    <div className="poster-card library-card">
       <Poster item={item} />
       <div className="poster-body">
-        <div className="library-card-title">{item.title}{item.year ? <> <span className="m library-card-year">{item.year}</span></> : ''}</div>
+        <div className="library-card-title">
+          {/* A real link that covers the card, so the whole card opens the title
+              and keyboard and screen-reader users reach it like any link. */}
+          <Link className="library-card-link" to={titleHref(item)}>{item.title}</Link>
+          {item.year ? <> <span className="m library-card-year">{item.year}</span></> : ''}
+        </div>
         <LangChips item={item} targets={targets} />
         <div className="library-card-foot">
           <StatusTag label={item.label} />
@@ -80,7 +85,7 @@ function PosterCard({ item, targets }) {
           <QueueButton item={item} kind="tease" targets={targets} label="Tease" className="btn btn-ghost tease-dub"
             onShow={isShow(item) ? () => navigate(titleHref(item, 'episodes')) : undefined} />
           <button type="button" className="btn btn-ghost cast-edit"
-            onClick={e => { e.stopPropagation(); navigate(titleHref(item, 'voices')); }}>Cast</button>
+            onClick={() => navigate(titleHref(item, 'voices'))}>Cast</button>
         </div>
       </div>
     </div>

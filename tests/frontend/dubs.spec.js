@@ -28,3 +28,16 @@ test('the dubs table fits a phone screen and scrolls inside its card', async ({ 
   await expect(page.getByText('Harbor Lights S01E03')).toBeVisible();
   await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 390);
 });
+
+test('a library card opens its title through a real link', async ({ page }) => {
+  await page.route('**/api/library', route => route.fulfill({ json: { target_languages: ['es'], counts: {}, warnings: [],
+    items: [{ title: 'Harbor Lights', year: 2021, tvdb_id: 81234, media_type: 'show', source: 'Sonarr',
+      status: 'needs-dub', label: 'needs-dub' }] } }));
+  await page.route('**/api/jobs', route => route.fulfill({ json: { counts: {}, jobs: [] } }));
+  await page.goto('/library');
+  const link = page.getByRole('link', { name: 'Harbor Lights' });
+  await expect(link).toHaveAttribute('href', '/title/tvdb-81234/episodes');   // a show opens on its episodes
+  await link.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/title\/tvdb-81234/);
+});
