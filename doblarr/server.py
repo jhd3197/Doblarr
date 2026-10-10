@@ -70,6 +70,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     ensure_starter_pack(db, config.get("knowledge", {}))
     store = JobStore(db)
+    store.reset_running()  # jobs a previous process left running resume from checkpoints
     import_legacy_json(store, config.work_dir / "jobs.json")
     bus = EventBus()
     attach_log_stream(bus)  # log records flow onto the SSE stream (topic: log)
@@ -122,8 +123,10 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @api.get("/api/health/ready")
     def ready():
-        """Readiness: speech service reachable and at least one *arr source configured."""
+        """Readiness: worker alive, speech service reachable, an *arr source configured."""
         problems: list[str] = []
+        if not worker.is_alive():
+            problems.append("the job worker is not running; restart Doblarr")
         conn = config.get("connect", {})
         if not ((conn.get("radarr_url") and conn.get("radarr_api_key"))
                 or (conn.get("sonarr_url") and conn.get("sonarr_api_key"))):

@@ -64,6 +64,7 @@ def test_reset_running_requeues_interrupted_jobs(tmp_path):
     store.update(j.id, status="running", stage="mix")
     store.close()
     store = JobStore(tmp_path / "jobs.db")  # simulates a restart
+    assert store.reset_running() == 1       # the server does this at startup
     assert store.get(j.id).status == "queued"
     store.close()
 
