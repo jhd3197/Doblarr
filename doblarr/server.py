@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
-import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -153,15 +151,15 @@ def create_app(config: Config | None = None) -> FastAPI:
         Browsers can't set headers on EventSource, so pass the API key as
         `?api_key=` (the auth dependency accepts it).
         """
-        q = bus.subscribe()
+        q = bus.subscribe_async()
 
         async def stream():
             try:
                 while True:
                     try:
-                        event = await asyncio.to_thread(q.get, timeout=SSE_HEARTBEAT)
+                        event = await q.get(timeout=SSE_HEARTBEAT)
                         yield f"data: {json.dumps(event)}\n\n"
-                    except queue.Empty:
+                    except TimeoutError:
                         yield ": ping\n\n"
             finally:
                 bus.unsubscribe(q)
