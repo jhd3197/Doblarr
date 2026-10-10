@@ -98,12 +98,6 @@ class AssignmentIn(BaseModel):
     base_revision: int | None = None
 
 
-def series_ref_for_casting(series_id: str) -> str:
-    """The studio's series reference for a canonical series id."""
-    if series_id.startswith("show:tvdb:"):
-        return "series:" + series_id.rsplit(":", 1)[-1]
-    return series_id
-
 
 def build_router(config, services, db) -> APIRouter:
     api = APIRouter()
@@ -128,7 +122,7 @@ def build_router(config, services, db) -> APIRouter:
         rows = []
         for found in found_all:
             profile = profiles.get(db, found["id"])
-            chosen = casting.assignments(db, series_ref_for_casting(found["series_id"]),
+            chosen = casting.assignments(db, identity.casting_ref(found["series_id"]),
                                          found["name"])
             rows.append({**found, "profile_revision": profile["revision"],
                          "references": profiles.coverage(profile),
@@ -170,7 +164,7 @@ def build_router(config, services, db) -> APIRouter:
             speech = services.speech
         except Exception:  # noqa: BLE001 - no speech service configured: unknown
             speech = None
-        for choice in casting.assignments(db, series_ref_for_casting(found["series_id"]),
+        for choice in casting.assignments(db, identity.casting_ref(found["series_id"]),
                                           found["name"]):
             caps = profiles.engine_capabilities(speech, choice.get("engine") or "") \
                 if speech is not None else {"engine": choice.get("engine") or "",
@@ -326,7 +320,7 @@ def build_router(config, services, db) -> APIRouter:
         """Cast a voice for this character, for a locale and variant or for any.
         Recorded as a series casting choice; nothing is rendered here."""
         found = character(cid)
-        series_ref = series_ref_for_casting(found["series_id"])
+        series_ref = identity.casting_ref(found["series_id"])
         try:
             saved = casting.decide(db, casting.ChoiceIn(
                 character=found["name"], scope="series", scope_ref=series_ref,

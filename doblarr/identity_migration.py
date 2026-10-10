@@ -285,16 +285,11 @@ def _traits_applied(db, series_id: str, character: str, voice: str) -> bool:
     return found["id"] in (asset.get("characters") or [])
 
 
-def _series_ref(series_id: str) -> str:
-    return ("series:" + series_id.rsplit(":", 1)[-1] if series_id.startswith("show:tvdb:")
-            else series_id)
-
-
 def _cast_applied(db, series_id: str, action: dict) -> bool:
     from .studio import casting
 
-    chosen = (records.get(db, "casting", casting.record_id("series", _series_ref(series_id)))
-              or {}).get("characters") or {}
+    ref = casting.record_id("series", identity.casting_ref(series_id))
+    chosen = (records.get(db, "casting", ref) or {}).get("characters") or {}
     return all(name in chosen for name in action["characters"].values())
 
 
@@ -380,7 +375,7 @@ def _apply_cast(db, action: dict) -> None:
     only where the character has no series choice yet (an existing one wins)."""
     from .studio import casting
 
-    series_ref = _series_ref(action["series_id"])
+    series_ref = identity.casting_ref(action["series_id"])
     chosen = (records.get(db, "casting", casting.record_id("series", series_ref))
               or {}).get("characters") or {}
     for entry in action["entries"]:

@@ -278,6 +278,14 @@ def show_ref(series_id: str | None) -> str:
     return f"series:{series}" if series.startswith("show:") else ""
 
 
+def casting_ref(series_id: str) -> str:
+    """The key a series' casting is kept under: "series:<tvdb id>" for a TVDB
+    show, otherwise the series id itself."""
+    if series_id.startswith("show:tvdb:"):
+        return f"series:{series_id.rsplit(':', 1)[-1]}"
+    return series_id
+
+
 def canonical_series(db, series_id: str) -> str:
     """Follow a confirmed link from a local series to the one it really is."""
     seen = set()

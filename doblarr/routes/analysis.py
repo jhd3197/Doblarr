@@ -875,9 +875,7 @@ def build_router(config, store) -> APIRouter:
 
         job = store.add(title=f"Analysis · {Path(body.path).name}", source="analysis",
                         **earlier, kind="analyze", overrides=overrides,
-                        show_ref=(f"series:{ident['series_id'].rsplit(':', 1)[-1]}"
-                                  if ident and str(ident.get("series_id", "")).startswith(
-                                      "show:tvdb:") else ""))
+                        show_ref=show_ref_of(ident))
         return {"job_id": job.id, "stages": body.stages}
 
     # ------------------------------------------------------------- visual
