@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl, withKey } from '../../lib/api.js';
+import { api } from '../../lib/api.js';
 import { baseLanguage, languageMatches } from '../../lib/languages.js';
+import { previewSample } from '../../lib/voices.js';
 
 // Voices are tagged with base languages (es); a regional target (es-MX) matches them.
 const AGES = ['unknown', 'child', 'young', 'adult', 'older'];
 const GENDERS = ['unknown', 'male', 'female', 'neutral'];
 const QWEN = ['qwen', 'qwen_custom_voice'];
-const DONE = ['completed', 'done', 'ready', 'success'];
-const FAILED = ['failed', 'error', 'cancelled', 'canceled'];
 
 function VoiceCard({ voice, language, onTraits, onListen, onUse }) {
   const [busy, setBusy] = useState(false);
@@ -45,7 +44,7 @@ export function VoicePicker({ language, category = 'speaker', onSelect, onClose 
   const base = baseLanguage(language);
   const dialog = useRef(null);
   const audio = useRef(null);
-  const preview = useRef({ version: 0, timer: null });
+  const preview = useRef({ version: 0 });
   const initialAge = category.startsWith('elderly') ? 'older' : category.startsWith('child') ? 'child' : category.startsWith('young') ? 'young' : 'unknown';
   const initialGender = category.endsWith('_m') ? 'male' : category.endsWith('_f') ? 'female' : 'unknown';
   const [voices, setVoices] = useState([]);
@@ -74,7 +73,6 @@ export function VoicePicker({ language, category = 'speaker', onSelect, onClose 
     }).catch(error => { if (alive) setStatus(error.message); });
     return () => {
       alive = false;
-      clearTimeout(state.timer);
       state.version++;
       opener?.focus?.();
     };
@@ -101,28 +99,15 @@ export function VoicePicker({ language, category = 'speaker', onSelect, onClose 
   async function listen(voice) {
     const state = preview.current;
     const version = ++state.version;
-    clearTimeout(state.timer);
     audio.current?.pause();
     setSample('');
     setStatus('Generating a short sample…');
     try {
-      const response = await api('voice-catalog/preview', { method: 'POST', json: { key: voice.key, language: base,
-        text, direction: QWEN.includes(voice.engine) ? direction : '' } });
-      const deadline = Date.now() + 180000;
-      const poll = async () => {
-        if (version !== state.version) return;
-        try {
-          const result = await api(`voice-catalog/preview/${response.id}`);
-          if (version !== state.version) return;
-          if (DONE.includes(result.status)) {
-            setSample(withKey(apiUrl(`voice-catalog/preview/${response.id}/audio`)));
-            setStatus(`${voice.name}: sample ready. Listen before assigning.`);
-          } else if (FAILED.includes(result.status)) setStatus(result.error || 'Voice sample failed.');
-          else if (Date.now() > deadline) setStatus('Still processing in Voicebox. Check its history before starting another sample.');
-          else state.timer = setTimeout(poll, 1500);
-        } catch (error) { if (version === state.version) setStatus(error.message); }
-      };
-      poll();
+      const url = await previewSample({ key: voice.key, language: base, text,
+        direction: QWEN.includes(voice.engine) ? direction : '' }, { current: () => version === state.version });
+      if (!url) return;
+      setSample(url);
+      setStatus(`${voice.name}: sample ready. Listen before assigning.`);
     } catch (error) { if (version === state.version) setStatus(error.message); }
   }
 

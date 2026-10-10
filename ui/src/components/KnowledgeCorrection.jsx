@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, apiUrl, withKey } from '../lib/api.js';
+import { api } from '../lib/api.js';
+import { previewSample } from '../lib/voices.js';
 import { baseLanguage as baseOf } from '../lib/languages.js';
 import { scopeOptions } from '../lib/knowledge.js';
 
-const READY = ['completed', 'done', 'ready', 'success'];
-const FAILED = ['failed', 'error', 'cancelled', 'canceled'];
 const REGISTERS = [['', 'Unset'], ['formal', 'Formal'], ['neutral', 'Neutral'],
   ['colloquial', 'Colloquial'], ['vulgar', 'Vulgar']];
 
@@ -27,24 +26,8 @@ export function useVoiceSample() {
     const set = patch => { if (alive()) setState(s => ({ ...s, ...patch })); };
     set({ status: 'Generating a short sample…', busy: true });
     try {
-      const response = await api('voice-catalog/preview', { method: 'POST', json: { key, text, language } });
-      const deadline = Date.now() + 180000;
-      const poll = async () => {
-        if (!alive()) return;
-        try {
-          const result = await api(`voice-catalog/preview/${response.id}`);
-          if (!alive()) return;
-          if (READY.includes(result.status)) {
-            set({ src: withKey(apiUrl(`voice-catalog/preview/${response.id}/audio`)),
-              status: 'Sample ready.', busy: false });
-          } else if (FAILED.includes(result.status)) {
-            set({ status: result.error || 'Voice sample failed.', busy: false });
-          } else if (Date.now() > deadline) {
-            set({ status: 'Still processing in Voicebox.', busy: false });
-          } else setTimeout(poll, 1500);
-        } catch (error) { set({ status: error.message, busy: false }); }
-      };
-      poll();
+      const src = await previewSample({ key, text, language }, { current: alive });
+      if (src) set({ src, status: 'Sample ready.', busy: false });
     } catch (error) { set({ status: error.message, busy: false }); }
   }, []);
 

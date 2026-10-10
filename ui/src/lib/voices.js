@@ -1,8 +1,29 @@
 // What the voices pages share: a voice's colours, and which catalogue voice
 // speaks for which character.
+import { api, apiUrl, withKey } from './api.js';
 
 const PALETTES = [['#CADCFC', '#A0B9D1'], ['#F6C6A8', '#E8845C'], ['#C9F2D6', '#7FC8A4'],
   ['#E7D1FA', '#B18AE0'], ['#FCE7A8', '#E9B949'], ['#FAD0DA', '#E47A98']];
+
+const SAMPLE_READY = ['completed', 'done', 'ready', 'success'];
+const SAMPLE_FAILED = ['failed', 'error', 'cancelled', 'canceled'];
+
+// Ask the speech service for a short sample and wait for it: the audio URL,
+// or null when `current()` says a newer request replaced this one. Throws with
+// a readable message when the sample fails or takes longer than `limit` ms.
+export async function previewSample(body, { current = () => true, limit = 180_000, every = 1500 } = {}) {
+  const made = await api('voice-catalog/preview', { method: 'POST', json: body });
+  const until = Date.now() + limit;
+  for (;;) {
+    if (!current()) return null;
+    const state = await api(`voice-catalog/preview/${made.id}`);
+    if (!current()) return null;
+    if (SAMPLE_READY.includes(state.status)) return withKey(apiUrl(`voice-catalog/preview/${made.id}/audio`));
+    if (SAMPLE_FAILED.includes(state.status)) throw new Error(state.error || 'The voice sample failed.');
+    if (Date.now() > until) throw new Error('Still generating in the speech service; try again shortly.');
+    await new Promise(resolve => setTimeout(resolve, every));
+  }
+}
 
 export const SAMPLE = '¡Esto es una prueba de voz! A ver cómo suena este personaje.';
 

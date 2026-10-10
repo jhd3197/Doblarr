@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl, withKey } from '../../lib/api.js';
-import { lighten, palette, SAMPLE, seedOf } from '../../lib/voices.js';
+import { lighten, palette, previewSample, SAMPLE, seedOf } from '../../lib/voices.js';
 import { createOrb, primeAudio } from './orb.js';
 
 // What the voices pages share: a voice's colours and orb, hearing a voice,
@@ -31,8 +30,6 @@ export function VoiceOrb({ voice, orbRef }) {
   return <canvas ref={canvasRef} className="voice-orb" aria-hidden="true" />;
 }
 
-const READY = ['completed', 'done', 'ready', 'success'];
-const FAILED = ['failed', 'error', 'cancelled', 'canceled'];
 
 // "Hear it": a sample in this voice, with the orb following the sound.
 export function HearPanel({ voice, orbRef }) {
@@ -50,19 +47,9 @@ export function HearPanel({ voice, orbRef }) {
     audioRef.current?.pause();
     setStatus('Generating…');
     try {
-      const made = await api('voice-catalog/preview', { method: 'POST', json: { key: voice.key,
-        language: lang.trim().toLowerCase() || 'es', text: text.trim() || SAMPLE } });
-      const deadline = Date.now() + 180000;
-      for (;;) {
-        if (mine !== version.current) return;
-        const state = await api(`voice-catalog/preview/${made.id}`);
-        if (READY.includes(state.status)) break;
-        if (FAILED.includes(state.status)) throw new Error(state.error || 'The sample failed.');
-        if (Date.now() > deadline) throw new Error('Still generating in the speech service; try again shortly.');
-        await new Promise(r => setTimeout(r, 1200));
-      }
-      if (mine !== version.current) return;
-      const url = withKey(apiUrl(`voice-catalog/preview/${made.id}/audio`));
+      const url = await previewSample({ key: voice.key, language: lang.trim().toLowerCase() || 'es',
+        text: text.trim() || SAMPLE }, { current: () => mine === version.current });
+      if (!url) return;
       setSrc(url);
       const audio = audioRef.current;
       audio.src = url;
