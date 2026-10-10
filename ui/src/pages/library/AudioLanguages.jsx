@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { audioLanguagesQuery, queryClient } from '../../lib/queries.js';
@@ -83,6 +83,8 @@ function ApplyStatus({ job, dryRun }) {
   );
 }
 
+const APPLY_KEY = ['audio-languages', 'apply'];
+
 export function AudioLanguages() {
   const { data, error, isPending, isFetching } = useQuery({ ...audioLanguagesQuery, retry: false });
   const [style, setStyle] = useState(() => safeGet(STYLE_KEY, 'channels'));
@@ -90,23 +92,24 @@ export function AudioLanguages() {
   const [off, setOff] = useState({});
   const [picks, setPicks] = useState({});
   const [open, setOpen] = useState(null);
-  const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
 
   useEffect(() => { safeSet(STYLE_KEY, style); }, [style]);
 
-  const running = (job || data?.apply)?.state === 'running';
+  // The rewrite's progress: polled while it runs (a poll never starts while
+  // the last one is waiting). Starting a rewrite seeds it, which starts the polling.
+  const progress = useQuery({ queryKey: APPLY_KEY, queryFn: () => api('audio-languages/apply'),
+    refetchInterval: q => (q.state.data?.state === 'running' ? 1500 : false) });
+  const job = progress.data || data?.apply;
+  const running = job?.state === 'running';
+  const lastState = useRef(job?.state);
   useEffect(() => {
-    if (!running) return undefined;
-    const timer = setInterval(async () => {
-      const now = await api('audio-languages/apply').catch(() => null);
-      if (!now) return;
-      setJob(now);
-      if (now.state !== 'running') queryClient.invalidateQueries({ queryKey: audioLanguagesQuery.queryKey });
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [running]);
+    // Only the moment a rewrite finishes reloads the tracks: reading them asks Plex again.
+    if (lastState.current === 'running' && job?.state !== 'running')
+      queryClient.invalidateQueries({ queryKey: audioLanguagesQuery.queryKey });
+    lastState.current = job?.state;
+  }, [job?.state]);
 
   if (isPending) return <div className="page al-page"><p className="al-muted">Reading every audio track from Plex… the first time takes a while on a big library.</p></div>;
   if (error) return <div className="page al-page"><h1 className="al-title">Audio languages</h1><p className="al-muted">Audio tracks are read from Plex: {error.message}</p></div>;
@@ -123,7 +126,7 @@ export function AudioLanguages() {
   async function apply() {
     setBusy(true); setProblem('');
     try {
-      setJob(await api('audio-languages/apply', { method: 'POST', json: {
+      queryClient.setQueryData(APPLY_KEY, await api('audio-languages/apply', { method: 'POST', json: {
         scanned_at: data.scanned_at,
         changes: picked.map(({ v, p }) => ({ id: v.id, language: p.language, title: p.title })) } }));
     } catch (e) { setProblem(e.message); }
