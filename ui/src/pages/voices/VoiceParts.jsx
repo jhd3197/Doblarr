@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { lighten, palette, previewSample, SAMPLE, seedOf } from '../../lib/voices.js';
 import { createOrb, primeAudio } from './orb.js';
 
@@ -17,16 +17,16 @@ export function dotStyle(v) {
 export function VoiceOrb({ voice, orbRef }) {
   const canvasRef = useRef(null);
   const key = voice.key;
+  // A new voice gets a new orb; colour changes go through setColors.
+  const build = useEffectEvent(canvas => createOrb(canvas, { colors: palette(voice), seed: seedOf(key) }));
   useEffect(() => {
     const canvas = canvasRef.current;
     let orb = null;
     // A shader that fails to build leaves the plain dot in the orb's place.
-    try { orb = createOrb(canvas, { colors: palette(voice), seed: seedOf(key) }); } catch { canvas.className = 'voice-dot voice-dot-xl'; }
+    try { orb = build(canvas); } catch { canvas.className = 'voice-dot voice-dot-xl'; }
     if (orbRef) orbRef.current = orb;
     return () => { orb?.destroy(); if (orbRef) orbRef.current = null; };
-  // A new voice gets a new orb; colour changes go through setColors.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, orbRef]);
   return <canvas ref={canvasRef} className="voice-orb" aria-hidden="true" />;
 }
 

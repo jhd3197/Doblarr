@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLoaderData } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery, queryClient } from '../../lib/queries.js';
@@ -9,6 +9,7 @@ import { MediaPlayer } from '../../components/MediaPlayer.jsx';
 import { catalogQuery, invalidateVoices, profileQuery, voiceQuery, voiceTemplatesQuery } from './queries.js';
 import { ColourField, HearPanel, UsedPanel, VoiceOrb, VoiceTags } from './VoiceParts.jsx';
 import { languageColumns, voicesIn } from '../../lib/research.js';
+import { notify } from '../../lib/notice.js';
 
 // One character of a show: the single page for who they are and how they
 // sound. It carries the voice they speak with (hear it, change it, shape it),
@@ -212,9 +213,9 @@ function Appearances({ character, voice }) {
   if (!data.episodes.length) return <p className="hint">No analysed episode names this character yet. Name their voice on an episode’s Analysis tab.</p>;
   const colour = voice?.color || 'var(--color-accent)';
 
-  async function watch(e, fromCue, button) {
+  async function watch(e, fromCue) {
     let found;
-    try { found = await api(`analysis/tracks?path=${encodeURIComponent(e.path)}`); } catch (error) { button.title = error.message; return; }
+    try { found = await api(`analysis/tracks?path=${encodeURIComponent(e.path)}`); } catch (error) { notify(error.message); return; }
     const clips = e.lines.map(l => {
       const start = Math.max(0, l.start - 0.35);
       const end = Math.min(start + 29.5, l.end + 0.45);
@@ -234,12 +235,12 @@ function Appearances({ character, voice }) {
           <div className="appear-head"><strong>{e.episode || e.revision_id}</strong>
             <span className="hint"><span className="m">{e.lines.length}</span> lines · <span className="m">{formatTime(e.seconds)}</span></span>
             {e.reachable ? <button type="button" className="btn btn-ghost" data-watch-episode={n}
-              onClick={ev => watch(e, undefined, ev.currentTarget)}>Watch their lines</button>
+              onClick={() => watch(e)}>Watch their lines</button>
               : <span className="hint">video not reachable from here</span>}</div>
           {e.reachable && (
             <div className="cast-frames">{pickFrames(e.lines, {}, 6).map(l => (
               <button key={l.cue} type="button" className="cast-frame" style={{ '--tint': colour }} data-watch-episode={n}
-                data-from={l.cue} title={`${formatTime(l.start)} · ${l.text}`} onClick={ev => watch(e, l.cue, ev.currentTarget)}>
+                data-from={l.cue} title={`${formatTime(l.start)} · ${l.text}`} onClick={() => watch(e, l.cue)}>
                 <img src={frameUrl(e.path, (l.start + l.end) / 2)} alt={`The picture at ${formatTime(l.start)}`} width="160" height="90" decoding="async" />
                 <span className="cast-frame-time m">{formatTime(l.start)}</span></button>
             ))}</div>
@@ -359,6 +360,9 @@ function Assign({ character, catalog, onAssign, say }) {
 
 function Rename({ character, characterId, say, refresh }) {
   const [open, setOpen] = useState(false);
+  const input = useRef(null);
+  // Focus the name once, when the form opens, not on every keystroke.
+  useEffect(() => { if (open) input.current?.focus(); }, [open]);
   const [name, setName] = useState(character.name);
   async function submit(e) {
     e.preventDefault();
@@ -375,7 +379,7 @@ function Rename({ character, characterId, say, refresh }) {
     <>
       <form className="character-rename" data-rename-form hidden={!open} onSubmit={submit}>
         <input className="input" data-rename value={name} maxLength={80} aria-label="Name" onChange={e => setName(e.target.value)}
-          ref={el => { if (el && open) el.focus(); }} />
+          ref={input} />
         <button type="submit" className="btn btn-secondary">Rename</button>
         <button type="button" className="btn btn-ghost" data-rename-cancel onClick={() => setOpen(false)}>Cancel</button></form>
       <RenameOpen onOpen={() => { setName(character.name); setOpen(true); }} />

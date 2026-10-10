@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useReducer, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
@@ -253,12 +253,12 @@ function CompareView({ ctrl }) {
   const [start, setStart] = useState(() => String(saved.start ?? (windowSpan?.start ?? session.position ?? 0)));
   const [length, setLength] = useState(() => String(saved.length ?? 30));
   const hasJob = !!ctrl.jobId();
+  // The saved window loads once on entry; later loads come from the button.
+  const loadSaved = useEffectEvent(() => ctrl.loadCompareWindow(start, length));
   useEffect(() => {
     let live = true;
-    ctrl.loadNotes().then(() => { if (live) ctrl.loadCompareWindow(start, length); });
+    ctrl.loadNotes().then(() => { if (live) loadSaved(); });
     return () => { live = false; };
-    // Load the saved window once on entry; later loads come from the button.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctrl]);
   return (
     <div className="studio-compare">

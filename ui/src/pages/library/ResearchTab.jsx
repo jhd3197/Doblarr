@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
@@ -24,9 +24,10 @@ function useWhenDone(jobId, keys) {
   const { data } = useJobs();
   const job = (data?.jobs || []).find(j => j.id === jobId);
   const status = job?.status;
+  // Reads the latest keys when the job ends, without re-running on every new array.
+  const refresh = useEffectEvent(() => keys.forEach(key => queryClient.invalidateQueries({ queryKey: key })));
   useEffect(() => {
-    if (status === 'done' || status === 'failed') keys.forEach(key => queryClient.invalidateQueries({ queryKey: key }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (status === 'done' || status === 'failed') refresh();
   }, [status]);
   return job;
 }
