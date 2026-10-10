@@ -40,6 +40,7 @@ from pathlib import Path
 from . import __version__
 from .clients.speech import SpeechError, build_speech_client
 from .config import Config
+from .errors import DoblarrError
 from .logging_setup import setup_logging
 from .models import DubJob
 from .pipeline import run_job
@@ -373,6 +374,19 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = Config.load(args.config)
     setup_logging(config, verbose=args.verbose, uvicorn=args.command == "serve")
+    try:
+        return _dispatch(args, config)
+    except (DoblarrError, KeyError, ValueError, OSError) as exc:
+        if args.verbose:
+            raise
+        # A missing id or a bad value is the user's to fix: say what it was,
+        # not where in the code it surfaced. --verbose keeps the traceback.
+        message = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc
+        print(f"doblarr {args.command}: {message}", file=sys.stderr)
+        return 1
+
+
+def _dispatch(args: argparse.Namespace, config: Config) -> int:
     if args.command == "check":
         return _cmd_check(args, config)
     if args.command == "serve":

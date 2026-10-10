@@ -2,7 +2,8 @@
 
 Everything the web UI does to a dub can be done from a terminal. Commands that
 change a dub talk to the running server (`doblarr serve`), so a job queued here
-is the same job the UI shows. Every command takes `--json` for scripts.
+is the same job the UI shows. The commands on this page take `--json` for
+scripts, except `research`, which prints the cited answer.
 
 ## From nothing to a finished dub
 
