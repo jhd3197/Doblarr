@@ -774,10 +774,15 @@ def render(manifest: dict, root: Path) -> str:
         "Defects in the generated speech every version shares. Each one is listed on "
         "the scene it belongs to." if shared else
         "Defects a recognizer could prove in each version's own takes.")
+    # Subtitle and translated text can contain "</script>"; escaping the angle
+    # brackets keeps it data. The data goes in last, so text that happens to
+    # contain a placeholder name is never substituted.
+    payload = (json.dumps(data, ensure_ascii=False)
+               .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
     return _HTML.replace("__TAKES_NOTE__", takes_note) \
                 .replace("__FINDINGS_TITLE__", findings_title) \
-                .replace("__DATA__", json.dumps(data, ensure_ascii=False)) \
-                .replace("__CSS__", CSS).replace("__JS__", JS)
+                .replace("__CSS__", CSS).replace("__JS__", JS) \
+                .replace("__DATA__", payload)
 
 
 _HTML = """<!doctype html>
