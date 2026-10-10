@@ -53,3 +53,24 @@ def test_the_example_configs_are_valid():
     for name in ("config.example.yaml", "config.docker.example.yaml"):
         data = yaml.safe_load((ROOT / name).read_text(encoding="utf-8"))
         assert config_problems(_deep_merge(DEFAULTS, data)) == [], name
+
+
+def test_the_package_includes_every_subpackage():
+    from setuptools import find_packages
+
+    found = set(find_packages(str(ROOT), include=["doblarr", "doblarr.*"]))
+    on_disk = {".".join(p.relative_to(ROOT).parts[:-1])
+               for p in (ROOT / "doblarr").rglob("__init__.py")}
+    assert on_disk <= found
+
+
+def test_relative_links_in_the_docs_resolve():
+    docs = [ROOT / "README.md", *(ROOT / "docs").glob("*.md")]
+    broken = []
+    for doc in docs:
+        for target in re.findall(r"\]\(([^)#\s]+)(?:#[^)]*)?\)", doc.read_text(encoding="utf-8")):
+            if target.startswith(("http://", "https://", "mailto:")):
+                continue
+            if not (doc.parent / target).exists():
+                broken.append(f"{doc.relative_to(ROOT)} -> {target}")
+    assert broken == []

@@ -60,9 +60,10 @@ doblarr = "doblarr.cli:main"
 Homepage = "https://github.com/jhd3197/Doblarr"
 Issues = "https://github.com/jhd3197/Doblarr/issues"
 
-[tool.setuptools]
-packages = ["doblarr", "doblarr.clients", "doblarr.knowledge", "doblarr.stages", "doblarr.routes",
-            "doblarr.studio", "doblarr.vision"]
+# Every subpackage, found rather than listed: a list went stale and left the
+# CLI's commands, the catalogues and research out of the built package.
+[tool.setuptools.packages.find]
+include = ["doblarr", "doblarr.*"]
 
 [tool.setuptools.package-data]
 "doblarr" = ["data/*.json"]
