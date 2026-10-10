@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import envelopes, feedback, templates
 from ..artifacts import read_json
 from ..cues import LEVELED, apply_cue_payload
+from ..jobs import queue_rerender
 from ..models import Segment
 from ..studio import records
 from .media_delivery import allowed_path
@@ -180,14 +181,7 @@ def build_router(config, store, bus) -> APIRouter:
                                **({"strength": body.strength}
                                   if body.strength is not None else {})}
         overrides["adaptive.lines"] = lines
-        overrides["dub.dry_run"] = False
-        job = store.add(title=original.title, source=original.source,
-                        source_lang=original.source_lang, target_lang=original.target_lang,
-                        target_locale=original.target_locale, input_file=original.input_file,
-                        knowledge_snapshot=original.knowledge_snapshot, kind=original.kind,
-                        overrides=overrides,
-                        narrative_snapshot=getattr(original, "narrative_snapshot", None))
-        bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+        job = queue_rerender(store, bus, original, overrides)
         work, note = IMPACT["envelope_clear" if body.clear else "template"]
         return {"job": job.id, "work": work, "speech": False, "note": note,
                 "lines": lines}

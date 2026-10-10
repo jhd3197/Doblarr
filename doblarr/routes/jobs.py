@@ -26,7 +26,7 @@ from ..cues import (
 )
 from ..errors import ForbiddenError, NotFoundError
 from ..events import EventBus
-from ..jobs import JobStore, Worker
+from ..jobs import JobStore, Worker, queue_rerender
 from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language, normalize
 from ..models import DubJob, Segment, Speaker
@@ -1038,7 +1038,6 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         overrides = copy.deepcopy(original.overrides or {})
         overrides["dub.line_edits"] = edits
         overrides["dub.candidates"] = candidate_requests
-        overrides["dub.dry_run"] = False
         if coverage_events:
             overrides["coverage.events"] = coverage_events
         if coverage_assets:
@@ -1046,24 +1045,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         if treatment_lines:
             overrides["treatments.lines"] = treatment_lines
         rerun = _rerun_plan(body.edits, candidate_requests, body.events)
-        updated = store.add(
-            title=original.title,
-            source=original.source,
-            source_lang=original.source_lang,
-            target_lang=original.target_lang,
-            target_locale=original.target_locale,
-            input_file=original.input_file,
-            # Frozen rules are inherited unless the author explicitly asks for
-            # the updated knowledge (a saved correction only applies on request).
-            knowledge_snapshot=(
-                knowledge_snapshot(store.db)
-                if body.use_updated_knowledge
-                else original.knowledge_snapshot
-            ),
-            kind=original.kind,
-            overrides=overrides,
-        )
-        bus.publish("job", {"type": "queued", "job_id": updated.id, "title": updated.title})
+        # Frozen rules are inherited unless the author explicitly asks for
+        # the updated knowledge (a saved correction only applies on request).
+        updated = queue_rerender(
+            store, bus, original, overrides,
+            knowledge=knowledge_snapshot(store.db) if body.use_updated_knowledge else None)
         return {"ok": True, "job": asdict(updated), "rerun": rerun,
                 "previous_version": original.version_id}
 

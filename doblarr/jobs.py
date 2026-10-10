@@ -12,6 +12,7 @@ pipeline's stage checkpointing skips already-produced artifacts on the rerun).
 
 from __future__ import annotations
 
+import copy
 import datetime as _dt
 import json
 import logging
@@ -211,6 +212,29 @@ class JobStore:
 
     def close(self) -> None:
         self.db.close()
+
+
+def queue_rerender(store: JobStore, events, original: Job, overrides: dict, *,
+                   title: str = "", source: str = "", version_name: str = "",
+                   knowledge: dict | None = None) -> Job:
+    """Queue a new real run of `original` with `overrides` added to its own.
+
+    The new run reads the knowledge and narrative revisions `original` froze,
+    so a re-render changes only what the reviewer asked for. `knowledge`
+    replaces the frozen rules when the reviewer asked for updated ones.
+    """
+    job = store.add(
+        title=title or original.title, source=source or original.source,
+        source_lang=original.source_lang, target_lang=original.target_lang,
+        target_locale=original.target_locale, input_file=original.input_file,
+        kind=original.kind, version_name=version_name,
+        knowledge_snapshot=original.knowledge_snapshot if knowledge is None else knowledge,
+        narrative_snapshot=original.narrative_snapshot,
+        overrides={**copy.deepcopy(original.overrides or {}), **overrides, "dub.dry_run": False},
+    )
+    if events is not None:
+        events.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+    return job
 
 
 def import_legacy_json(store: JobStore, json_path: str | Path) -> int:

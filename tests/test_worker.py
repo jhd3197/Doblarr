@@ -210,3 +210,21 @@ def test_a_one_voice_dub_says_so(tmp_path, monkeypatch):
     stored = store.get(job.id)
     assert stored.status == "done"
     assert stored.message.endswith("every line in one voice: no HF_TOKEN")
+
+
+def test_a_rerender_reads_what_the_original_run_froze(tmp_path):
+    from doblarr.jobs import queue_rerender
+
+    store = JobStore(tmp_path / "jobs.db")
+    bus = EventBus()
+    original = store.add(title="Harbor Lights", source="t", source_lang="ja", target_lang="es",
+                         knowledge_snapshot={"rules": "r1"}, narrative_snapshot={"revision": "n1"},
+                         overrides={"dub.voice_mode": "preset"})
+    edits = {"dub.line_edits": {"3": {"text": "hola"}}}
+    redo = queue_rerender(store, bus, store.get(original.id), edits)
+    assert redo.knowledge_snapshot == {"rules": "r1"}
+    assert redo.narrative_snapshot == {"revision": "n1"}
+    assert redo.overrides == {"dub.voice_mode": "preset", "dub.line_edits": {"3": {"text": "hola"}},
+                              "dub.dry_run": False}
+    newer = queue_rerender(store, None, store.get(original.id), {}, knowledge={"rules": "r2"})
+    assert newer.knowledge_snapshot == {"rules": "r2"}
