@@ -3,14 +3,14 @@ import { createPortal } from 'react-dom';
 import { api } from '../../lib/api.js';
 import { KnowledgeCorrection } from '../../components/KnowledgeCorrection.jsx';
 import { EnvelopePanel } from './EnvelopePanel.jsx';
+import { formatTime } from '../../lib/media.js';
 
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 // What this line actually is and what it was rendered from. Unknown stays
 // visible as unknown; it is not the same as "nothing to report".
 function provenance(row) {
   const cue = row.cue || {};
-  const source = (cue.source?.spans || []).map(s => `${clock(s.start)}–${clock(s.end)}`).join(', ') || 'unrecorded';
+  const source = (cue.source?.spans || []).map(s => `${formatTime(s.start)}–${formatTime(s.end)}`).join(', ') || 'unrecorded';
   const takes = cue.audio?.takes?.length || 0;
   const rendered = (cue.audio?.renders || []).slice(-1)[0];
   const role = rendered ? rendered.role : (cue.audio?.takes?.length ? 'raw' : 'none');

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { SOURCES } from '../../lib/scene-player.js';
+import { formatTime } from '../../lib/media.js';
 
 // The scene panel inside the review editor: hear the exchange, switch between
 // the original and the dub at the same position, inspect a finding, choose a
@@ -17,15 +18,14 @@ const MODES = [
 const DISPOSITIONS = ['open', 'accepted', 'fixed'];
 const DECISIONS = ['unresolved', 'retain', 'replace', 'omit', 'covered'];
 
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const seconds = s => (s == null ? '—' : `${Number(s).toFixed(2)}s`);
 
 function windowNote(scene) {
   if (!scene) return '';
   const cues = scene.cues?.length || 0;
   const span = scene.target;
-  const source = scene.source ? ` · original ${clock(scene.source.start)}–${clock(scene.source.end)}` : '';
-  return `${cues} line${cues === 1 ? '' : 's'} · ${clock(span.start)}–${clock(span.end)}`
+  const source = scene.source ? ` · original ${formatTime(scene.source.start)}–${formatTime(scene.source.end)}` : '';
+  return `${cues} line${cues === 1 ? '' : 's'} · ${formatTime(span.start)}–${formatTime(span.end)}`
     + `${source} · window grouped by silence, not a detected scene cut`;
 }
 

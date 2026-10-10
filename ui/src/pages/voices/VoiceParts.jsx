@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl } from '../../lib/api.js';
+import { api, apiUrl, withKey } from '../../lib/api.js';
 import { lighten, palette, SAMPLE, seedOf } from '../../lib/voices.js';
-import { safeGet } from '../../lib/storage.js';
 import { createOrb, primeAudio } from './orb.js';
 
 // What the voices pages share: a voice's colours and orb, hearing a voice,
@@ -63,8 +62,7 @@ export function HearPanel({ voice, orbRef }) {
         await new Promise(r => setTimeout(r, 1200));
       }
       if (mine !== version.current) return;
-      const apiKey = safeGet('doblarr_api_key', '');
-      const url = apiUrl(`voice-catalog/preview/${made.id}/audio`) + (apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '');
+      const url = withKey(apiUrl(`voice-catalog/preview/${made.id}/audio`));
       setSrc(url);
       const audio = audioRef.current;
       audio.src = url;

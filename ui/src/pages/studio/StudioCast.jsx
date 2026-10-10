@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, apiUrl } from '../../lib/api.js';
-import { safeGet } from '../../lib/storage.js';
+import { api, apiUrl, withKey } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { castingQuery, studioVoicesQuery } from './queries.js';
 
@@ -139,8 +138,7 @@ function Audition({ ctrl, id, character }) {
     } catch (err) { setNote(err.message); }
   }
   function play(name, cue) {
-    const key = safeGet('doblarr_api_key', '');
-    playTake(`${apiUrl(`studio/auditions/${id}/takes/${name}/${cue}`)}${key ? `?api_key=${encodeURIComponent(key)}` : ''}`,
+    playTake(withKey(apiUrl(`studio/auditions/${id}/takes/${name}/${cue}`)),
       err => setNote(err.message));
   }
   async function pick(candidate, scope, apply) {

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl } from '../../lib/api.js';
-import { safeGet } from '../../lib/storage.js';
+import { api, apiUrl, withKey } from '../../lib/api.js';
 
 // One line's voice envelope in review: what was chosen and why, what the
 // render actually did, the other candidates, and the same take heard four
@@ -21,9 +20,8 @@ const HEAR = [['dry', 'Take as generated'], ['shaped', 'With envelope'],
   ['source', 'Original'], ['mixed', 'In the mix']];
 
 function audioUrl(jobId, cue, kind, matched = false) {
-  const key = safeGet('doblarr_api_key', '');
-  return apiUrl(`adaptive/audio?job_id=${encodeURIComponent(jobId)}&cue=${encodeURIComponent(cue)}`
-    + `&kind=${kind}${matched ? '&level_matched=true' : ''}`) + (key ? `&api_key=${encodeURIComponent(key)}` : '');
+  return withKey(apiUrl(`adaptive/audio?job_id=${encodeURIComponent(jobId)}&cue=${encodeURIComponent(cue)}`
+    + `&kind=${kind}${matched ? '&level_matched=true' : ''}`));
 }
 
 export function forgetEnvelopes(jobId) { cache.delete(jobId); }

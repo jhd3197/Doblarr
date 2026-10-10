@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { apiUrl } from './api.js';
-import { safeGet } from './storage.js';
+import { apiUrl, withKey } from './api.js';
 import { queryClient } from './queries.js';
 
 // Live updates from /api/events (SSE). Job events refresh the jobs cache, scan
@@ -28,8 +27,7 @@ function pushLog(evt) {
 
 export function startEventStream() {
   source?.close();
-  const key = safeGet('doblarr_api_key', '');
-  source = new EventSource(apiUrl('events') + (key ? '?api_key=' + encodeURIComponent(key) : ''));
+  source = new EventSource(withKey(apiUrl('events')));
   source.onmessage = e => {
     failures = 0;
     let evt;

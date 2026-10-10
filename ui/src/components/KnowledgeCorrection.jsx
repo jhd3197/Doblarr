@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, apiUrl } from '../lib/api.js';
+import { api, apiUrl, withKey } from '../lib/api.js';
 import { baseLanguage as baseOf } from '../lib/languages.js';
-import { safeGet } from '../lib/storage.js';
 import { scopeOptions } from '../lib/knowledge.js';
 
 const READY = ['completed', 'done', 'ready', 'success'];
@@ -36,9 +35,8 @@ export function useVoiceSample() {
           const result = await api(`voice-catalog/preview/${response.id}`);
           if (!alive()) return;
           if (READY.includes(result.status)) {
-            const apiKey = safeGet('doblarr_api_key', '');
-            set({ src: apiUrl(`voice-catalog/preview/${response.id}/audio`)
-              + (apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : ''), status: 'Sample ready.', busy: false });
+            set({ src: withKey(apiUrl(`voice-catalog/preview/${response.id}/audio`)),
+              status: 'Sample ready.', busy: false });
           } else if (FAILED.includes(result.status)) {
             set({ status: result.error || 'Voice sample failed.', busy: false });
           } else if (Date.now() > deadline) {

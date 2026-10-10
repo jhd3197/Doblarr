@@ -1,5 +1,4 @@
-import { apiUrl } from '../../lib/api.js';
-import { safeGet } from '../../lib/storage.js';
+import { apiUrl, withKey } from '../../lib/api.js';
 
 // Labels and small helpers shared by the episode analysis views.
 
@@ -22,10 +21,6 @@ export const fold = s => String(s || '').toLowerCase();
 export const totalTalk = data => data.lines.reduce((t, l) => t + l.end - l.start, 0);
 export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function withKey(url) {
-  const key = safeGet('doblarr_api_key', '');
-  return url + (key ? `&api_key=${encodeURIComponent(key)}` : '');
-}
 
 export function clipUrl(path, start, end, track) {
   return withKey(apiUrl(`analysis/clip?path=${encodeURIComponent(path)}&start=${start.toFixed(2)}&end=${end.toFixed(2)}&track=${track}`));

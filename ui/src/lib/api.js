@@ -1,5 +1,12 @@
 import { safeGet, safeSet } from './storage.js';
 
+// Browsers cannot send a header with an <audio>, <video> or EventSource
+// request, so those URLs carry the key as a query parameter instead.
+export function withKey(url) {
+  const key = safeGet('doblarr_api_key', '');
+  return key ? `${url}${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(key)}` : url;
+}
+
 export function apiUrl(path) {
   return '/api/' + path.replace(/^\/?api\//, '').replace(/^\//, '');
 }

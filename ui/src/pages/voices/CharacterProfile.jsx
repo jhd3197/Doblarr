@@ -3,7 +3,7 @@ import { Link, useLoaderData } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery, queryClient } from '../../lib/queries.js';
 import { api } from '../../lib/api.js';
-import { frameUrl, pickFrames, trackLabel, videoUrl } from '../../lib/media.js';
+import { formatTime, frameUrl, pickFrames, trackLabel, videoUrl } from '../../lib/media.js';
 import { voiceFor } from '../../lib/voices.js';
 import { MediaPlayer } from '../../components/MediaPlayer.jsx';
 import { catalogQuery, invalidateVoices, profileQuery, voiceQuery, voiceTemplatesQuery } from './queries.js';
@@ -55,7 +55,6 @@ const GROUPS = [
 ];
 const VARIATIONS = ['neutral', 'whisper', 'call', 'shout', 'restrained', 'excited', 'sad', 'exhausted', 'nonverbal'];
 const VERDICTS = ['untested', 'good', 'acceptable', 'poor', 'failed'];
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
 const known = value => !(value == null || value === '' || value === 'unknown' || value === false
@@ -219,7 +218,7 @@ function Appearances({ character, voice }) {
     const clips = e.lines.map(l => {
       const start = Math.max(0, l.start - 0.35);
       const end = Math.min(start + 29.5, l.end + 0.45);
-      return { start, end, label: clock(l.start), text: l.text, detail: l.original_text || '', cue: l.cue,
+      return { start, end, label: formatTime(l.start), text: l.text, detail: l.original_text || '', cue: l.cue,
         url: stream => videoUrl(e.path, start, end, stream) };
     });
     setPlayer({ title: character.name, colour, subtitle: `${e.episode} · ${e.lines.length} lines, back to back`,
@@ -233,20 +232,20 @@ function Appearances({ character, voice }) {
       {data.episodes.map((e, n) => (
         <div key={n} className="appear-episode">
           <div className="appear-head"><strong>{e.episode || e.revision_id}</strong>
-            <span className="hint"><span className="m">{e.lines.length}</span> lines · <span className="m">{clock(e.seconds)}</span></span>
+            <span className="hint"><span className="m">{e.lines.length}</span> lines · <span className="m">{formatTime(e.seconds)}</span></span>
             {e.reachable ? <button type="button" className="btn btn-ghost" data-watch-episode={n}
               onClick={ev => watch(e, undefined, ev.currentTarget)}>Watch their lines</button>
               : <span className="hint">video not reachable from here</span>}</div>
           {e.reachable && (
             <div className="cast-frames">{pickFrames(e.lines, {}, 6).map(l => (
               <button key={l.cue} type="button" className="cast-frame" style={{ '--tint': colour }} data-watch-episode={n}
-                data-from={l.cue} title={`${clock(l.start)} · ${l.text}`} onClick={ev => watch(e, l.cue, ev.currentTarget)}>
-                <img src={frameUrl(e.path, (l.start + l.end) / 2)} alt={`The picture at ${clock(l.start)}`} width="160" height="90" decoding="async" />
-                <span className="cast-frame-time m">{clock(l.start)}</span></button>
+                data-from={l.cue} title={`${formatTime(l.start)} · ${l.text}`} onClick={ev => watch(e, l.cue, ev.currentTarget)}>
+                <img src={frameUrl(e.path, (l.start + l.end) / 2)} alt={`The picture at ${formatTime(l.start)}`} width="160" height="90" decoding="async" />
+                <span className="cast-frame-time m">{formatTime(l.start)}</span></button>
             ))}</div>
           )}
           <details className="appear-lines"><summary>Their lines</summary><ol>{e.lines.map((l, i) => (
-            <li key={i}><span className="m hint">{clock(l.start)}</span> {l.text}{l.original_text && <> <span className="hint">{l.original_text}</span></>}</li>
+            <li key={i}><span className="m hint">{formatTime(l.start)}</span> {l.text}{l.original_text && <> <span className="hint">{l.original_text}</span></>}</li>
           ))}</ol></details>
         </div>
       ))}

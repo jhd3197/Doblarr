@@ -6,6 +6,7 @@ import { LineEditor } from './LineEditor.jsx';
 import { ScenePanel } from './ScenePanel.jsx';
 import { collectScene, createSceneState, resetSceneState } from './scene-collect.js';
 import './dubs.css';
+import { formatTime } from '../../lib/media.js';
 
 // Dialogue review for one job: the line list beside a focused editor, the
 // scene panel (playback, takes, direction, timing, space, coverage, verdicts)
@@ -28,7 +29,6 @@ import './dubs.css';
 //   data             the loaded review (segments, revision, …) or null
 //   jobId            the job on screen
 
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function describeRerun(plan) {
   if (!plan) return 'Unchanged clips will be reused.';
@@ -300,7 +300,7 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
               aria-pressed={s.index === selected ? 'true' : 'false'}
               title={s.review_priority ? s.review_priority.reasons.join(', ') : undefined}
               onClick={() => select(s.index)}>
-              <span className="m">{clock(s.source_start ?? s.start)}</span>
+              <span className="m">{formatTime(s.source_start ?? s.start)}</span>
               <span><strong>{s.speaker}</strong>{' '}
                 <span className="review-excerpt">{s.text_translated || s.text_src}</span></span>
               <span className="review-marker">{pending.current.has(s.index) ? 'Edited' : s.issues.length ? 'Review' : ''}</span>

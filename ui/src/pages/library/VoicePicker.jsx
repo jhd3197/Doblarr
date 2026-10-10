@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl } from '../../lib/api.js';
-import { safeGet } from '../../lib/storage.js';
+import { api, apiUrl, withKey } from '../../lib/api.js';
 import { baseLanguage, languageMatches } from '../../lib/languages.js';
 
 // Voices are tagged with base languages (es); a regional target (es-MX) matches them.
@@ -116,8 +115,7 @@ export function VoicePicker({ language, category = 'speaker', onSelect, onClose 
           const result = await api(`voice-catalog/preview/${response.id}`);
           if (version !== state.version) return;
           if (DONE.includes(result.status)) {
-            const key = safeGet('doblarr_api_key', '');
-            setSample(apiUrl(`voice-catalog/preview/${response.id}/audio`) + (key ? `?api_key=${encodeURIComponent(key)}` : ''));
+            setSample(withKey(apiUrl(`voice-catalog/preview/${response.id}/audio`)));
             setStatus(`${voice.name}: sample ready. Listen before assigning.`);
           } else if (FAILED.includes(result.status)) setStatus(result.error || 'Voice sample failed.');
           else if (Date.now() > deadline) setStatus('Still processing in Voicebox. Check its history before starting another sample.');

@@ -1,12 +1,7 @@
 // Media helpers: clip, frame and video URLs, reel timing, track labels and
 // why a line went to its voice group.
-import { apiUrl } from './api.js';
-import { safeGet } from './storage.js';
+import { apiUrl, withKey } from './api.js';
 
-function withKey(url) {
-  const key = safeGet('doblarr_api_key', '');
-  return url + (key ? `&api_key=${encodeURIComponent(key)}` : '');
-}
 
 export function videoUrl(path, start, end, stream) {
   return withKey(apiUrl(`analysis/video?path=${encodeURIComponent(path)}&start=${start.toFixed(2)}&end=${end.toFixed(2)}`

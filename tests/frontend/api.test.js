@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
-import { api, apiUrl } from '../../ui/src/lib/api.js';
+import { api, apiUrl, withKey } from '../../ui/src/lib/api.js';
 
 const originalFetch = globalThis.fetch;
 beforeEach(() => {
@@ -50,4 +50,11 @@ test('unauthorized requests retry with the supplied key', async () => {
   await api('jobs');
   assert.equal(calls, 2);
   assert.equal(localStorage.getItem('doblarr_api_key'), 'new-key');
+});
+
+test('media URLs carry the key as a query parameter, joined correctly', () => {
+  assert.equal(withKey('/api/events'), '/api/events');
+  localStorage.setItem('doblarr_api_key', 'k&1');
+  assert.equal(withKey('/api/events'), '/api/events?api_key=k%261');
+  assert.equal(withKey('/api/clip?t=1'), '/api/clip?t=1&api_key=k%261');
 });
