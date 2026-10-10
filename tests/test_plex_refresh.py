@@ -76,12 +76,20 @@ def test_plex_refresh_item_post_fallback():
                      ("POST", "http://p/library/metadata/rk-42/refresh")]
 
 
+looked_up: list[tuple] = []
+
+
 def _worker_with(tmp_path, monkeypatch, cfg_data, plex):
     def fake_run_job(dj, config, **kw):
         dj.output_file = tmp_path / "out" / "movie.mkv"
     monkeypatch.setattr("doblarr.jobs.run_job", fake_run_job)
-    monkeypatch.setattr("doblarr.jobs.find_item",
-                        lambda plex, title, year=None, source="": {"ratingKey": "rk1"})
+    looked_up.clear()
+
+    def find_item(plex, title, year=None, source=""):
+        looked_up.append((title, year, source))
+        return {"ratingKey": "rk1"}
+
+    monkeypatch.setattr("doblarr.jobs.find_item", find_item)
     store = JobStore(tmp_path / "jobs.db")
     worker = Worker(store, Config(cfg_data), services=SimpleNamespace(plex=plex))
     job = store.add(title="Film", source="Radarr · Films", source_lang="ko",
@@ -99,6 +107,7 @@ def test_plex_auto_refresh_after_real_dub(tmp_path, monkeypatch):
 
     store, job = _worker_with(tmp_path, monkeypatch,
                               {"dub": {"dry_run": False}}, FakePlex())
+    assert looked_up == [("Film", None, "Radarr · Films")]
     assert calls == ["rk1"]
     assert store.get(job.id).status == "done"
     store.close()

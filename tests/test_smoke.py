@@ -120,11 +120,22 @@ def test_plex_label_sync():
             return {"ratingKey": "rk-A", "title": title, "year": year, "labels": []}
         def items_with_label(self, sk, tn, label):
             return [{"ratingKey": "rk-B", "title": "B", "year": 2021}] if sk == "1" else []
-        def add_label(self, *a): pass
-        def remove_label(self, *a): pass
+        def add_label(self, *a):
+            changes.append(("add", *a))
+        def remove_label(self, *a):
+            changes.append(("remove", *a))
 
+    changes: list[tuple] = []
     r = sync_labels(items, FakePlex(), Config.load("nope.yaml"), apply=False)
     assert r["matched"] == 1 and r["added"] == 1 and r["removed"] == 1, r
+    assert changes == []                                    # a dry run changes nothing
+
+    config = Config.load("nope.yaml").with_overrides({"paths.output_dir": "out"})
+    r = sync_labels(items, FakePlex(), config, apply=True)
+    assert changes == [("add", "1", 1, "rk-A", "needs-dub"),
+                       ("remove", "1", 1, "rk-B", "needs-dub")]
+    kometa = Path(r["kometa_file"])
+    assert "label: needs-dub" in kometa.read_text(encoding="utf-8")
 
 
 def test_scheduler():

@@ -22,9 +22,16 @@ def tone(path, seconds=3.0, rate=16000):
 @ffmpeg
 def test_a_cancel_stops_line_measurement_between_lines(tmp_path):
     cancel = threading.Event()
-    cancel.set()
+    measured = []
+
+    def progress(done, total, note):
+        measured.append(done)
+        cancel.set()                    # the user cancels after the first line
+
     with pytest.raises(JobCancelled):
-        features.measure_lines(tone(tmp_path / "a.wav"), [(0, 1), (1, 2)], cancel=cancel)
+        features.measure_lines(tone(tmp_path / "a.wav"), [(0, 1), (1, 2), (2, 3)],
+                               cancel=cancel, progress=progress)
+    assert measured == [0]              # the second line was never measured
 
 
 @ffmpeg

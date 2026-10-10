@@ -194,7 +194,8 @@ def test_voicebox_receives_system_and_json_schema():
     translator = VoiceboxTranslator(SimpleNamespace(llm_generate=generate))
     assert translator.translate("hello", "en", "es", 40) == "hola"
     assert "translations" in calls[0][0]
-    assert "40" in calls[0][1] and "en" in calls[0][1] and "es" in calls[0][1]
+    assert "dialogue from en to es" in calls[0][1]
+    assert "under about 40 characters" in calls[0][1]
 
 
 def test_cancellation_is_not_retried_or_wrapped(setup_driver):

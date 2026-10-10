@@ -1,5 +1,4 @@
 import threading
-import time
 
 from doblarr.config import Config
 from doblarr.model_pool import model, release_models
@@ -13,15 +12,21 @@ def test_queue_is_bounded_and_progress_counts_completed_lines(tmp_path):
     job.segments = [Segment(i, i * 3, i * 3 + 2, str(i)) for i in range(9)]
     job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00", voicebox_profile_id="voice")}
     lock = threading.Lock()
-    active, peak = 0, 0
+    active, peak, started = 0, 0, 0
+    # The first two takes wait for each other: they can only both pass if two
+    # run at once, which proves the concurrency without depending on timing.
+    together = threading.Barrier(2, timeout=5)
 
     class Voicebox:
         def synthesize_to_file(self, profile, text, language, dest, **kwargs):
-            nonlocal active, peak
+            nonlocal active, peak, started
             with lock:
                 active += 1
                 peak = max(peak, active)
-            time.sleep(0.015)
+                started += 1
+                first_two = started <= 2
+            if first_two:
+                together.wait()
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"audio")
             with lock:
@@ -31,7 +36,7 @@ def test_queue_is_bounded_and_progress_counts_completed_lines(tmp_path):
     synthesize.run(
         job, Voicebox(), tmp_path, concurrency=2, progress=lambda done, *a: progress.append(done)
     )
-    assert peak == 2
+    assert peak == 2                    # two at once, never more
     assert progress == list(range(1, 10))
     assert all(s.audio_clip.exists() for s in job.segments)
     assert job.metrics["tts_generated"] == 9

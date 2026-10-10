@@ -242,7 +242,7 @@ def test_a_tease_keeps_its_own_namespace_and_still_measures_nothing_it_should_no
     job.script_is_target = True
     run_job(job, config, services=services)
     assert job.output_file.is_file()
-    assert ".tease" in str(job.artifacts_dir) or "tease" in job.output_file.name
+    assert job.source_audio.name.endswith(".tease.source.wav")
     assert all(s.audio.render(LEVELED) is not None for s in job.segments)
 
 

@@ -80,6 +80,7 @@ def test_webhook_download_triggers_debounced_scan(webhook_client):
     deadline = time.time() + 3
     while calls["n"] == 0 and time.time() < deadline:
         time.sleep(0.05)
+    time.sleep(0.4)         # well past the 0.1 s debounce: a second scan would have run
     assert calls["n"] == 1  # burst of 2 webhooks coalesced into one rescan
 
 
