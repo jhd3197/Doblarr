@@ -11,12 +11,15 @@ export function NewDubModal({ onClose }) {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const titleRef = useRef(null);
-  useEffect(() => { titleRef.current?.focus(); }, []);
+  const dialogRef = useRef(null);
+  // A native modal dialog: focus stays inside it, Escape closes it, and focus
+  // returns to whatever opened it.
   useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    const opener = document.activeElement;
+    dialogRef.current?.showModal();
+    titleRef.current?.focus();
+    return () => opener?.focus?.();
+  }, []);
   const set = key => e => setForm({ ...form, [key]: e.target.value });
 
   async function queue() {
@@ -39,9 +42,10 @@ export function NewDubModal({ onClose }) {
   }
 
   return (
-    <div id="newDubModal" className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <dialog id="newDubModal" ref={dialogRef} className="modal-dialog" aria-labelledby="ndHeading"
+      onClose={onClose} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="panel modal-card">
-        <h3 className="modal-title">New dub</h3>
+        <h3 id="ndHeading" className="modal-title">New dub</h3>
         <p className="modal-sub">Queue a title manually.</p>
         <label className="modal-label" htmlFor="ndTitle">Title</label>
         <input id="ndTitle" ref={titleRef} className="input" type="text" placeholder="e.g. The Quiet Harbor"
@@ -67,6 +71,6 @@ export function NewDubModal({ onClose }) {
           <button type="button" className="btn btn-primary" id="ndQueue" disabled={busy} onClick={queue}>Queue dub</button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

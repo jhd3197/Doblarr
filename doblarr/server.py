@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import __version__
 from .auth import build_api_key_dependency, build_host_check
 from .clients.speech import SpeechError
 from .config import Config
@@ -92,7 +93,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         library.debouncer.cancel()
         db.close()
 
-    app = FastAPI(title="Doblarr", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Doblarr", version=__version__, lifespan=lifespan)
     app.middleware("http")(build_host_check(config))
     app.state.jobs = store
     app.state.worker = worker

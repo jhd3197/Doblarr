@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useMatches } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { hardwareQuery } from '../lib/queries.js';
+import { hardwareQuery, statusQuery } from '../lib/queries.js';
 import { hardwareSummary } from '../lib/hardware.js';
 import { nudgeDue, REPO_URL, SNOOZE_KEY, SNOOZE_MS, STARRED_KEY } from '../lib/star.js';
 import { safeSet } from '../lib/storage.js';
@@ -30,6 +30,10 @@ export function Sidebar() {
   const [nudge, setNudge] = useState(() => nudgeDue());
   const { data: hw, isFetched } = useQuery(hardwareQuery);
   const summary = hardwareSummary(hw, hw?.memory);
+  const { data: status, isError: offline } = useQuery({ ...statusQuery, refetchInterval: 30_000 });
+  const working = !offline && status?.worker_alive !== false;
+  const worker = !working ? (offline ? 'server unreachable' : 'worker stopped')
+    : isFetched ? `worker online · ${summary.device}` : 'worker online';
   const starred = () => { safeSet(STARRED_KEY, '1'); setNudge(false); };
   const later = () => { safeSet(SNOOZE_KEY, String(Date.now() + SNOOZE_MS)); setNudge(false); };
 
@@ -58,13 +62,15 @@ export function Sidebar() {
       </div>
       <div className="sidefoot panel">
         <div className="sidefoot-row">
-          <span className="sidefoot-dot" />
-          <span id="workerStatus" className="m">{isFetched ? `worker online · ${summary.device}` : 'worker online'}</span>
+          <span className="sidefoot-dot" data-state={working ? 'ok' : 'down'} />
+          <span id="workerStatus" className="m">{worker}</span>
         </div>
-        <div className="sidefoot-row sidefoot-version">
-          <span>Doblarr stable</span>
-          <span className="m">0.4.1</span>
-        </div>
+        {status?.version && (
+          <div className="sidefoot-row sidefoot-version">
+            <span>Doblarr</span>
+            <span className="m">{status.version}</span>
+          </div>
+        )}
       </div>
     </aside>
   );

@@ -10,7 +10,7 @@
     padding: 9px 15px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
     display: inline-flex; align-items: center; gap: 8px; background: transparent;
     color: var(--color-text); white-space: nowrap; }
-  .btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+  .btn-primary { background: var(--color-accent-fill); border-color: var(--color-accent-fill); color: var(--color-on-accent); }
   .btn-primary:hover { filter: brightness(1.06); }
   .btn-secondary { border-color: var(--line-strong); background: var(--color-surface); color: var(--color-text); }
   .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }

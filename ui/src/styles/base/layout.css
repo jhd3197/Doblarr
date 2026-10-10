@@ -30,7 +30,7 @@
   .opt { appearance: none; cursor: pointer; border: 1px solid var(--line-strong); background: transparent;
     color: var(--muted); border-radius: 999px; padding: 6px 13px; font-family: var(--font-body); font-size: 12.5px; }
   .opt:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 6%, transparent); }
-  .opt[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: #fff; font-weight: 600; }
+  .opt[aria-pressed="true"] { background: var(--color-accent-fill); border-color: var(--color-accent-fill); color: var(--color-on-accent); font-weight: 600; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   [hidden] { display: none !important; }
 

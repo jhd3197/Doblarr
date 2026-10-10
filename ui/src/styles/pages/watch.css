@@ -20,7 +20,7 @@
 .watch-pill { border:1px solid var(--line-strong); background:transparent; color:var(--muted); border-radius:999px;
   padding:6px 13px; font:500 12.5px var(--font-body); cursor:pointer; white-space:nowrap;
   &:hover { color:var(--color-text); }
-  &[aria-pressed="true"] { background:var(--color-accent); border-color:var(--color-accent); color:#fff; font-weight:700; }
+  &[aria-pressed="true"] { background: var(--color-accent-fill); border-color: var(--color-accent-fill); color: var(--color-on-accent); font-weight:700; }
   &.watch-pill-dark[aria-pressed="true"] { background:var(--color-text); border-color:var(--color-text); color:var(--color-bg); }
   &:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; } }
 .watch-pills { display:flex; flex-wrap:wrap; gap:4px; & .watch-pill { padding:6px 11px; font-size:12px; } }

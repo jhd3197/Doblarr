@@ -11,7 +11,8 @@ a.navitem { text-decoration: none; }
 .sidefoot { margin-top: auto; padding: 12px 14px; }
 .sidefoot-row { display: flex; align-items: center; gap: 8px; }
 .sidefoot-row .m { font-size: 12px; }
-.sidefoot-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent); display: block; }
+.sidefoot-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-neutral-600); display: block; }
+.sidefoot-dot[data-state="down"] { background: var(--color-accent); }
 .sidefoot-version { align-items: baseline; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--muted); }
 
 .main { min-width: 0; display: flex; flex-direction: column; position: relative; }
@@ -38,8 +39,8 @@ a.navitem { text-decoration: none; }
 .route-error-back { margin-top: 12px; }
 .muted-note { padding: 22px 10px; color: var(--muted); }
 
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center;
-  justify-content: center; z-index: 100; }
+.modal-dialog { border: 0; padding: 0; background: transparent; color: inherit; }
+.modal-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .modal-card { width: min(440px, 92vw); padding: 22px 24px; }
 .modal-title { margin: 0 0 4px; font-size: 18px; }
 .modal-sub { margin: 0 0 16px; font-size: 13px; color: var(--muted); }

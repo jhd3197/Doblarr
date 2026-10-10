@@ -86,11 +86,14 @@ function Control({ spec: [path, label, kind], profile, locked }) {
   } else {
     input = <input className="input" data-field={path} defaultValue={value || ''} />;
   }
+  // Two labels side by side, never one inside the other: the field's name must
+  // not be read as "… lock", and a click on "lock" must not reach the field.
   return (
-    <label className="review-field">{label} {input}
+    <div className="review-field">
+      <label>{label} {input}</label>
       <label className="hint profile-lock" title="Locked fields are never changed by suggestions">
         <input type="checkbox" data-lock={path} defaultChecked={locked(path)} /> lock</label>
-    </label>
+    </div>
   );
 }
 

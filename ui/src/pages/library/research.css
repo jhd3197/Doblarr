@@ -26,7 +26,7 @@
 
 .research-ask { display: flex; flex-direction: column; gap: 8px; }
 .research-ask textarea { width: 100%; resize: vertical; font: inherit; }
-.research-ask-btn { color: #fff; }
+.research-ask-btn { color: var(--color-on-accent); }
 
 .research-runs { list-style: none; margin: 0; padding: 0; }
 .research-runs > li { border-bottom: 1px solid var(--line); }
