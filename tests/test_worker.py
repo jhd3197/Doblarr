@@ -196,3 +196,17 @@ def test_unexpected_plex_error_does_not_fail_a_finished_dub(tmp_path, monkeypatc
                     services=SimpleNamespace(plex=object()))
     worker._process(job)
     assert store.get(job.id).status == "done"
+
+
+def test_a_one_voice_dub_says_so(tmp_path, monkeypatch):
+    def run_job(dj, config, **kw):
+        dj.metrics["diarize"] = {"method": "narrator", "reason": "no HF_TOKEN"}
+
+    monkeypatch.setattr("doblarr.jobs.run_job", run_job)
+    store = JobStore(tmp_path / "jobs.db")
+    job = _add(store)
+    config = Config({"dub": {"dry_run": False}, "plex": {"auto_refresh": False}})
+    Worker(store, config)._process(job)
+    stored = store.get(job.id)
+    assert stored.status == "done"
+    assert stored.message.endswith("every line in one voice: no HF_TOKEN")

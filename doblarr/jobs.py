@@ -28,6 +28,7 @@ from .languages import resolve_target_locale
 from .models import DubJob
 from .pipeline import run_job
 from .plex_labels import find_item
+from .stages.diarize import narrator_fallback
 from .store import Database
 
 log = logging.getLogger("doblarr.jobs")
@@ -426,6 +427,9 @@ class Worker(threading.Thread):
             message = (f"analysed {len(dj.segments)} lines · {len(dj.speakers)} voices"
                        if dj.kind == "analyze" else
                        f"{'planned' if dry_run else 'dubbed'} -> {out}")
+            one_voice = narrator_fallback(dj)
+            if one_voice and not dry_run:
+                message += f" · every line in one voice: {one_voice}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
                               message=message,
                               report_file=str(dj.report_file) if dj.report_file else None,

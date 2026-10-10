@@ -16,12 +16,11 @@ job in place):
 from __future__ import annotations
 
 import functools
-import json
 import logging
 from collections.abc import Iterable
 from pathlib import Path
 
-from ..artifacts import read_json, stamp
+from ..artifacts import stamp
 from ..cues import (
     CUE_SCHEMA_VERSION,
     NonverbalEvent,
@@ -35,6 +34,7 @@ from ..cues import (
     validate_cues,
     validate_events,
 )
+from ..fileio import read_json, write_json
 
 
 class DryRunPlan:
@@ -133,6 +133,8 @@ def save_script(job, work_dir: Path) -> Path:
                                    if job.subtitle_file else None)},
         "script_is_target": job.script_is_target,
         "speakers": [s.label for s in job.speakers.values()],
+        # How the speakers were found; a narrator fallback is retried on resume.
+        "diarize": job.metrics.get("diarize"),
         "segments": [
             {"index": s.index, "start": s.start, "end": s.end,
              "text_src": s.text_src, "speaker": s.speaker,
@@ -147,10 +149,7 @@ def save_script(job, work_dir: Path) -> Path:
             for s in job.segments
         ],
     }
-    p.parent.mkdir(parents=True, exist_ok=True)
-    temp = p.with_suffix(".partial.json")
-    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-    temp.replace(p)
+    write_json(p, payload, indent=1)
     return p
 
 
@@ -188,6 +187,8 @@ def load_script(job, work_dir: Path, force: bool = False) -> Path | None:
                             text_translated=s.get("text_translated"))
                     for s in payload["segments"]]
     job.speakers = {label: Speaker(label=label) for label in payload.get("speakers", [])}
+    if payload.get("diarize"):
+        job.metrics["diarize"] = payload["diarize"]
     job.script_is_target = bool(payload.get("script_is_target"))
     job.script_lang = payload.get("script_lang")
     _restore_cues(job, payload)

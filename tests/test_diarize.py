@@ -92,13 +92,14 @@ def test_pipeline_load_failure_degrades_to_narrator(tmp_path, monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "bad-token")
     _fake_pyannote(monkeypatch)
 
-    def boom(token):
+    def boom(token, device=None):
         raise OSError("401 Unauthorized")
 
     monkeypatch.setattr(diarize, "_load_pipeline", boom)
     job = _job(tmp_path, [])
     diarize.run(job, enabled=True, dry_run=False)
     assert list(job.speakers) == ["NARRATOR"]
+    assert "401 Unauthorized" in diarize.narrator_fallback(job)
 
 
 def _fake_torch(monkeypatch, cuda_devices):

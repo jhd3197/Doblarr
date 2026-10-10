@@ -30,10 +30,18 @@ MODEL_ID = "pyannote/speaker-diarization-3.1"
 
 
 def _single_narrator(job: DubJob, reason: str) -> None:
+    """Give every line one voice, and record why so the job says so and a resume retries."""
     job.speakers = {"NARRATOR": Speaker(label="NARRATOR")}
     for seg in job.segments:
         seg.speaker = "NARRATOR"
+    job.metrics["diarize"] = {"method": "narrator", "reason": reason}
     log.warning("diarize: %s — falling back to a single narrator voice", reason)
+
+
+def narrator_fallback(job: DubJob) -> str | None:
+    """Why this job's lines all share one voice, or None when diarization ran."""
+    found = job.metrics.get("diarize") or {}
+    return found.get("reason") if found.get("method") == "narrator" else None
 
 
 def _load_pipeline(token: str, device: hardware.Device | None = None):
@@ -215,9 +223,15 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
         return dry(f"would run pyannote diarization on {job.vocals or job.source_audio}")
 
-    if job.speakers:
+    if job.speakers and narrator_fallback(job) is None:
         log.info("diarize: speakers already assigned (restored script) — skipping")
         return None
+    if job.speakers:
+        # The cached cast is a fallback from a run that could not diarize
+        # (out of memory, offline Hub); the cause may be gone, so try again.
+        log.info("diarize: retrying after an earlier narrator fallback")
+        job.speakers = {}
+        job.metrics.pop("diarize", None)
 
     token = os.environ.get("HF_TOKEN")
     if method == "local" or (method == "auto" and not token):
