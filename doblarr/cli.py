@@ -84,11 +84,11 @@ def _cmd_dub(args: argparse.Namespace, config: Config) -> int:
     # --dry-run forces a plan; otherwise dub.dry_run from config decides.
     dry_run = args.dry_run if args.dry_run is not None else config["dub"].get("dry_run", True)
     from .artifacts import media_work, read_json
+    from .fileio import write_json
     from .knowledge import snapshot
     from .knowledge.packs import ensure_starter_pack
     from .languages import resolve_target_locale
     from .store import Database
-    from .telemetry import write_json
 
     db = Database(config.db_path)
     try:

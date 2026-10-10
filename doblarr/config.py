@@ -1,17 +1,24 @@
 """Load Doblarr configuration from YAML with defaults, env overrides, and
-schema validation (warnings, never fatal — see config_schema.py)."""
+schema validation.
+
+Loading only warns about invalid values, so a hand-edited file still boots.
+Saving from the app refuses a change that would add an invalid value.
+"""
 
 from __future__ import annotations
 
 import copy
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from .config_schema import ConfigModel, validate_config
+from .config_schema import ConfigModel, config_problems, validate_config
+from .errors import InvalidSettings
+from .fileio import write_text
 from .languages import base_language, normalize
 from .languages import parse as parse_language_tag
 
@@ -122,8 +129,8 @@ def load_user_data(path: str | Path) -> dict:
 
 
 def save_user_data(path: str | Path, data: dict) -> None:
-    with open(path, "w", encoding="utf-8") as fh:
-        yaml.safe_dump(data, fh, sort_keys=False, allow_unicode=True)
+    """Write the user config atomically: a crash leaves the old file, never an empty one."""
+    write_text(Path(path), yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
 
 
 class Config:
@@ -132,6 +139,7 @@ class Config:
     def __init__(self, data: dict[str, Any], path: str | Path = "config.yaml"):
         self._data = data
         self._path = Path(path)
+        self._save_lock = threading.Lock()
 
     def __getitem__(self, key: str) -> Any:
         return self._data[key]
@@ -175,14 +183,22 @@ class Config:
         return Config(_deep_merge(self.as_dict(), nested), self.path)
 
     def apply_and_save(self, changes: dict) -> dict:
-        """Merge changes into the user config file, persist, and reload in place."""
+        """Merge changes into the user config file, persist, and reload in place.
+
+        Raises InvalidSettings, and saves nothing, when the change adds a value
+        the schema rejects. Problems the file already had do not block a save.
+        """
         clean = _strip_sentinels(changes)
-        merged_user = _deep_merge(load_user_data(self._path), clean)
-        save_user_data(self._path, merged_user)
-        self._data = _deep_merge(DEFAULTS, merged_user)
-        _apply_env_overrides(self._data)
-        _migrate_legacy_locale(self._data)
-        validate_config(self._data)
+        with self._save_lock:
+            merged_user = _deep_merge(load_user_data(self._path), clean)
+            data = _deep_merge(DEFAULTS, merged_user)
+            _apply_env_overrides(data)
+            _migrate_legacy_locale(data)
+            added = [p for p in config_problems(data) if p not in config_problems(self._data)]
+            if added:
+                raise InvalidSettings("; ".join(added))
+            save_user_data(self._path, merged_user)
+            self._data = data
         return merged_user
 
     @classmethod

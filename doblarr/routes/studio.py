@@ -375,7 +375,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                   for g in body.get("groups", []) if g.get("span")]
         path = (config.work_dir / "studio" / "references" / found["id"]
                 / f"aligned-{body['id']}-r{body['revision']}.json")
-        from ..telemetry import write_json
+        from ..fileio import write_json
 
         write_json(path, {"reference": ref["id"], "language": ref["language"],
                           "alignment": body["id"], "revision": body["revision"],

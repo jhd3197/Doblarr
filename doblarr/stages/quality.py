@@ -26,9 +26,9 @@ from ..cues import (
 )
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
+from ..fileio import write_json
 from ..fingerprints import processing as processing_fingerprint
 from ..fingerprints import verification as verification_fingerprint
-from ..telemetry import write_json
 from . import boundaries
 
 ACOUSTIC_ISSUES = {"silence", "clipping", "unexpected_duration", "text_mismatch", "repetition",

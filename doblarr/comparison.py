@@ -59,6 +59,7 @@ from .cues import (
     script_ref,
 )
 from .ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
+from .fileio import write_json
 from .languages import resolve_target_locale
 from .levels import analyze as analyze_levels
 from .models import DubJob, Segment, Speaker
@@ -66,7 +67,6 @@ from .pipeline import run_job
 from .services import Services
 from .stages import extract
 from .stages.common import save_script
-from .telemetry import write_json
 
 log = logging.getLogger("doblarr.comparison")
 

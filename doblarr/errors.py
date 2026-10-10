@@ -21,6 +21,12 @@ class ConfigError(DoblarrError):
     http_status = 400
 
 
+class InvalidSettings(DoblarrError):
+    """A settings change would store a value the schema rejects."""
+
+    http_status = 422
+
+
 class NotFoundError(DoblarrError):
     """The requested object does not exist."""
 

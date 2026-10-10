@@ -12,8 +12,8 @@ from ..cues import SOURCE, SourceReference, Span
 from ..discovery import ISO3_TO_ISO2
 from ..errors import DoblarrError
 from ..ffmpeg import run_ffmpeg, run_ffprobe
+from ..fileio import write_json
 from ..models import DubJob
-from ..telemetry import write_json
 from .common import Plan, cached, dry, stage, work_stem
 
 log = logging.getLogger("doblarr.extract")

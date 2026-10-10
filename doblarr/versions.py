@@ -11,7 +11,7 @@ from pathlib import Path
 from .artifacts import digest, read_json
 from .clients.voicebox import SAMPLING_KEYS
 from .cues import CUE_SCHEMA_VERSION, cue_payload, ensure_identity
-from .telemetry import write_json
+from .fileio import write_json
 
 
 def file_hash(path: Path) -> str:

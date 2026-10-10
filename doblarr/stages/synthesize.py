@@ -26,10 +26,10 @@ from ..cues import (
 )
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
+from ..fileio import write_json
 from ..fingerprints import generation as generation_fingerprint
 from ..models import DubJob, Speaker
 from ..performance import compose, requested_direction
-from ..telemetry import write_json
 from .common import Plan, dry, stage, work_stem
 from .quality import engine_safe, spoken_form
 

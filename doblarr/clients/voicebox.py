@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..artifacts import read_json
 from ..errors import JobCancelled
-from ..telemetry import write_json
+from ..fileio import write_json
 from .speech import GenerationFailed, SpeechClient, SpeechError
 
 __all__ = ["GenerationFailed", "VoiceboxClient", "VoiceboxError"]

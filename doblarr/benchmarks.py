@@ -38,10 +38,10 @@ from .cues import (
     ensure_identity,
 )
 from .ffmpeg import run_ffmpeg
+from .fileio import write_json
 from .models import DubJob, Segment, Speaker
 from .pipeline import run_job
 from .services import Services
-from .telemetry import write_json
 
 SAMPLE_RATE = 48000
 BENCHMARK_VERSION = 1

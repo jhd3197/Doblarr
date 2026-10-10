@@ -17,8 +17,8 @@ from .cues import (
     register_unknown_clip,
     resolve_cue,
 )
+from .fileio import write_json
 from .performance import from_edit
-from .telemetry import write_json
 
 
 def snapshot_revision(job) -> str:

@@ -45,7 +45,7 @@ from ..budget import RequestBudget
 from ..clients.speech import SpeechError
 from ..clients.voicebox import VoiceboxClient
 from ..errors import DoblarrError, JobCancelled
-from ..telemetry import write_json
+from ..fileio import write_json
 from . import records
 from .media import cut_audio, duration
 

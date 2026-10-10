@@ -569,14 +569,22 @@ class ConfigModel(_Section):
     research: ResearchModel = ResearchModel()
 
 
-def validate_config(data: dict) -> None:
-    """Log a clear warning for every schema violation in the merged config."""
+def config_problems(data: dict) -> list[str]:
+    """Every schema violation in a merged config, one readable line each."""
+    problems = []
     try:
         ConfigModel.model_validate(data)
     except ValidationError as exc:
         for err in exc.errors():
             loc = ".".join(str(p) for p in err["loc"])
-            log.warning("config: invalid value at %s: %s", loc, err["msg"])
+            problems.append(f"invalid value at {loc}: {err['msg']}")
     locale = str((data.get("dub") or {}).get("target_locale") or "")
     if locale and not parse_language_tag(locale):
-        log.warning("config: dub.target_locale %r is not a valid language tag", locale)
+        problems.append(f"dub.target_locale {locale!r} is not a valid language tag")
+    return problems
+
+
+def validate_config(data: dict) -> None:
+    """Log a clear warning for every schema violation in the merged config."""
+    for problem in config_problems(data):
+        log.warning("config: %s", problem)
