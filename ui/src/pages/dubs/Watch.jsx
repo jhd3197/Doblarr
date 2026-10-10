@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLoaderData, useParams } from 'react-router';
 import { api, apiUrl } from '../../lib/api.js';
 import { safeGet } from '../../lib/storage.js';
@@ -16,6 +16,7 @@ import { formatTime } from '../../lib/media.js';
 const CATEGORIES = [['', 'Kind'], ['lost sound', 'Sound lost'], ['overlap', 'Voices overlap'],
   ['timing', 'Timing'], ['voice', 'Wrong or odd voice'], ['translation', 'Translation'],
   ['level', 'Too loud or quiet'], ['other', 'Other']];
+const NO_LOUDNESS = { spans: [] };
 const SEVERITIES = [['minor', 'Minor'], ['noticeable', 'Noticeable'], ['major', 'Major']];
 const IN_ORIGINAL = [['no', 'Not in original'], ['yes', 'Also in original'], ['not sure', 'Not sure']];
 const RESOLUTIONS = ['open', 'fixed', "won't fix"];
@@ -84,12 +85,14 @@ function Player({ jobId, data, reload }) {
   const resume = useRef(null);     // where to pick up after a language switch
   const openStudio = useOpenStudio();
   const lines = useLines(data.job);
-  const loud = data.loudness || { spans: [] };
+  const loud = data.loudness || NO_LOUDNESS;
   const src = stream => `${apiUrl(`watch/${encodeURIComponent(jobId)}/audio/${stream}.mp4`)}${key()}`;
   const byStream = stream => data.tracks.find(t => t.stream === stream);
   const reference = byStream(compare);
   const minDb = FILTERS.find(f => f[0] === filter)[2];
-  const spans = loud.spans.filter(s => s.quieter_db >= minDb);
+  // Stable between renders: the key handler below depends on it, and the
+  // playhead re-renders this page several times a second.
+  const spans = useMemo(() => loud.spans.filter(s => s.quieter_db >= minDb), [loud.spans, minDb]);
 
   const switchTo = useCallback(stream => {
     if (stream === current) return;

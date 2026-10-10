@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
@@ -66,12 +66,22 @@ function StudioHead({ ctrl, view }) {
   );
 }
 
+// The playhead, read where it is shown: a time update re-renders these, not the page.
+function usePlayerTime(ctrl) {
+  return useSyncExternalStore(ctrl.subscribeTime, () => ctrl.player.time);
+}
+
+function Clock({ ctrl }) {
+  const t = usePlayerTime(ctrl);
+  return <div className="m" id="stNow">{ctrl.state.windowSpan ? stamp(t) : '0:00.0'}</div>;
+}
+
 function Wave({ ctrl }) {
   const { windowSpan: span, lines, notes } = ctrl.state;
   const player = ctrl.player;
+  const t = usePlayerTime(ctrl);
   if (!span) return <div className="studio-wave" id="stWave" role="slider" tabIndex={0} aria-label="Position in this window" aria-valuemin="0" aria-valuemax="100" />;
   const width = span.end - span.start;
-  const t = player.time;
   const pct = v => `${v * 100}%`;
   const peaks = player.source?.peaks || [];
   function onClick(e) {
@@ -140,7 +150,7 @@ function Transport({ ctrl, shown }) {
         <button type="button" className="studio-play" id="stPlay" aria-label="Play or pause (space)" onClick={() => player.toggle()}>
           <span id="stGlyph" aria-hidden="true">{player.paused ? '▶' : '❚❚'}</span></button>
         <div className="studio-clock">
-          <div className="m" id="stNow">{span ? stamp(player.time) : '0:00.0'}</div>
+          <Clock ctrl={ctrl} />
           <div className="m hint" id="stTotal">{span ? `${formatTime(span.start)}–${formatTime(span.end)}` : ''}</div>
         </div>
         <Wave ctrl={ctrl} />

@@ -56,6 +56,10 @@ export function createStudioController({ sid, overview, view, navigate, onChange
   let closed = false;
   let entered = '';
   const changed = () => { if (!closed) onChange(); };
+  // Playback time changes several times a second; only what shows it
+  // subscribes, so the rest of the studio does not re-render with it.
+  const timeListeners = new Set();
+  const subscribeTime = fn => { timeListeners.add(fn); return () => timeListeners.delete(fn); };
   const player = createStudioPlayer({ audio, video, onChange: onPlayer });
   // Set by the Dialogue view while the review editor is mounted.
   let review = null;
@@ -229,6 +233,10 @@ export function createStudioController({ sid, overview, view, navigate, onChange
   }
 
   function onPlayer(what, detail) {
+    if (what === 'time') {
+      timeListeners.forEach(fn => fn());
+      return;
+    }
     if (what === 'ready') {
       state.ready = detail.source.id;
       const m = detail.source.mapping;
@@ -438,7 +446,7 @@ export function createStudioController({ sid, overview, view, navigate, onChange
   return {
     sid, state, player, video, jobId, reload, refresh, remember, savePatch, show, enterView, status,
     attachReview, get review() { return review; }, onLine, loadCompareWindow, setBlind, reveal, playWindow,
-    blindLabel, toggleLoop, sequenceLine, seekFraction, currentLine, loadNotes, mark, patchNote,
+    blindLabel, toggleLoop, sequenceLine, seekFraction, currentLine, loadNotes, mark, patchNote, subscribeTime,
     hearNote, hearOriginal, setNoteFilter, verdictNote, setVerdict, downloadResults, playLegacy,
     keydown, repairQueued, start, close,
   };
