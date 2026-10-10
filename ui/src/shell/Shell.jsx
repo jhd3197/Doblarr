@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Outlet, useMatches, useNavigation } from 'react-router';
+import { dismiss, useNotice } from '../lib/notice.js';
 import { safeGet, safeSet } from '../lib/storage.js';
 import { Sidebar } from './Sidebar.jsx';
 import { NewDubModal } from './NewDubModal.jsx';
@@ -28,6 +29,7 @@ export function Shell() {
   const [search, setSearch] = useState('');
   const [newDub, setNewDub] = useState(false);
   const navigation = useNavigation();
+  const notice = useNotice();
   useDocumentTitle();
 
   return (
@@ -37,6 +39,7 @@ export function Shell() {
         {navigation.state === 'loading' && <div className="route-progress" role="progressbar" aria-label="Loading page" />}
         <header className="topbar">
           <input id="globalSearch" className="input" type="search" placeholder="Search titles on this page…"
+            aria-label="Search titles on this page"
             value={search} onChange={e => setSearch(e.target.value)} />
           <div className="themebtn" id="themebtn">
             {['light', 'dark'].map(t => (
@@ -46,6 +49,12 @@ export function Shell() {
           </div>
           <button type="button" className="btn btn-primary" id="newDubBtn" onClick={() => setNewDub(true)}>New dub</button>
         </header>
+        {notice && (
+          <div className="app-notice" role="alert" id="appNotice">
+            <span>{notice.message}</span>
+            <button type="button" className="btn btn-ghost" aria-label="Dismiss" onClick={dismiss}>×</button>
+          </div>
+        )}
         <SearchContext.Provider value={search.trim().toLowerCase()}>
           <Outlet />
         </SearchContext.Provider>

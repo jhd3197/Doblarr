@@ -4,6 +4,7 @@ import { api, apiUrl } from '../../lib/api.js';
 import { safeGet } from '../../lib/storage.js';
 import { useOpenStudio } from '../../lib/studio.js';
 import { formatTime } from '../../lib/media.js';
+import { notify } from '../../lib/notice.js';
 
 // One finished dub, watched in the browser (doblarr/watch.py): every audio
 // track one click away at the same moment, the original's subtitles, the
@@ -167,7 +168,7 @@ function Player({ jobId, data, reload }) {
       await action();
       await reload();
       if (video.current) video.current.currentTime = time;
-    } catch (error) { window.alert(error.message); }
+    } catch (error) { notify(error.message); }
   }
 
   function saveNote(e) {

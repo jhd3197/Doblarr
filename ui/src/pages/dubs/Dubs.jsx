@@ -8,6 +8,7 @@ import { useOpenStudio } from '../../lib/studio.js';
 import { useSearch } from '../../shell/Shell.jsx';
 import { ReviewDialog } from './Review.jsx';
 import './dubs.css';
+import { notify } from '../../lib/notice.js';
 
 export async function dubsLoader() {
   // The dry-run tag reads the config; a config failure only hides the tag.
@@ -32,7 +33,7 @@ function JobRow({ job: j, onReview, onStudio, onWatch }) {
 
   async function remove() {
     setBusy(true);
-    try { await api('api/jobs/' + j.id, { method: 'DELETE' }); } catch (err) { window.alert(err.message); } finally { setBusy(false); }
+    try { await api('api/jobs/' + j.id, { method: 'DELETE' }); } catch (err) { notify(err.message); } finally { setBusy(false); }
     refreshJobs();
   }
 
@@ -79,11 +80,11 @@ export function Dubs() {
   const paused = !!data?.paused;
 
   async function toggleQueue() {
-    try { await api(paused ? 'api/queue/resume' : 'api/queue/pause', { method: 'POST' }); } catch (e) { window.alert(e.message); }
+    try { await api(paused ? 'api/queue/resume' : 'api/queue/pause', { method: 'POST' }); } catch (e) { notify(e.message); }
     refreshJobs();
   }
   async function clearFinished() {
-    try { await api('api/jobs/clear-finished', { method: 'POST' }); } catch (e) { window.alert(e.message); }
+    try { await api('api/jobs/clear-finished', { method: 'POST' }); } catch (e) { notify(e.message); }
     refreshJobs();
   }
 

@@ -41,3 +41,15 @@ test('a library card opens its title through a real link', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/title\/tvdb-81234/);
 });
+
+test('a failed queue action is shown on the page, not in a blocking alert', async ({ page }) => {
+  page.on('dialog', dialog => { throw new Error(`unexpected ${dialog.type()}: ${dialog.message()}`); });
+  await page.route('**/api/jobs', route => route.fulfill({ json: { counts: {}, paused: false, jobs: [] } }));
+  await page.route('**/api/config', route => route.fulfill({ json: {} }));
+  await page.route('**/api/queue/pause', route => route.fulfill({ status: 503, json: { error: 'The worker is not running' } }));
+  await page.goto('/dubs');
+  await page.getByRole('button', { name: 'Pause queue' }).click();
+  await expect(page.getByRole('alert')).toContainText('The worker is not running');
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(page.locator('#appNotice')).toHaveCount(0);
+});

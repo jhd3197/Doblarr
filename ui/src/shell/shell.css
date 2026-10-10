@@ -50,3 +50,7 @@ a.navitem { text-decoration: none; }
 .modal-pair > div { flex: 1; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 .modal-status { color: var(--muted); margin-right: auto; }
+
+.app-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 26px 0;
+  padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--panel);
+  font-size: 13px; }

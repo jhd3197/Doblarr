@@ -3,6 +3,7 @@ import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { statusClass } from '../../lib/library.js';
 import { planQuery } from './queries.js';
+import { notify } from '../../lib/notice.js';
 
 export function StatusTag({ label }) {
   return <span className={`tag ${statusClass(label)}`}>{label}</span>;
@@ -70,7 +71,7 @@ export function QueueButton({ item, kind, targets, label, className = 'btn btn-g
       setState({ text: kind === 'tease' ? 'Teased ✓' : 'Queued ✓', busy: true, done: true, error: '' });
     } catch (err) {
       setState({ text: 'Retry', busy: false, done: false, error: err.message });
-      window.alert('Could not queue dub: ' + err.message);
+      notify('Could not queue dub: ' + err.message);
     }
   }
   return (

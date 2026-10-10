@@ -10,6 +10,7 @@ import { languageName } from '../lib/languages.js';
 import { isShow, itemKey, titleHref } from '../lib/library.js';
 import { Poster } from '../components/Poster.jsx';
 import { queueDub } from './library/parts.jsx';
+import { notify } from '../lib/notice.js';
 
 export async function overviewLoader() {
   // Jobs, counts and the GPU card are quick; the library scan and the audio
@@ -122,14 +123,14 @@ function RetryButton({ job }) {
       refreshJobs();
     } catch (err) {
       setState('Retry');
-      window.alert('Could not queue it again: ' + err.message);
+      notify('Could not queue it again: ' + err.message);
     }
   }
   return <button type="button" className="btn btn-secondary ov-btn-sm" disabled={state !== 'Retry'} onClick={retry}>{state}</button>;
 }
 
 async function resumeQueue() {
-  try { await api('api/queue/resume', { method: 'POST' }); } catch (e) { window.alert(e.message); }
+  try { await api('api/queue/resume', { method: 'POST' }); } catch (e) { notify(e.message); }
   refreshJobs();
 }
 

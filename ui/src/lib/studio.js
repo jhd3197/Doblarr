@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router';
 import { api } from './api.js';
+import { notify } from './notice.js';
 
 // Open (or reopen) the studio for an episode file; the server keys it by media.
 // Returns a function taking { path, title, jobId, seriesRef }.
@@ -11,7 +12,7 @@ export function useOpenStudio() {
         json: { path, title, job_id: jobId, series_ref: seriesRef } });
       navigate(`/studio/${encodeURIComponent(opened.session.id)}/${opened.session.view || 'overview'}`);
     } catch (error) {
-      window.alert(error.message);
+      notify(error.message);
     }
   };
 }
