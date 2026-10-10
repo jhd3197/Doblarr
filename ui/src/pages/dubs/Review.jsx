@@ -92,9 +92,9 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
   const sceneEpoch = useRef(0);
   const editorRef = useRef(null);
   const lineValues = useRef(null);       // the line editor's fields (LineEditor)
+  const sceneForm = useRef(null);        // the scene panel's fields (ScenePanel)
   const [updatedKnowledge, setUpdatedKnowledge] = useState(false);
   const listRef = useRef(null);
-  const sceneBox = useRef(null);
   const sceneDataRef = useRef(null);
   sceneDataRef.current = scene.data;
   const callbacks = useRef({ onSelect, onQueued });
@@ -185,7 +185,8 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
     const row = currentRow();
     const values = lineValues.current;
     if (!row || !values) return;
-    const extra = collectScene({ container: sceneBox.current, scene: sceneDataRef.current, row, state: sceneState });
+    const extra = collectScene({ form: sceneForm.current, scene: sceneDataRef.current, row, state: sceneState,
+      data: dataRef.current });
     const patch = { index: row.index, cue: row.cue?.cue_id || undefined, text: values.text,
       start: Number(values.start), end: Number(values.end), voice: values.voice, delivery: values.delivery,
       regenerate: values.regenerate, exclude: values.exclude, ...extra };
@@ -198,6 +199,10 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
   }, [sceneState]);
   const onValues = useCallback((values, edited) => {
     lineValues.current = values;
+    if (edited) collect();
+  }, [collect]);
+  const onForm = useCallback((form, edited) => {
+    sceneForm.current = form;
     if (edited) collect();
   }, [collect]);
   // Escape in the editor returns to the line list rather than closing the
@@ -309,7 +314,7 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
             </button>
           )) : <p className="hint">No lines match this filter.</p>)}
         </nav>
-        <section id="reviewEditor" ref={editorRef} className="review-editor" aria-label="Line editor" onInput={collect}>
+        <section id="reviewEditor" ref={editorRef} className="review-editor" aria-label="Line editor">
           {error ? error
             : !data ? <p>Loading dialogue…</p>
             : !row ? <p>Select a line to review.</p>
@@ -319,7 +324,7 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
                 scene={<ScenePanel key={`${row.index}:${scene.key}`} row={row} data={data} jobId={jobId}
                   scene={scene.data} status={scene.status} kind={kind} audio={audio} player={player}
                   state={sceneState} onPlay={onPlay} onTab={onTab} onContext={onContext}
-                  onDecision={rerender} containerRef={sceneBox} />} />}
+                  onDecision={rerender} onForm={onForm} />} />}
         </section>
       </div>
       <div className="review-footer">
