@@ -43,6 +43,22 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.fixture(autouse=True)
+def restore_logging():
+    """Undo a test's logging setup: a handler left on the root logger keeps
+    writing to that test's captured stream after pytest closes it."""
+    import logging
+
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    yield
+    for handler in root.handlers:
+        if handler not in handlers:
+            handler.close()
+    root.handlers[:] = handlers         # setup_logging also removes the ones it found
+    root.setLevel(level)
+
+
+@pytest.fixture(autouse=True)
 def run_in_tmp_path(tmp_path, monkeypatch):
     """Run each test from its own directory, so a config loaded from a relative
     path (whose default work_dir is ./work) never writes into the repo."""
