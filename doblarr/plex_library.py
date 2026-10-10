@@ -37,12 +37,14 @@ WORKERS = 8
 CACHE_FILE = "plex-audio.json"
 
 
-def _norm(path: str | None) -> str:
+def library_path_key(path: str | None) -> str:
+    """A library path as a comparable string. Case is always folded: Plex and
+    the *arr apps may report the same file from machines that disagree on case."""
     return str(path or "").replace("\\", "/").rstrip("/").casefold()
 
 
 def _inside(path: str, roots: set[str]) -> bool:
-    p = _norm(path)
+    p = library_path_key(path)
     return any(p == r or p.startswith(r + "/") for r in roots)
 
 
@@ -108,7 +110,7 @@ def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: s
               treat_undefined_as: str = "original") -> list[LibraryItem]:
     """Plex movies and shows the *arr sources do not already list."""
     target_set = {t.strip().lower() for t in targets}
-    roots = {_norm(p) for p in known_paths if p}
+    roots = {library_path_key(p) for p in known_paths if p}
     titles: list[tuple[dict, dict, dict, list[dict]]] = []   # (item, ids, section, leaves)
     for section in client.sections():
         if section["type"] not in ("movie", "show"):

@@ -8,6 +8,7 @@ same file never write into each other's temporary file.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
@@ -54,6 +55,29 @@ def write_text(path: Path, text: str) -> None:
 
 def write_json(path: Path, data: Any, *, indent: int | None = 2, default=None) -> None:
     write_text(path, json.dumps(data, ensure_ascii=False, indent=indent, default=default))
+
+
+def file_sha256(path: Path) -> str:
+    """SHA-256 of a file's bytes, read a megabyte at a time."""
+    found = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            found.update(chunk)
+    return found.hexdigest()
+
+
+def inside(path: Path | str, roots) -> bool:
+    """Whether `path`, symlinks resolved, lies within one of `roots`.
+
+    Compared case-insensitively where the filesystem is (Windows), so a
+    differently cased path to the same folder is still inside it.
+    """
+    try:
+        target = Path(os.path.normcase(Path(path).resolve()))
+        bases = [Path(os.path.normcase(Path(root).resolve())) for root in roots]
+    except OSError:
+        return False
+    return any(target.is_relative_to(base) for base in bases)
 
 
 def read_json(path: Path | None) -> dict:

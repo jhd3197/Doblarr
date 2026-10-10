@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .identity import norm_path
+
 # The same performance bands the studio auditions use, so a line called
 # "intense" here is the line an audition would pick as intense.
 QUIET_DB, INTENSE_DB = -3.5, 3.5
@@ -57,8 +59,8 @@ def locate_script(work_dir: Path, episode_file: str | Path) -> tuple[Path | None
     found = [p for p in media.glob(f"*/**/{glob_escape(stem)}.script.json") if p.is_file()]
     if not found:
         return None, "none"
-    wanted = _norm(episode_file)
-    inputs = {p: _norm(_input_of(p)) for p in found}
+    wanted = norm_path(episode_file)
+    inputs = {p: norm_path(_input_of(p)) for p in found}
     exact = [p for p in found if inputs[p] == wanted]
     # A script whose lines carry the original actor's level can say how a
     # character talks, not only how much; an older run without it is a fallback.
@@ -69,12 +71,6 @@ def locate_script(work_dir: Path, episode_file: str | Path) -> tuple[Path | None
         return max(exact, key=rank), "exact"
     distinct = {inputs[p] for p in found if inputs[p]}
     return max(found, key=rank), ("ambiguous" if len(distinct) > 1 else "name")
-
-
-def _norm(path) -> str:
-    import os
-
-    return os.path.normcase(str(path or "").replace("\\", "/")).replace("\\", "/")
 
 
 def _input_of(script: Path) -> str:

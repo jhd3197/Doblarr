@@ -33,7 +33,6 @@ listener's, and the results sheet it writes is empty on purpose.
 from __future__ import annotations
 
 import array
-import hashlib
 import json
 import logging
 import shutil
@@ -59,7 +58,7 @@ from .cues import (
     script_ref,
 )
 from .ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
-from .fileio import read_json, write_json
+from .fileio import file_sha256, read_json, write_json
 from .languages import resolve_target_locale
 from .levels import analyze as analyze_levels
 from .models import DubJob, Segment, Speaker
@@ -1258,14 +1257,7 @@ def _esc(value) -> str:
 
 
 def _sha(path: Path) -> str | None:
-    path = Path(path)
-    if not path.is_file():
-        return None
-    found = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            found.update(chunk)
-    return found.hexdigest()
+    return file_sha256(path) if Path(path).is_file() else None
 
 
 def _tree_bytes(root: Path) -> int:

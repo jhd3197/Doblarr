@@ -50,7 +50,7 @@ from .. import (
     voice_tags,
 )
 from ..ffmpeg import run_ffmpeg, run_ffmpeg_bytes
-from ..fileio import read_json
+from ..fileio import inside, read_json
 from ..studio import records
 
 MAX_CLIP = 30.0
@@ -952,10 +952,8 @@ def build_router(config, store) -> APIRouter:
             else None
         if crops is None or not (crops / name).is_file():
             raise HTTPException(404, "no such thumbnail")
-        try:
-            (crops / name).resolve().relative_to(Path(config.work_dir).resolve())
-        except ValueError as exc:
-            raise HTTPException(403, "outside the work folder") from exc
+        if not inside(crops / name, [config.work_dir]):
+            raise HTTPException(403, "outside the work folder")
         return FileResponse(crops / name, media_type="image/jpeg",
                             headers={"Cache-Control": "private, max-age=86400"})
 
@@ -1153,10 +1151,8 @@ def build_router(config, store) -> APIRouter:
                   else sidecar(script, "source.wav"))
         if source is None:
             raise HTTPException(404, "the analysed audio is no longer on disk")
-        try:
-            source.resolve().relative_to(Path(config.work_dir).resolve())
-        except ValueError as exc:
-            raise HTTPException(403, "outside the work folder") from exc
+        if not inside(source, [config.work_dir]):
+            raise HTTPException(403, "outside the work folder")
         audio = run_ffmpeg_bytes(
             ["-v", "error", "-ss", f"{max(0.0, start - 0.15):.3f}",
              "-t", f"{end - start + 0.3:.3f}", "-i", str(source), "-ac", "1", "-ar", "24000",

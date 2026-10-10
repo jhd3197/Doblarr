@@ -16,12 +16,12 @@ excerpts into a statistical claim, and it reports a mixed result as mixed.
 
 from __future__ import annotations
 
-import datetime as _dt
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..artifacts import digest
+from ..cues import now
 from ..errors import DoblarrError
 from . import records
 from .sources import read_utterances
@@ -33,10 +33,6 @@ NEUTRAL = ("same", "neither", "uncertain", "n/a")
 
 class EvaluationError(DoblarrError):
     http_status = 409
-
-
-def _now() -> str:
-    return _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")
 
 
 def blind_labels(variant_ids: list[str], seed: str) -> dict:
@@ -92,7 +88,7 @@ def create(db, experiment: dict, name: str = "") -> dict:
         "experiment": experiment["id"], "name": name or "Evaluation",
         "labels": labels,
         "variant_revisions": {v["id"]: v["revision"] for v in frozen},
-        "judgments": [], "revisions": [], "events": [{"kind": "created", "at": _now()}],
+        "judgments": [], "revisions": [], "events": [{"kind": "created", "at": now()}],
         "revealed": {"labels": False, "holdout": False},
     }, scope=experiment["scope"], create_only=True)
 
@@ -139,7 +135,7 @@ def judge(db, session: dict, body: JudgmentIn, base_revision: int) -> dict:
     if set(body.critical) - labels:
         raise EvaluationError("a critical regression must name a blind label")
     revealed = session.get("revealed") or {}
-    entry = {**body.model_dump(), "at": _now(),
+    entry = {**body.model_dump(), "at": now(),
              "after_label_reveal": bool(revealed.get("labels")),
              "after_holdout_reveal": bool(revealed.get("holdout"))}
     judgments = [j for j in session.get("judgments") or []
@@ -157,7 +153,7 @@ def reveal(db, session: dict, what: str, actor: str, base_revision: int) -> dict
     events = list(session.get("events") or [])
     if not revealed.get(what):
         revealed[what] = True
-        events.append({"kind": f"reveal_{what}", "at": _now(), "actor": actor})
+        events.append({"kind": f"reveal_{what}", "at": now(), "actor": actor})
     return records.put(db, "evaluation", session["id"],
                        {**session, "revealed": revealed, "events": events},
                        base_revision=base_revision)
@@ -203,7 +199,7 @@ def revise(db, session: dict, body: RevisionIn, base_revision: int) -> dict:
         raise EvaluationError("revise a candidate by its blind label")
     assisted = bool((session.get("revealed") or {}).get("holdout"))
     entry = {**body.model_dump(), "variant": session["labels"][body.label],
-             "at": _now(), "assisted": assisted,
+             "at": now(), "assisted": assisted,
              "note": ("made after the official adaptation was revealed — assisted, not a "
                       "clean result" if assisted else "human correction before any reveal")}
     revisions = list(session.get("revisions") or []) + [entry]

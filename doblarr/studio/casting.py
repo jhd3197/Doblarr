@@ -14,12 +14,12 @@ store the pipeline would have to reconcile.
 
 from __future__ import annotations
 
-import datetime as _dt
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..artifacts import digest
+from ..cues import now
 from . import records
 
 
@@ -51,10 +51,6 @@ class ChoiceIn(BaseModel):
     clear: bool = False
 
 
-def _now() -> str:
-    return _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")
-
-
 def record_id(scope: str, ref: str) -> str:
     return f"cast-{scope}-" + digest(ref)[:16]
 
@@ -72,7 +68,7 @@ def decide(db, body: ChoiceIn, base_revision: int | None = None) -> dict:
              if k in ("voice", "engine", "direction", "reference", "audition", "candidate",
                       "actor", "pitch_semitones", "formant_semitones", "character_id",
                       "variant", "locale") and v}
-    entry["decided_at"] = _now()
+    entry["decided_at"] = now()
     characters = dict(current.get("characters") or {})
     lines = dict(current.get("lines") or {})
     if body.scope == "line":

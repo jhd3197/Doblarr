@@ -14,6 +14,7 @@ import datetime as _dt
 import json
 from typing import Any
 
+from ..cues import now
 from ..errors import DoblarrError
 
 KINDS = ("session", "reference", "alignment", "experiment", "variant", "audition",
@@ -48,10 +49,6 @@ class FrozenRecord(DoblarrError):
     """A frozen record was asked to change."""
 
     http_status = 409
-
-
-def _now() -> str:
-    return _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")
 
 
 def digest_id(*parts) -> str:
@@ -137,7 +134,7 @@ def put(db, kind: str, record_id: str, document: dict, *, scope: str = "",
             if base_revision not in (None, 0):
                 raise StudioConflict(f"{kind} {record_id} does not exist any more")
             revision = 1
-        created = _now()
+        created = now()
         db._conn.execute(
             "INSERT INTO studio_records (kind,id,revision,scope,document,created_at) "
             "VALUES (?,?,?,?,?,?)", (kind, record_id, revision, scope, encoded, created))

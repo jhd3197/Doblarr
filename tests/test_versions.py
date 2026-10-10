@@ -3,8 +3,9 @@ import pytest
 
 from doblarr.config import Config
 from doblarr.cues import CUE_SCHEMA_VERSION
+from doblarr.fileio import file_sha256
 from doblarr.models import DubJob, Segment, Speaker
-from doblarr.versions import file_hash, preserve_version
+from doblarr.versions import preserve_version
 
 
 def setup_job(tmp_path):
@@ -48,7 +49,7 @@ def test_identical_version_reused_and_manifest_has_no_connection_secrets(tmp_pat
     assert first == second
     text = job.version_file.read_text(encoding="utf-8")
     assert "private-token" not in text and "private-endpoint" not in text
-    assert file_hash(job.output_file) == first["output_sha256"]
+    assert file_sha256(job.output_file) == first["output_sha256"]
 
 
 def test_modified_saved_media_is_never_silently_overwritten(tmp_path):
@@ -63,7 +64,6 @@ def test_modified_saved_media_is_never_silently_overwritten(tmp_path):
 def test_cue_provenance_is_recorded_without_changing_existing_version_ids(tmp_path):
     from doblarr.artifacts import digest
     from doblarr.cues import RAW, Artifact, Selection, Take
-    from doblarr.versions import file_hash as hash_file
 
     job, config, _ = setup_job(tmp_path)
     seg = job.segments[0]
@@ -88,7 +88,7 @@ def test_cue_provenance_is_recorded_without_changing_existing_version_ids(tmp_pa
     # Manifests travel: they carry roles and fingerprints, never local paths.
     assert "path" not in cue["audio"]["takes"][0]["raw"]
     assert cue["audio"]["takes"][0]["raw"]["fingerprint"] == "gen-1"
-    assert hash_file(job.output_file) == manifest["output_sha256"]
+    assert file_sha256(job.output_file) == manifest["output_sha256"]
 
 
 def test_boundary_settings_are_part_of_a_saved_version(tmp_path):

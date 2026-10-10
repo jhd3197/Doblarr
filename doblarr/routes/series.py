@@ -14,15 +14,13 @@ from ..cache import TTLCache
 from ..clients.plex import PlexError
 from ..discovery import _audio_iso2, _name_to_iso2
 from ..errors import ConfigError
+from ..fileio import inside
 from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language, normalize
 from ..languages import parse as parse_language_tag
+from ..plex_library import library_path_key
 from ..voices import cast_key
 from .analysis import identify, load_names
-
-
-def normalized(path):
-    return str(path or "").replace("\\", "/").rstrip("/").casefold()
 
 
 def _language_tag(value: str) -> str:
@@ -88,13 +86,10 @@ def build_router(config, services, store, bus):
             return False
         if not job.get("output_file"):
             return False
-        path = Path(job["output_file"]).resolve()
-        if not any(
-            path.is_relative_to(root.resolve()) for root in (config.output_dir, config.work_dir)
-        ):
+        if not inside(job["output_file"], (config.output_dir, config.work_dir)):
             return False
         report = read_json(Path(job["report_file"])) if job.get("report_file") else {}
-        return path.is_file() and not report.get("dry_run", False)
+        return Path(job["output_file"]).is_file() and not report.get("dry_run", False)
 
     def detail(tvdb_id, target, refresh=False, only=None):
         """The show's episodes with their dub status; `only` keeps one episode id."""
@@ -129,7 +124,7 @@ def build_router(config, services, store, bus):
                 j
                 for j in jobs
                 if path
-                and normalized(j.get("input_file")) == normalized(path)
+                and library_path_key(j.get("input_file")) == library_path_key(path)
                 and job_locale(j) == target
             ]
             active = next((j for j in matched if j["status"] in {"queued", "running"}), None)
@@ -202,12 +197,12 @@ def build_router(config, services, store, bus):
                                                   e.get("episodeNumber", 0))):
             path = (indexed.get(ep.get("episodeFileId")) or {}).get("path")
             # A double episode is one file listed twice; its talk counts once.
-            if not path or normalized(path) in counted:
+            if not path or library_path_key(path) in counted:
                 continue
             script = speaking.find_script(config.work_dir, path)
             if script is None:
                 continue
-            counted.add(normalized(path))
+            counted.add(library_path_key(path))
             label = f"S{ep.get('seasonNumber', 0):02d}E{ep.get('episodeNumber', 0):02d}"
             # Voice groups are per episode; a name a person gave one is what
             # makes SPEAKER_03 here and SPEAKER_01 there the same character.
@@ -292,7 +287,7 @@ def build_router(config, services, store, bus):
                     else "Target audio already available"
                     if body.missing_only and row["dubbed"] and body.kind != "analyze"
                     else "Shares a queued episode file"
-                    if normalized(path) in paths
+                    if library_path_key(path) in paths
                     else "File is not accessible to Doblarr"
                     if not Path(path).is_file()
                     else None
@@ -300,7 +295,7 @@ def build_router(config, services, store, bus):
                 if reason:
                     skipped.append({"id": eid, "reason": reason})
                     continue
-                paths.add(normalized(path))
+                paths.add(library_path_key(path))
                 episode_plan = (store.db.load_plan(cast_key(path=path)) or {}).get("plan", {})
                 overrides = {**plan, **episode_plan}
                 overrides.pop("target_lang", None)

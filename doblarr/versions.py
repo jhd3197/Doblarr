@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 import tempfile
 from datetime import UTC, datetime
@@ -11,15 +10,7 @@ from pathlib import Path
 from .artifacts import digest, read_json
 from .clients.voicebox import SAMPLING_KEYS
 from .cues import CUE_SCHEMA_VERSION, cue_payload, ensure_identity
-from .fileio import write_json
-
-
-def file_hash(path: Path) -> str:
-    result = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            result.update(chunk)
-    return result.hexdigest()
+from .fileio import file_sha256, write_json
 
 
 def _cue_provenance(seg) -> dict:
@@ -106,8 +97,8 @@ def preserve_version(job, config, cast=None) -> dict:
     # would fork every version already on disk. Wording and placement still move
     # translation_id; any audible change moves output_sha256 and so version_id.
     identity = {"schema_version": 1, "translation_id": translation_id,
-                "output_sha256": file_hash(job.output_file),
-                "source_sha256": file_hash(job.input_file),
+                "output_sha256": file_sha256(job.output_file),
+                "source_sha256": file_sha256(job.input_file),
                 "settings": settings, "voices": voices, "kind": job.kind,
                 "cast": sorted(
                     [{**{k: entry.get(k) for k in
@@ -156,7 +147,7 @@ def preserve_version(job, config, cast=None) -> dict:
     if destination.exists():
         saved = read_json(manifest_path)
         if (saved.get("version_id") != version_id or not output.is_file()
-                or file_hash(output) != identity["output_sha256"]):
+                or file_sha256(output) != identity["output_sha256"]):
             raise ValueError(
                 "Saved dub version is incomplete or modified; refusing to overwrite it")
         manifest = saved
@@ -167,14 +158,14 @@ def preserve_version(job, config, cast=None) -> dict:
             staging = Path(temp).resolve()
             assert staging.parent == root
             shutil.copy2(job.output_file, staging / output.name)
-            if file_hash(staging / output.name) != identity["output_sha256"]:
+            if file_sha256(staging / output.name) != identity["output_sha256"]:
                 raise ValueError("Dub changed while saving the version")
             write_json(staging / "version.json", manifest)
             try:
                 staging.rename(destination)
             except FileExistsError:
                 # Another identical run won the race. Verify its media before reuse.
-                if not output.is_file() or file_hash(output) != identity["output_sha256"]:
+                if not output.is_file() or file_sha256(output) != identity["output_sha256"]:
                     raise
                 manifest = read_json(manifest_path)
                 if manifest.get("version_id") != version_id:

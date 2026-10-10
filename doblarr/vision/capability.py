@@ -24,10 +24,11 @@ Backends, chosen after checking what is installed here (2026-10):
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
+
+from ..fileio import file_sha256
 
 
 @dataclass(frozen=True)
@@ -144,11 +145,7 @@ def unsupported_stages(config=None) -> dict[str, str]:
 
 
 def verify(path: Path, model: ModelFile) -> bool:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest() == model.sha256
+    return file_sha256(path) == model.sha256
 
 
 def download(model_id: str, config=None) -> Path:
