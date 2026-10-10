@@ -42,6 +42,13 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.slow)
 
 
+@pytest.fixture(autouse=True)
+def run_in_tmp_path(tmp_path, monkeypatch):
+    """Run each test from its own directory, so a config loaded from a relative
+    path (whose default work_dir is ./work) never writes into the repo."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _refuse(self, method, url, *args, **kwargs):
     raise requests.ConnectionError(f"tests never reach the network ({method} {url})")
 
