@@ -9,6 +9,7 @@ fastapi>=0.110
 uvicorn>=0.27
 pydantic>=2           # request-body models + config schema validation
 prompture[anthropic]>=1.13.6     # structured AI translation; 1.13.6 adds the AniList reader
+scikit-learn>=1.3                # groups an episode's lines into voices (doblarr/speakers.py)
 
 # --- Real-dub deps (only needed when running real stages) ---
 # Installed as an extra: pip install doblarr[real]
