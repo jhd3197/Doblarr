@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../lib/api.js';
 import { KnowledgeCorrection } from '../../components/KnowledgeCorrection.jsx';
@@ -35,19 +35,18 @@ function preparation(row) {
 }
 
 // Private complete-line memory: only reviews the reviewer actually performed.
-function MemoryForm({ row, data, editorRef }) {
+function MemoryForm({ row, data, values }) {
   const [form, setForm] = useState({ reviewer: '', meaning: false, natural: false, timing: false });
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const check = key => e => setForm(f => ({ ...f, [key]: e.target.checked }));
   async function save() {
-    const field = id => editorRef.current.querySelector(id);
     setBusy(true);
     try {
       await api('memory', { method: 'POST', json: {
         source_lang: data.source_language || 'und', target_locale: data.locale || data.language,
-        source_text: row.text_src, target_text: field('#reviewText').value,
-        context: row.memory_context || {}, duration: Number(field('#reviewEnd').value) - Number(field('#reviewStart').value),
+        source_text: row.text_src, target_text: values.text,
+        context: row.memory_context || {}, duration: Number(values.end) - Number(values.start),
         reviewer: form.reviewer,
         meaning_reviewed: form.meaning, naturalness_reviewed: form.natural, timing_reviewed: form.timing,
         status: form.meaning && form.natural && form.timing ? 'reviewed' : 'proposed',
@@ -101,13 +100,26 @@ function CorrectionSaved({ entry, data, jobId, onQueued, onLocked }) {
   );
 }
 
-// The editor for one line. Its fields are uncontrolled: the editor is
-// remounted per line, and the review collects edits from them on `input`.
+// The editor for one line, remounted per line. Its fields are React state;
+// `onValues(values, edited)` hands them to the review: on mount, and on each edit.
 // `scene` is the scene panel element, rendered by the review.
-export function LineEditor({ row, data, jobId, edit, voices, editorRef, scene, onQueued, onLocked }) {
+export function LineEditor({ row, data, jobId, edit, voices, onValues, scene, onQueued, onLocked }) {
   const [box, setBox] = useState(null);          // null | { kind: 'saved', entry } | { kind: 'memory' }
   const [correction, setCorrection] = useState(null);
   const voice = edit.voice ?? row.voice ?? '';
+  const [values, setValues] = useState(() => ({
+    text: edit.text ?? row.text_translated ?? row.text_src, start: String(edit.start ?? row.start),
+    end: String(edit.end ?? row.end), voice, delivery: edit.delivery ?? row.delivery ?? '',
+    regenerate: !!edit.regenerate, exclude: !!edit.exclude }));
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    onValues(values, mounted.current);
+    mounted.current = true;
+  }, [values, onValues]);
+  const change = key => e => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setValues(current => ({ ...current, [key]: value }));
+  };
   const choices = [...voices];
   if (voice && !choices.some(v => v.id === voice)) choices.push({ id: voice, name: voice });
   const disabled = !data.editable;
@@ -121,25 +133,25 @@ export function LineEditor({ row, data, jobId, edit, voices, editorRef, scene, o
       {row.issues.length > 0 && <p className="review-flags">{row.issues.map(i => i.replaceAll('_', ' ')).join(' · ')}</p>}
       <label className="review-field">Dubbed dialogue
         <textarea id="reviewText" className="input" rows={4} disabled={disabled}
-          defaultValue={edit.text ?? row.text_translated ?? row.text_src} /></label>
+          value={values.text} onChange={change('text')} /></label>
       <div className="review-timing">
         <label className="review-field">Start (seconds)
-          <input id="reviewStart" className="input m" type="number" min="0" step="0.01" disabled={disabled} defaultValue={edit.start ?? row.start} /></label>
+          <input id="reviewStart" className="input m" type="number" min="0" step="0.01" disabled={disabled} value={values.start} onChange={change('start')} /></label>
         <label className="review-field">End (seconds)
-          <input id="reviewEnd" className="input m" type="number" min="0" step="0.01" disabled={disabled} defaultValue={edit.end ?? row.end} /></label>
+          <input id="reviewEnd" className="input m" type="number" min="0" step="0.01" disabled={disabled} value={values.end} onChange={change('end')} /></label>
       </div>
       <label className="review-field">Voice
-        <select id="reviewVoice" className="input" disabled={disabled} defaultValue={voice}>
+        <select id="reviewVoice" className="input" disabled={disabled} value={values.voice} onChange={change('voice')}>
           <option value="">Use character voice</option>
           {choices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
         </select></label>
       <label className="review-field">Delivery
         <input id="reviewDelivery" className="input" maxLength={500} disabled={disabled}
-          defaultValue={edit.delivery ?? row.delivery ?? ''} placeholder="For example: speak quietly" /></label>
+          value={values.delivery} onChange={change('delivery')} placeholder="For example: speak quietly" /></label>
       <p className="hint">Delivery instructions require a Qwen voice engine.</p>
       <div className="review-options">
-        <label><input id="reviewRegenerate" type="checkbox" disabled={disabled} defaultChecked={!!edit.regenerate} /> Generate a new take</label>
-        <label><input id="reviewExclude" type="checkbox" disabled={disabled} defaultChecked={!!edit.exclude} /> Exclude this line</label>
+        <label><input id="reviewRegenerate" type="checkbox" disabled={disabled} checked={values.regenerate} onChange={change('regenerate')} /> Generate a new take</label>
+        <label><input id="reviewExclude" type="checkbox" disabled={disabled} checked={values.exclude} onChange={change('exclude')} /> Exclude this line</label>
       </div>
       <div className="review-options">
         <button type="button" className="btn btn-ghost" id="reviewFixPron" onClick={() => setCorrection('pronunciation')}>Fix pronunciation</button>
@@ -152,7 +164,7 @@ export function LineEditor({ row, data, jobId, edit, voices, editorRef, scene, o
       {scene}
       <EnvelopePanel jobId={jobId} row={row} />
       <div id="reviewCorrection" className="review-correction">
-        {box?.kind === 'memory' && <MemoryForm row={row} data={data} editorRef={editorRef} />}
+        {box?.kind === 'memory' && <MemoryForm row={row} data={data} values={values} />}
         {box?.kind === 'saved' && <CorrectionSaved key={box.entry.id} entry={box.entry} data={data} jobId={jobId}
           onQueued={onQueued} onLocked={onLocked} />}
       </div>

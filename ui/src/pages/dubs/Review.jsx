@@ -91,6 +91,8 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
   const epoch = useRef(0);
   const sceneEpoch = useRef(0);
   const editorRef = useRef(null);
+  const lineValues = useRef(null);       // the line editor's fields (LineEditor)
+  const [updatedKnowledge, setUpdatedKnowledge] = useState(false);
   const listRef = useRef(null);
   const sceneBox = useRef(null);
   const sceneDataRef = useRef(null);
@@ -181,15 +183,12 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
   // Collect the line on screen into `pending` whenever one of its fields changes.
   const collect = useCallback(() => {
     const row = currentRow();
-    const editor = editorRef.current;
-    if (!row || !editor) return;
-    const field = id => editor.querySelector(id);
-    if (!field('#reviewText')) return;
+    const values = lineValues.current;
+    if (!row || !values) return;
     const extra = collectScene({ container: sceneBox.current, scene: sceneDataRef.current, row, state: sceneState });
-    const patch = { index: row.index, cue: row.cue?.cue_id || undefined, text: field('#reviewText').value,
-      start: Number(field('#reviewStart').value), end: Number(field('#reviewEnd').value),
-      voice: field('#reviewVoice').value, delivery: field('#reviewDelivery').value,
-      regenerate: field('#reviewRegenerate').checked, exclude: field('#reviewExclude').checked, ...extra };
+    const patch = { index: row.index, cue: row.cue?.cue_id || undefined, text: values.text,
+      start: Number(values.start), end: Number(values.end), voice: values.voice, delivery: values.delivery,
+      regenerate: values.regenerate, exclude: values.exclude, ...extra };
     const changed = patch.text !== (row.text_translated || row.text_src) || patch.start !== row.start
       || patch.end !== row.end || patch.voice !== (row.voice || '') || patch.delivery !== (row.delivery || '')
       || patch.regenerate || patch.exclude || Object.keys(extra).length > 0;
@@ -197,6 +196,10 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
     setStatus('');
     rerender();
   }, [sceneState]);
+  const onValues = useCallback((values, edited) => {
+    lineValues.current = values;
+    if (edited) collect();
+  }, [collect]);
   // Escape in the editor returns to the line list rather than closing the
   // review, so a keyboard user keeps their place. (A native listener, so the
   // correction dialog's Escape doesn't arrive here through React's portal.)
@@ -240,9 +243,8 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
     setBusy(true);
     setStatus('Queuing changes…');
     try {
-      const useUpdated = document.getElementById('reviewUpdatedKnowledge')?.checked || false;
       const result = await api(`jobs/${jobId}/review`, { method: 'POST', json: {
-        edits, events, use_updated_knowledge: useUpdated, base_revision: dataRef.current.revision } });
+        edits, events, use_updated_knowledge: updatedKnowledge, base_revision: dataRef.current.revision } });
       const sent = edits.map(e => e.cue).filter(Boolean);
       pending.current.clear();
       lock();
@@ -312,7 +314,7 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
             : !data ? <p>Loading dialogue…</p>
             : !row ? <p>Select a line to review.</p>
             : <LineEditor key={`${row.index}:${editorKey}`} row={row} data={data} jobId={jobId}
-                edit={pending.current.get(row.index) || {}} voices={voices} editorRef={editorRef}
+                edit={pending.current.get(row.index) || {}} voices={voices} onValues={onValues}
                 onQueued={() => callbacks.current.onQueued?.(undefined, [])} onLocked={lock}
                 scene={<ScenePanel key={`${row.index}:${scene.key}`} row={row} data={data} jobId={jobId}
                   scene={scene.data} status={scene.status} kind={kind} audio={audio} player={player}
@@ -322,7 +324,8 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
       </div>
       <div className="review-footer">
         <p id="reviewStatus" role="status">{status}</p>
-        <label className="hint review-knowledge"><input type="checkbox" id="reviewUpdatedKnowledge" /> Use updated language knowledge</label>
+        <label className="hint review-knowledge"><input type="checkbox" id="reviewUpdatedKnowledge"
+          checked={updatedKnowledge} onChange={e => setUpdatedKnowledge(e.target.checked)} /> Use updated language knowledge</label>
         <button type="button" id="reviewSubmit" className="btn btn-primary" onClick={submit}
           disabled={busy || (!pending.current.size && !events) || !data?.editable}>
           {parts.length ? `Render ${parts.join(' and ')}` : 'Render changes'}</button>
