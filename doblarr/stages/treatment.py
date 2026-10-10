@@ -29,14 +29,13 @@ from pathlib import Path
 
 from .. import treatments
 from ..artifacts import digest, matches, record, stamp
-from ..cues import TREATED, Artifact, Treatment
+from ..cues import TREATED, Artifact, Treatment, apply_findings
 from ..errors import JobCancelled
 from ..ffmpeg import FFmpegError, run_ffmpeg
 from ..fingerprints import processing as processing_fingerprint
 from ..levels import analyze as analyze_levels
 from ..levels import layout as layout_of
 from ..models import DubJob
-from .quality import apply_findings
 
 log = logging.getLogger("doblarr.treatment")
 

@@ -361,9 +361,9 @@ def background(job, config, *, db=None, work: Path, cancel=None, scene_starts=No
                                             "sidechain": "used"}
         return None
     params = templates.resolve_params(template)["values"]
-    from .stages.fit_timing import _duration
+    from .ffmpeg import media_duration
 
-    duration = _duration(Path(bed), cancel=cancel)
+    duration = media_duration(Path(bed), cancel=cancel)
     if activity is None:
         activity = []
         takes = take_features(job, work)

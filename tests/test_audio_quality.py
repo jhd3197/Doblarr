@@ -5,6 +5,7 @@ import wave
 
 import pytest
 
+from doblarr import verify
 from doblarr.models import DubJob, Segment
 from doblarr.stages import quality
 
@@ -60,8 +61,8 @@ def test_asr_flags_mismatch_without_modifying_script(tmp_path):
 
 
 def test_pronunciation_uses_whole_terms_once():
-    assert quality.spoken_form("Sora met Soras.", {"Sora": "Soh-rah"}) == "Soh-rah met Soras."
-    assert quality.spoken_form("A B", {"A": "B", "B": "C"}) == "B C"
+    assert verify.spoken_form("Sora met Soras.", {"Sora": "Soh-rah"}) == "Soh-rah met Soras."
+    assert verify.spoken_form("A B", {"A": "B", "B": "C"}) == "B C"
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")

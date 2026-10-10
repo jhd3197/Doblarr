@@ -21,8 +21,8 @@ import hashlib
 import re
 import unicodedata
 
+from .cues import apply_findings
 from .languages import base_language, parse
-from .stages.quality import apply_findings
 
 DETECTOR = "dialect/1"
 CODE = "spain_spanish"

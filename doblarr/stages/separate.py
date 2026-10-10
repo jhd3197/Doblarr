@@ -142,11 +142,10 @@ def _seconds(path: Path) -> float:
             return audio.getnframes() / audio.getframerate()
     except (wave.Error, EOFError, OSError):
         pass
-    from ..ffmpeg import FFmpegError
-    from .fit_timing import _duration
+    from ..ffmpeg import FFmpegError, media_duration
 
     try:
-        return _duration(path)
+        return media_duration(path)
     except (FFmpegError, OSError, ValueError):
         return 0.0
 

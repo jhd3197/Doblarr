@@ -209,7 +209,7 @@ def _whisper_segments(job: DubJob, whisper_model: str,
     except ImportError:
         pass
     try:
-        return _faster_whisper_segments(job, audio, whisper_model, device, cancel)
+        return faster_whisper_segments(job, audio, whisper_model, device, cancel)
     except ImportError:
         raise RuntimeError(
             "transcribe.source is 'whisper' but no whisper backend is installed. "
@@ -293,7 +293,7 @@ def _check(cancel: threading.Event | None) -> None:
         raise JobCancelled("cancelled during transcription")
 
 
-def _faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str,
+def faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str,
                              device: hardware.Device | None = None,
                              cancel: threading.Event | None = None) -> list[Segment]:
     from faster_whisper import WhisperModel  # lazy — heavy ML dep

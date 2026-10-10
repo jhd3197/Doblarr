@@ -401,10 +401,10 @@ def source_stream(media: Path, source_lang: str, cancel=None) -> dict:
     track and this file also carries an English dub" is exactly the sentence a
     listening test has to be able to say.
     """
-    from .stages.extract import _select_audio_stream
+    from .stages.extract import select_audio_stream
 
     probe = DubJob(input_file=Path(media), source_lang=source_lang, target_lang="und")
-    absolute = _select_audio_stream(probe, cancel)
+    absolute = select_audio_stream(probe, cancel)
     layout = json.loads(run_ffprobe(
         ["-v", "error", "-select_streams", "a", "-show_entries",
          "stream=index:stream_tags=language,title", "-of", "json", str(media)],

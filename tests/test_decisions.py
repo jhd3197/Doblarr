@@ -380,7 +380,7 @@ def test_treatments_are_only_ever_suggested():
 # -- 8. review order -----------------------------------------------------------
 
 def test_review_order_weighs_open_findings_and_unsure_decisions():
-    from doblarr.stages.quality import apply_findings
+    from doblarr.cues import apply_findings
 
     job = job_of("clean", "overflows", "unsure", "accepted")
     clean, over, unsure, accepted = job.segments

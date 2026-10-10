@@ -14,11 +14,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..artifacts import digest, matches, record, stamp
-from ..ffmpeg import FFmpegError, run_ffmpeg
+from ..ffmpeg import FFmpegError, media_duration, run_ffmpeg
 from ..fingerprints import mix as mix_fingerprint
 from ..models import DubJob
 from .common import Plan, cached, dry, stage, work_stem
-from .fit_timing import _duration
 
 log = logging.getLogger("doblarr.mix")
 
@@ -216,7 +215,7 @@ def run(
     }
     # Keep the video timeline, including the intro and closing credits.
     win_start = 0.0
-    dur = _duration(job.source_audio or bed, cancel=cancel)
+    dur = media_duration(job.source_audio or bed, cancel=cancel)
 
     # Bound the number of inputs and command length (especially on Windows).
     # Each partial bus starts at its first line; the final mix places it back

@@ -37,7 +37,7 @@ def _detect_original(job: DubJob) -> int:
     return int(found["stream"])
 
 
-def _select_audio_stream(job: DubJob, cancel=None) -> int:
+def select_audio_stream(job: DubJob, cancel=None) -> int:
     if (job.source_lang or "auto").lower() in ("auto", "und", ""):
         return _detect_original(job)
     data = json.loads(
@@ -147,7 +147,7 @@ def run(
     log.info("extract audio -> %s", out.name)
     if dry_run:
         return dry("ffmpeg " + " ".join(args))
-    index = _select_audio_stream(job, cancel)
+    index = select_audio_stream(job, cancel)
     receipt = out.with_suffix(".json")
     identity = {"input": stamp(job.input_file), "stream": index, "duration": duration}
     # Recorded on every run, cached or not: later stages must be able to say

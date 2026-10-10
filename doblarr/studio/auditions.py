@@ -308,7 +308,7 @@ def _voice_measures(clip: Path) -> dict:
 
 
 def _spoken(excerpt: dict, pronunciations: dict) -> str:
-    from ..stages.quality import spoken_form
+    from ..verify import spoken_form
 
     return excerpt.get("tts_text") or spoken_form(excerpt["text"], pronunciations or {})
 

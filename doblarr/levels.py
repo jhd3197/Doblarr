@@ -645,7 +645,7 @@ def check_mix(job, options: dict | None = None, cancel=None, work_dir: Path | No
     where the margin is too small — it changes no audio, because the answer
     to "this is masked" is a human decision about the mix, not a gain.
     """
-    from .stages.quality import apply_findings
+    from .cues import apply_findings
 
     config = settings(options)
     if dry_run or config["mode"] in ("legacy", "off"):

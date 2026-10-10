@@ -32,7 +32,7 @@ def _spy_ffmpeg(monkeypatch, module):
         _fresh(Path(args[0][-1]))
     monkeypatch.setattr(module, "run_ffmpeg", render)
     if module is extract:
-        monkeypatch.setattr(extract, "_select_audio_stream", lambda *a: 1)
+        monkeypatch.setattr(extract, "select_audio_stream", lambda *a: 1)
     return calls
 
 
@@ -115,7 +115,7 @@ def test_mix_and_mux_skip(tmp_path, monkeypatch):
     work = tmp_path / "work"
     job.source_audio = _fresh(tmp_path / "source.wav")
     job.segments = [Segment(0, 0, 1, "hello", audio_clip=_fresh(tmp_path / "line.wav"))]
-    monkeypatch.setattr(mix, "_duration", lambda *a, **kw: 4)
+    monkeypatch.setattr(mix, "media_duration", lambda *a, **kw: 4)
     mix_calls = _spy_ffmpeg(monkeypatch, mix)
     mix.run(job, work)
     mix.run(job, work)

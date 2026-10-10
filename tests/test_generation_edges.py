@@ -31,7 +31,7 @@ def test_extract_recovers_from_interrupted_receipt(tmp_path, monkeypatch):
     source.write_bytes(b"video")
     job = DubJob(source, "en", "es")
     calls = []
-    monkeypatch.setattr(extract, "_select_audio_stream", lambda *a: 1)
+    monkeypatch.setattr(extract, "select_audio_stream", lambda *a: 1)
 
     def render(args, **kwargs):
         calls.append(args)
@@ -89,7 +89,7 @@ def test_large_mix_rebuilds_only_changed_bus(tmp_path, monkeypatch):
         Path(args[-1]).write_bytes(b"mixed audio")
 
     monkeypatch.setattr(mix, "run_ffmpeg", render)
-    monkeypatch.setattr(mix, "_duration", lambda *a, **kw: 102)
+    monkeypatch.setattr(mix, "media_duration", lambda *a, **kw: 102)
     mix.run(job, tmp_path)
     assert len(calls) == 4
     assert max(args.count("-i") for args in calls) <= 24

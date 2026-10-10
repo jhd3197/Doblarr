@@ -7,9 +7,8 @@ from dataclasses import replace
 
 from ..artifacts import matches, record, stamp
 from ..cues import MONTAGE, SOURCE, Placement, Span
-from ..ffmpeg import run_ffmpeg
+from ..ffmpeg import media_duration, run_ffmpeg
 from .common import work_stem
-from .fit_timing import _duration
 
 
 def select_segments(job, count=8):
@@ -58,7 +57,7 @@ def run(job, work, count=8, cancel=None, force=False, dry_run=False):
         return
     chosen = select_segments(job, count)
     source = job.source_audio
-    duration = _duration(source, cancel)
+    duration = media_duration(source, cancel)
     windows = [(max(0, s.start - 0.25), min(duration, s.end + 0.25)) for s in chosen]
     dest = work / f"{work_stem(job)}.samples.wav"
     request = {"source": stamp(source), "windows": windows}

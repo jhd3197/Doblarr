@@ -30,9 +30,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .artifacts import digest, read_json
+from .cues import apply_findings
 from .errors import JobCancelled
 from .fileio import write_json
-from .stages.quality import apply_findings
 
 log = logging.getLogger("doblarr.prepass")
 

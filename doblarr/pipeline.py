@@ -29,7 +29,7 @@ from .clients.translator import build_translator, translation_options
 from .config import Config
 from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
-from .ffmpeg import FFmpegError
+from .ffmpeg import FFmpegError, media_duration
 from .hardware import gpu_stage, resolve_device
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
@@ -720,7 +720,6 @@ def run_job(
         the names and terms its translators chose, for a person to adopt."""
         from . import dub_text, speakers
         from .artifacts import read_json
-        from .ffmpeg import FFmpegError
         from .stages.common import work_stem
 
         if not job.segments or not job.input_file or not job.input_file.is_file():
@@ -929,7 +928,7 @@ def run_job(
                 target=current.role)
             seg.verification = result
             quality.verification_findings(seg)
-            seg.issues = [i for i in seg.issues if i not in quality._VERIFY_ISSUES]
+            seg.issues = [i for i in seg.issues if i not in quality.VERIFY_ISSUES]
             seg.issues += quality.legacy_issues(result)
             rechecked += 0 if reused else 1
         job.metrics["verification_rechecked"] = rechecked
@@ -1024,7 +1023,7 @@ def run_job(
         if program["seconds"] is None:
             track = job.source_audio or job.background
             try:
-                program["seconds"] = (fit_timing._duration(track, cancel=cancel_event)
+                program["seconds"] = (media_duration(track, cancel=cancel_event)
                                       if track else 0.0)
             except (OSError, ValueError, FFmpegError):
                 program["seconds"] = 0.0

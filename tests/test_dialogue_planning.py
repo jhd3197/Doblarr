@@ -62,7 +62,7 @@ def test_timing_repair_only_regenerates_overlong_clip(tmp_path, monkeypatch):
         Segment(1, 3, 5, "Bye", text_translated="Bye", audio_clip=other),
     ]
     durations = {clip: 4, other: 1}
-    monkeypatch.setattr(fit_timing, "_duration", lambda p, **kw: durations[p])
+    monkeypatch.setattr(fit_timing, "media_duration", lambda p, **kw: durations[p])
     calls = []
 
     def regenerate(seg):
@@ -81,7 +81,7 @@ def test_timing_retries_are_bounded_and_unresolved_lines_flagged(tmp_path, monke
     clip.write_bytes(b"audio")
     job = DubJob(tmp_path / "movie.mkv", "en", "es")
     job.segments = [Segment(0, 0, 1, "a very long line", audio_clip=clip)]
-    monkeypatch.setattr(fit_timing, "_duration", lambda *a, **kw: 4)
+    monkeypatch.setattr(fit_timing, "media_duration", lambda *a, **kw: 4)
     monkeypatch.setattr(
         fit_timing, "run_ffmpeg", lambda args, **kw: Path(args[-1]).write_bytes(b"fit")
     )

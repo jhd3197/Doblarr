@@ -33,8 +33,8 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import digest, read_json
+from .cues import apply_findings
 from .fileio import write_json
-from .stages.quality import apply_findings
 
 log = logging.getLogger("doblarr.decisions")
 
@@ -433,7 +433,7 @@ def title_cards(job, oracle: Oracle, config: dict) -> int:
     review can see it. Only short lines in capitals that are not exclaimed or
     asked are ever considered.
     """
-    from .stages.prepare import _event
+    from .stages.prepare import nonverbal_event
 
     if not enabled(config, "title_cards"):
         return 0
@@ -457,7 +457,7 @@ def title_cards(job, oracle: Oracle, config: dict) -> int:
         if verdict is None or not verdict.applied or not seg.end > seg.start >= 0:
             kept.append(seg)
             continue
-        event = _event(seg, text, 0, "whole", text, detected_by=verdict.source)
+        event = nonverbal_event(seg, text, 0, "whole", text, detected_by=verdict.source)
         event.type, event.category, event.speaker = "unknown", "background", None
         event.reason = "an on-screen caption, not dialogue"
         event.checks["decided"] = "caption"
@@ -588,7 +588,7 @@ def sound_tags(job, oracle: Oracle, config: dict) -> int:
     category change: the original text stays, the decision stays
     `unresolved`, and nothing is inserted. Captions are left alone.
     """
-    from .stages.prepare import _event
+    from .stages.prepare import nonverbal_event
 
     if not enabled(config, "sound_tags"):
         return 0
@@ -608,7 +608,7 @@ def sound_tags(job, oracle: Oracle, config: dict) -> int:
         if not applied:
             kept.append(seg)
             continue
-        event = _event(seg, text, 0, "whole", text, detected_by=source)
+        event = nonverbal_event(seg, text, 0, "whole", text, detected_by=source)
         event.type, event.category = kind, category
         event.speaker = seg.speaker if category == "vocal" else None
         event.checks["classified_by"] = source

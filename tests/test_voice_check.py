@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from doblarr import voice_check
+from doblarr import cues, voice_check
 from doblarr.cues import RAW, Artifact, Selection, Take
 from doblarr.models import DubJob, Segment, Speaker
 from doblarr.stages import quality
@@ -111,9 +111,9 @@ def test_a_voice_that_scores_low_everywhere_is_not_drifting():
 
 def test_a_finding_seen_again_on_new_audio_carries_the_new_evidence():
     seg = Segment(0, 0, 1, "Ya voy")
-    quality.apply_findings(seg, "d/1", "a", [("timing_overflow", "timing", "warning", None,
+    cues.apply_findings(seg, "d/1", "a", [("timing_overflow", "timing", "warning", None,
                                               {"clip_seconds": 10.8})])
-    quality.apply_findings(seg, "d/1", "b", [("timing_overflow", "timing", "warning", None,
+    cues.apply_findings(seg, "d/1", "b", [("timing_overflow", "timing", "warning", None,
                                               {"clip_seconds": 1.7})])
     (found,) = seg.findings
     assert found.evidence == {"clip_seconds": 1.7} and found.inputs == "b"

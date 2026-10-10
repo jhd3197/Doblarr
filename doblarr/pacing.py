@@ -34,8 +34,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .cues import apply_findings
 from .stages import boundaries
-from .stages.quality import apply_findings
 
 if TYPE_CHECKING:
     from .models import Segment

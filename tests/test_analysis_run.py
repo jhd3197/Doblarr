@@ -37,7 +37,7 @@ def test_an_analysis_records_every_stage_measures_lines_and_speaks_no_words(tmp_
                                                                            monkeypatch):
     from doblarr.stages import transcribe
 
-    monkeypatch.setattr(transcribe, "_faster_whisper_segments", lambda *a, **k: [])
+    monkeypatch.setattr(transcribe, "faster_whisper_segments", lambda *a, **k: [])
     db = Database(tmp_path / "d.db")
     media, subtitles = benchmarks.write_media(tmp_path / "media", benchmarks.SCENE)
     job, tone = analyse(tmp_path, db, media, subtitles)
@@ -69,7 +69,7 @@ def test_an_analysis_records_every_stage_measures_lines_and_speaks_no_words(tmp_
 def test_turning_features_off_marks_the_stage_skipped_not_done(tmp_path, monkeypatch):
     from doblarr.stages import transcribe
 
-    monkeypatch.setattr(transcribe, "_faster_whisper_segments", lambda *a, **k: [])
+    monkeypatch.setattr(transcribe, "faster_whisper_segments", lambda *a, **k: [])
     db = Database(tmp_path / "d.db")
     media, subtitles = benchmarks.write_media(tmp_path / "media", benchmarks.SCENE)
     job, _ = analyse(tmp_path, db, media, subtitles, {"analysis.features": False})

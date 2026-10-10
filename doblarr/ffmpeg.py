@@ -14,6 +14,7 @@ import logging
 import subprocess
 import threading
 import time
+import wave
 
 from .errors import DoblarrError, JobCancelled
 
@@ -111,3 +112,15 @@ def probe_json(path, *args: str, timeout: float | None = PROBE_TIMEOUT) -> dict:
     """ffprobe's JSON for `path`, with `args` choosing what to show."""
     return json.loads(run_ffprobe(["-v", "error", *args, "-of", "json", str(path)],
                                   timeout=timeout) or "{}")
+
+
+def media_duration(path, cancel: threading.Event | None = None) -> float:
+    """Seconds of audio in `path`: read from a WAV header, else asked of ffprobe."""
+    try:
+        with wave.open(str(path), "rb") as audio:
+            return audio.getnframes() / audio.getframerate()
+    except (wave.Error, EOFError, OSError):
+        pass
+    out = run_ffprobe(["-v", "error", "-show_entries", "format=duration",
+                       "-of", "default=noprint_wrappers=1:nokey=1", str(path)], cancel=cancel)
+    return float(out.strip())

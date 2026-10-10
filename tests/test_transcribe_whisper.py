@@ -245,5 +245,5 @@ def test_a_cancel_stops_faster_whisper_between_segments(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "faster_whisper", mod)
     job = _job_with_audio(tmp_path)
     with pytest.raises(JobCancelled):
-        transcribe._faster_whisper_segments(job, job.vocals, "small", cancel=cancel)
+        transcribe.faster_whisper_segments(job, job.vocals, "small", cancel=cancel)
     assert heard == [0, 1]              # stopped at the cancel, not at the end of the file

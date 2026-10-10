@@ -89,9 +89,9 @@ def run(job, work_dir: Path, *, whisper_model: str = "large-v3", device=None,
     source_lang = (job.source_lang or "").split("-")[0]
     script_lang = (job.script_lang or "").split("-")[0]
     if recognise and source_lang and script_lang and source_lang != script_lang:
-        from .stages.transcribe import _faster_whisper_segments
+        from .stages.transcribe import faster_whisper_segments
 
-        heard = _faster_whisper_segments(job, Path(audio), whisper_model, device)
+        heard = faster_whisper_segments(job, Path(audio), whisper_model, device)
         words = [w for seg in heard for w in (seg.words or [])]
         original = words_by_line(words, spans)
         log.info("analysis: %d original-language word(s) placed on %d line(s)",

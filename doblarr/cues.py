@@ -2080,3 +2080,40 @@ def validate_cues(segments, lineage: dict | None = None) -> None:
             raise SchemaError(f"cue {retired} is both live and retired")
         if not successors:
             raise SchemaError(f"retired cue {retired} has no successor")
+
+
+def apply_findings(seg, detector: str, inputs: str, observed: list[tuple]) -> None:
+    """Merge this detector's observations into the cue's structured findings.
+
+    A finding is never silently resolved by new audio: when the inputs change,
+    an accepted finding reopens with its history intact, and a code that is no
+    longer reported becomes `obsolete` rather than disappearing.
+    """
+    codes = {code for code, *_ in observed}
+    latest = {code: row for code, *row in observed}
+    for found in seg.findings:
+        if found.detector != detector:
+            continue
+        if found.code in codes:
+            if found.inputs != inputs and found.disposition != "open":
+                found.history.append({"at": now(), "from": found.disposition,
+                                      "to": "open", "reason": "inputs changed"})
+                found.disposition = "open"
+            if found.inputs != inputs:
+                # The same problem measured on different audio: the evidence
+                # must describe the audio that is there now.
+                _kind, found.severity, found.confidence, found.evidence = latest[found.code]
+            found.inputs = inputs
+        elif found.disposition != "obsolete":
+            found.history.append({"at": now(), "from": found.disposition,
+                                  "to": "obsolete", "reason": "no longer detected"})
+            found.disposition = "obsolete"
+    known = {f.code for f in seg.findings if f.detector == detector}
+    for code, kind, severity, confidence, evidence in observed:
+        if code in known:
+            continue
+        seg.findings.append(Finding(
+            finding_id=finding_id(seg.cue_id, code, detector),
+            code=code, kind=kind, severity=severity, confidence=confidence,
+            scope="render", target=RAW, detector=detector, inputs=inputs,
+            evidence=evidence))

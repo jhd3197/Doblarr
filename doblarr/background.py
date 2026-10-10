@@ -30,10 +30,9 @@ import wave
 from pathlib import Path
 
 from . import levels
-from .cues import Finding, Span, finding_id
+from .cues import Finding, Span, apply_findings, finding_id
 from .errors import JobCancelled
 from .fingerprints import verification as screening_fingerprint
-from .stages.quality import apply_findings
 
 log = logging.getLogger("doblarr.background")
 

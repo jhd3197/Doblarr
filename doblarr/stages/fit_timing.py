@@ -23,16 +23,14 @@ from __future__ import annotations
 
 import logging
 import threading
-import wave
 from pathlib import Path
 
 from .. import pacing, stretch
-from ..cues import FITTED, Artifact
-from ..ffmpeg import run_ffmpeg, run_ffprobe
+from ..cues import FITTED, Artifact, apply_findings
+from ..ffmpeg import media_duration, run_ffmpeg
 from ..fingerprints import processing as processing_fingerprint
 from ..models import DubJob, Segment
 from .common import Plan, cached, dry, stage
-from .quality import apply_findings
 
 log = logging.getLogger("doblarr.fit_timing")
 
@@ -40,27 +38,6 @@ log = logging.getLogger("doblarr.fit_timing")
 MAX_STRETCH = 1.3
 # Overflow within this ratio is inaudible once mixed; don't resample for it.
 FIT_SLACK = 1.02
-
-
-def _duration(path: Path, cancel: threading.Event | None = None) -> float:
-    try:
-        with wave.open(str(path), "rb") as audio:
-            return audio.getnframes() / audio.getframerate()
-    except (wave.Error, EOFError, OSError):
-        pass
-    out = run_ffprobe(
-        [
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        cancel=cancel,
-    )
-    return float(out.strip())
 
 
 def _atempo_chain(factor: float) -> str:
@@ -269,7 +246,7 @@ def _repair(job, s, src, actual, ceiling, translator, regenerate, checkpoint,
             src = Path(s.audio_clip)
         else:
             raise RuntimeError("timing repair did not produce an audio clip")
-        actual = _duration(src, cancel=cancel)
+        actual = media_duration(src, cancel=cancel)
     return src, actual
 
 
@@ -332,7 +309,7 @@ def run(
         s.issues = [i for i in s.issues if i not in {"timing_overflow", "timing_repair_failed"}]
         if s.duration <= 0:
             continue
-        actual = _duration(src, cancel=cancel)
+        actual = media_duration(src, cancel=cancel)
         if can_repair and not steady:
             src, actual = repair(s, src, actual, 1.15)
         entries.append((s, src, actual))

@@ -33,7 +33,7 @@ def test_tease_artifacts_distinct_from_full(tmp_path, monkeypatch):
         calls.append(args)
         Path(args[-1]).write_bytes(b"audio")
     monkeypatch.setattr(extract, "run_ffmpeg", render)
-    monkeypatch.setattr(extract, "_select_audio_stream", lambda *a: 1)
+    monkeypatch.setattr(extract, "select_audio_stream", lambda *a: 1)
     job = _tease_job(tmp_path)
     extract.run(job, tmp_path / "work", duration=600)
     assert job.source_audio.name == "movie.tease.source.wav"

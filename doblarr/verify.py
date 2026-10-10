@@ -109,6 +109,17 @@ _WORD = re.compile(r"\w+", re.UNICODE)
 _STRIP = re.compile(r"[^\w\s]", re.UNICODE)
 
 
+def spoken_form(text: str, pronunciations: dict) -> str:
+    # Longest term first; substitutions occur once, so replacements cannot cascade.
+    if not pronunciations:
+        return text
+    terms = sorted((k for k in pronunciations if k), key=len, reverse=True)
+    if not terms:
+        return text
+    pattern = r"(?<!\w)(?:" + "|".join(re.escape(k) for k in terms) + r")(?!\w)"
+    return re.sub(pattern, lambda match: pronunciations[match.group()], text)
+
+
 def base_language(language: str) -> str:
     """'es-MX' -> 'es'. Comparison tables are keyed by base language."""
     return str(language or "").replace("_", "-").split("-")[0].lower()
@@ -456,8 +467,6 @@ def expected_for(seg, pronunciations=None) -> str:
     """
     if seg.tts_text:
         return seg.tts_text
-    from .stages.quality import spoken_form
-
     return spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
 
 
