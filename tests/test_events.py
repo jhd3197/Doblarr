@@ -129,3 +129,16 @@ def test_log_records_stream_to_bus(sse_client):
     bus_handlers = [h for h in logging.getLogger().handlers
                     if isinstance(h, BusLogHandler)]
     assert len(bus_handlers) == 1 and bus_handlers[0].bus is app2.state.events
+
+
+def test_api_keys_in_access_log_urls_are_masked():
+    import logging
+
+    from doblarr.logging_setup import RedactApiKey
+
+    record = logging.LogRecord("uvicorn.access", logging.INFO, "", 0,
+                               '%s - "%s %s HTTP/%s" %d', ("127.0.0.1:5", "GET",
+                               "/api/events?api_key=s3cret&since=4", "1.1", 200), None)
+    RedactApiKey().filter(record)
+    assert "s3cret" not in record.getMessage()
+    assert "api_key=***&since=4" in record.getMessage()
