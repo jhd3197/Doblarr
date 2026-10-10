@@ -1337,7 +1337,10 @@ def _published_dub(job, config, shared_work: Path, translator, dry_run: bool) ->
         return None
     lines = [{"index": s.index, "start": s.start, "end": s.end} for s in job.segments]
     try:
-        found = dub_reference.ensure(shared_work, stem, track, lines, job.target_lang)
+        found = dub_reference.ensure(
+            shared_work, stem, track, lines, job.target_lang,
+            model=(config.get("transcribe") or {}).get("whisper_model", "large-v3"),
+            device=resolve_device("transcribe", dict(config.get("compute") or {})))
     except Exception as exc:  # noqa: BLE001 - a reference is help, never a requirement
         log.warning("published dub: could not read track %s (%s); translating without it",
                     track.get("stream"), exc)

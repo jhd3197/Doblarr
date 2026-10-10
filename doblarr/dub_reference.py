@@ -19,6 +19,7 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 
+from . import hardware, whisper
 from .fileio import write_json
 
 log = logging.getLogger("doblarr.dub_reference")
@@ -35,24 +36,17 @@ def _fold(text: str) -> str:
 
 
 def transcribe(audio: Path, language: str, model: str = "large-v3",
-               device: str = "cuda") -> list[dict]:
+               device: hardware.Device | None = None) -> list[dict]:
     """Every recognised word of a track as {"start", "end", "word"}."""
-    from faster_whisper import WhisperModel
-
-    try:
-        whisper = WhisperModel(model, device=device,
-                               compute_type="float16" if device == "cuda" else "int8")
-    except Exception as exc:  # noqa: BLE001 - no GPU runtime: fall back to CPU
-        log.warning("dub reference: %s on %s failed (%s); using cpu", model, device, exc)
-        whisper = WhisperModel(model, device="cpu", compute_type="int8")
-    segments, _info = whisper.transcribe(str(audio), language=language, word_timestamps=True,
-                                         vad_filter=True, beam_size=5,
-                                         condition_on_previous_text=False)
     words = []
-    for segment in segments:
-        for word in segment.words or []:
-            words.append({"start": round(word.start, 3), "end": round(word.end, 3),
-                          "word": word.word.strip()})
+    with whisper.loaded(model, device) as recognizer:
+        segments, _info = recognizer.transcribe(str(audio), language=language,
+                                                word_timestamps=True, vad_filter=True,
+                                                beam_size=5, condition_on_previous_text=False)
+        for segment in segments:
+            for word in segment.words or []:
+                words.append({"start": round(word.start, 3), "end": round(word.end, 3),
+                              "word": word.word.strip()})
     return words
 
 
@@ -104,7 +98,7 @@ def sidecar(script: Path, stream: int) -> Path:
 
 
 def build(script: Path, audio: Path, stream: int, language: str, offset: float = 0.0,
-          rate: float = 1.0, model: str = "large-v3", device: str = "cuda",
+          rate: float = 1.0, model: str = "large-v3", device: hardware.Device | None = None,
           words: list[dict] | None = None) -> dict:
     data = json.loads(script.read_text(encoding="utf-8"))
     lines = [{"index": s["index"], "start": s["start"], "end": s["end"]}
@@ -174,7 +168,8 @@ def published_track(evidence: list[dict], language: str) -> dict | None:
 
 
 def ensure(folder: Path, stem: str, track: dict, lines: list[dict], language: str,
-           model: str = "large-v3", device: str = "cuda") -> tuple[dict, Path] | None:
+           model: str = "large-v3",
+           device: hardware.Device | None = None) -> tuple[dict, Path] | None:
     """The dub's reference for an episode, transcribed once and then reused.
 
     The transcript is cached in `<stem>.dubref.<stream>.json` next to the

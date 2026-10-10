@@ -75,17 +75,13 @@ def path_for(folder: Path, stem: str, stream: int) -> Path:
 
 def transcribe(wav: Path, language: str, model: str = "large-v3", device=None) -> list[dict]:
     """The words of a track with their times: [{start, end, text}]."""
-    from faster_whisper import WhisperModel
+    from . import whisper
 
-    from . import hardware
-
-    device = device or hardware.Device()
-    whisper = WhisperModel(model, device=device.kind, device_index=device.device_index,
-                           compute_type="float16" if device.kind == "cuda" else "int8")
-    segments, _info = whisper.transcribe(str(wav), language=language, vad_filter=True,
-                                         word_timestamps=True)
-    return [{"start": round(w.start, 2), "end": round(w.end, 2), "text": w.word.strip()}
-            for s in segments for w in (s.words or []) if w.word.strip()]
+    with whisper.loaded(model, device) as recognizer:
+        segments, _info = recognizer.transcribe(str(wav), language=language, vad_filter=True,
+                                                word_timestamps=True)
+        return [{"start": round(w.start, 2), "end": round(w.end, 2), "text": w.word.strip()}
+                for s in segments for w in (s.words or []) if w.word.strip()]
 
 
 def ensure(folder: Path, stem: str, track: dict, wav: Path, *, offset: float = 0.0,
