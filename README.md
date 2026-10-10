@@ -111,11 +111,17 @@ available on the translator's `last_usage`; Voicebox does not report token usage
 
 ### API authentication
 
-Set `web.api_key` in `config.yaml` to lock the API: every `/api/*` route (except
-`/api/health` and `/api/health/ready`) then requires the `X-Api-Key: <key>` header
-(or `?api_key=<key>`). The web UI prompts for the key once and remembers it. With no
-key configured the API stays open (fine for a trusted home network) and a warning is
-logged at startup.
+Every `/api/*` route (except `/api/health` and `/api/health/ready`) requires the
+`X-Api-Key: <key>` header (or `?api_key=<key>`). On first start `doblarr serve`
+generates a key, saves it as `web.api_key` in `config.yaml` and prints it; the web UI
+asks for it once and remembers it. To run without a key, set
+`web.allow_unauthenticated: true`.
+
+Requests must also be addressed to a name Doblarr expects. IP addresses, `localhost`
+and local names (`nas`, `nas.local`, `.lan`, `.home.arpa`, `.internal`) always work.
+Any other domain, such as a reverse proxy's `dub.example.com`, must be listed in
+`web.allowed_hosts` (or the `DOBLARR_ALLOWED_HOSTS` environment variable, comma
+separated). This stops a web page from reaching the API through DNS rebinding.
 
 Security notes: `config.yaml` holds your *arr/Plex keys in plaintext — protect it with
 filesystem permissions (it's gitignored). Doblarr serves plain HTTP; put it behind a
@@ -131,8 +137,8 @@ is on, the rescan also syncs Plex labels.
 
 Setup in Radarr/Sonarr: **Settings → Connect → Add → Webhook** —
 URL `http://<doblarr-host>:6363/api/webhooks/radarr` (or `.../sonarr`), trigger
-**On Import/On Upgrade**. If you set `web.api_key`, add a header `X-Api-Key: <key>`
-in the webhook settings (no key configured → webhooks are open like the rest of the API).
+**On Import/On Upgrade**, and add a header `X-Api-Key: <key>` with the key from
+`web.api_key`.
 
 ### Persistence & resume
 
@@ -321,7 +327,7 @@ doblarr/
   library_service.py # discovery cache, persisted scan state and webhook orchestration
   config.py         # YAML config + defaults, env overrides, secret redaction
   config_schema.py  # pydantic validation of config.yaml (warnings, never fatal)
-  auth.py           # X-Api-Key dependency for /api/* (optional; web.api_key)
+  auth.py           # X-Api-Key and Host checks for /api/* (web.api_key, web.allowed_hosts)
   discovery.py      # library scan: needs-dub / partial / available
   jobs.py           # job queue (SQLite) + background worker (cancel-aware)
   store.py          # sqlite3 Database: WAL, migrations, jobs + scan_state

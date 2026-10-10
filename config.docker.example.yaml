@@ -10,7 +10,10 @@ paths:
 web:
   host: 0.0.0.0
   port: 6363
-  # api_key: ""           # set to require X-Api-Key on /api/* (UI prompts for it)
+  # API key for /api/*. `doblarr serve` generates one here on first start and
+  # the web UI asks for it once. allow_unauthenticated: true leaves the API open.
+  # api_key: ""
+  # allowed_hosts: []      # domain names besides IPs and local names, e.g. dub.example.com
 
 connect:
   radarr_url: http://host.docker.internal:7878

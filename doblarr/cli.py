@@ -59,10 +59,15 @@ def _cmd_check(args: argparse.Namespace, config: Config) -> int:
 def _cmd_serve(args: argparse.Namespace, config: Config) -> int:
     import uvicorn
 
+    from .auth import ensure_api_key
     from .server import create_app
 
     host = args.host or config.get("web", {}).get("host", "127.0.0.1")
     port = args.port or config.get("web", {}).get("port", 6363)
+    key = ensure_api_key(config)
+    if key:
+        print(f"Generated an API key and saved it as web.api_key in {config.path}.")
+        print(f"Enter it when the web UI asks:  {key}")
     print(f"Doblarr serving on http://{host}:{port}  (UI + /api/library)")
     # log_config=None: logging_setup already configured uvicorn's loggers.
     uvicorn.run(create_app(config), host=host, port=int(port), log_config=None)

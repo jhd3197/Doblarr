@@ -35,7 +35,9 @@ class GeneralModel(_Section):
 class WebModel(_Section):
     host: str = "127.0.0.1"
     port: int = 6363
-    api_key: str = ""
+    api_key: str = ""                     # `doblarr serve` generates one when empty
+    allow_unauthenticated: bool = False   # true leaves the API open without a key
+    allowed_hosts: list[str] = []         # extra domain names, e.g. a reverse proxy's
 
 
 class ConnectModel(_Section):

@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .auth import build_api_key_dependency
+from .auth import build_api_key_dependency, build_host_check
 from .clients.speech import SpeechError
 from .config import Config
 from .errors import ConfigError, DoblarrError, NotFoundError
@@ -95,6 +95,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         db.close()
 
     app = FastAPI(title="Doblarr", version="0.1.0", lifespan=lifespan)
+    app.middleware("http")(build_host_check(config))
     app.state.jobs = store
     app.state.worker = worker
     app.state.scheduler = scheduler

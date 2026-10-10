@@ -16,6 +16,10 @@ general:
 web:
   host: 127.0.0.1
   port: 6363
+  # API key for /api/*. `doblarr serve` generates one here on first start and
+  # the web UI asks for it once. allow_unauthenticated: true leaves the API open.
+  # api_key: ""
+  # allowed_hosts: []      # domain names besides IPs and local names, e.g. dub.example.com
 
 # Services Doblarr reads from (keys can also come from env, e.g. DOBLARR_RADARR_API_KEY)
 connect:
