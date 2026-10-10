@@ -254,21 +254,32 @@ class AudioLanguages:
         return dict(by_file)
 
     def start(self, scanned_at: str, changes: list[dict]) -> dict:
-        if self.job.get("state") == "running":
-            raise RuntimeError("Tracks are already being rewritten.")
-        edits = self.plan(scanned_at, changes)
-        tracks = sum(len(e) for e in edits.values())
-        if self.dry_run_of():
-            self.job = {"state": "planned", "files": len(edits), "tracks": tracks, "done": 0,
-                        "failed": [], "message": "Dry run is on: nothing was written."}
-            return self.job
-        self.job = {"state": "running", "files": len(edits), "tracks": tracks, "done": 0,
-                    "failed": []}
+        # Checked and claimed under the lock: two quick clicks must not start
+        # two rewrites of the same library files.
+        with self.lock:
+            if self.job.get("state") == "running":
+                raise RuntimeError("Tracks are already being rewritten.")
+            edits = self.plan(scanned_at, changes)
+            tracks = sum(len(e) for e in edits.values())
+            if self.dry_run_of():
+                self.job = {"state": "planned", "files": len(edits), "tracks": tracks,
+                            "done": 0, "failed": [],
+                            "message": "Dry run is on: nothing was written."}
+                return self.job
+            self.job = {"state": "running", "files": len(edits), "tracks": tracks, "done": 0,
+                        "failed": []}
         threading.Thread(target=self._run, args=(edits,), daemon=True,
                          name="audio-languages").start()
         return self.job
 
     def _run(self, edits: dict[str, list[dict]]) -> None:
+        try:
+            self._rewrite_all(edits)
+        except Exception as exc:  # noqa: BLE001 - never leave the job "running" for good
+            log.exception("audio languages: the rewrite stopped")
+            self.job.update(state="done", message=f"The rewrite stopped: {exc}")
+
+    def _rewrite_all(self, edits: dict[str, list[dict]]) -> None:
         cache = self.cache_of()
         for file, file_edits in edits.items():
             try:
