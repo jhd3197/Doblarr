@@ -10,6 +10,7 @@ Sources, in order of preference:
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 from .. import hardware, subtitles
@@ -276,7 +277,11 @@ def _whisperx_segments(job: DubJob, audio: Path, whisper_model: str,
                                     align_device)
             del loaded
     except Exception as exc:  # noqa: BLE001 — no align model for some languages; keep raw timings
+        torch = sys.modules.get("torch")
+        if torch is not None and isinstance(exc, torch.cuda.OutOfMemoryError):
+            raise   # a memory problem to fix, not a language without an align model
         log.warning("whisperx alignment failed (%s) — using raw segment timings", exc)
+        job.metrics["alignment"] = {"state": "raw segment timings", "reason": str(exc)}
     return _to_segments(result["segments"])
 
 

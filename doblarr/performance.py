@@ -54,10 +54,6 @@ TRAITS = (
 )
 
 
-def known_trait(trait: str) -> bool:
-    return str(trait).strip().lower() in TRAITS
-
-
 def clean_traits(traits) -> list[str]:
     """Normalize a trait list without discarding an unfamiliar one."""
     seen: list[str] = []

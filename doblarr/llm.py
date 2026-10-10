@@ -21,18 +21,20 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from .errors import DoblarrError
+
 log = logging.getLogger("doblarr.llm")
 
 
-class ModelUnavailable(RuntimeError):
+class ModelUnavailable(DoblarrError):
     """The model could not be reached or initialised."""
 
 
-class InvalidReply(RuntimeError):
+class InvalidReply(DoblarrError):
     """The model answered, but not in the shape asked for (after a retry)."""
 
 
-class BudgetExhausted(RuntimeError):
+class BudgetExhausted(DoblarrError):
     """The run's allowance for model requests is spent."""
 
 
@@ -112,9 +114,9 @@ class Client:
                 feedback = ("\nThe previous response was invalid: "
                             f"{str(exc)[:300]}. Return JSON matching the schema exactly.")
                 log.warning("llm: invalid reply from %s (attempt %d)", self.model, attempt + 1)
+            except DoblarrError:
+                raise       # a holdout guard or the budget refused it; not unavailability
             except Exception as exc:  # noqa: BLE001 - transport failures are unavailability
-                if type(exc).__name__ == "HoldoutViolation":
-                    raise
                 raise ModelUnavailable(f"{self.model} failed: {exc}") from exc
             finally:
                 self.seconds += time.perf_counter() - started

@@ -57,6 +57,7 @@ from .cues import (
     now,
     script_ref,
 )
+from .errors import DoblarrError
 from .ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
 from .fileio import file_sha256, read_json, write_json
 from .languages import resolve_target_locale
@@ -81,7 +82,7 @@ MAX_SCENE_SECONDS = 120.0
 MAX_REFERENCES = 4
 
 
-class ComparisonError(RuntimeError):
+class ComparisonError(DoblarrError):
     """A comparison could not be built, with the exact missing input named."""
 
 
@@ -1251,11 +1252,6 @@ def page(manifest: dict, root: Path) -> str:
     return render(manifest, root)
 
 
-def _esc(value) -> str:
-    return (str(value).replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace('"', "&quot;"))
-
-
 def _sha(path: Path) -> str | None:
     return file_sha256(path) if Path(path).is_file() else None
 
@@ -1270,5 +1266,3 @@ def _tree_bytes(root: Path) -> int:
         except OSError:
             continue
     return total
-
-

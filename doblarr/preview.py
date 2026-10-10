@@ -28,6 +28,7 @@ from pathlib import Path
 
 from .artifacts import digest, matches, record, stamp
 from .cues import RAW, TREATED
+from .errors import DoblarrError
 from .ffmpeg import FFmpegError, run_ffmpeg
 
 log = logging.getLogger("doblarr.preview")
@@ -49,7 +50,7 @@ KINDS = ("source", "dub", "line", "take", "reference", "vocals", "bed", "event",
          "dry", "treated")
 
 
-class PreviewError(RuntimeError):
+class PreviewError(DoblarrError):
     """A preview could not be produced, with a reason worth showing."""
 
 

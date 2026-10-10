@@ -23,13 +23,10 @@ from pathlib import Path
 from .config import Config
 from .cues import (
     FITTED,
-    LEVELED,
     MONTAGE,
     NORMALIZED,
-    PHRASED,
     RAW,
     SOURCE,
-    TREATED,
     Artifact,
     Placement,
     Selection,
@@ -497,13 +494,3 @@ def compare(before: Path, after: Path) -> dict:
         "changed_counters": {k: v for k, v in moved.items() if k not in LOCAL_COUNTERS},
         "changed_local_counters": {k: v for k, v in moved.items() if k in LOCAL_COUNTERS},
     }
-
-
-def roles_present(job: DubJob) -> set[str]:
-    """Artifact roles the run actually produced — a quick harness assertion."""
-    found: set[str] = set()
-    for seg in job.segments:
-        if seg.audio.raw():
-            found.add(RAW)
-        found.update(a.role for a in seg.audio.renders)
-    return found & {RAW, NORMALIZED, PHRASED, FITTED, LEVELED, TREATED}

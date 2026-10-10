@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from typing import Any
 
 from . import base
 from .base import Fetch, Unreachable
@@ -151,13 +150,3 @@ class ANN:
                 "year": summary["year"], "episodes": summary["episodes"],
                 "characters": characters, "complete": complete, "staff": staff,
                 "episode_titles": episode_titles}
-
-
-def dub_languages(document: dict[str, Any]) -> list[str]:
-    """Languages an ANN cast credits, original first."""
-    seen: list[str] = []
-    for c in document.get("characters") or []:
-        for v in c.get("voice_actors") or []:
-            if v.get("language") and v["language"] not in seen:
-                seen.append(v["language"])
-    return sorted(seen, key=lambda lang: lang != "Japanese")

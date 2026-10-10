@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -85,13 +84,6 @@ def assign(words: list[dict], lines: list[dict], offset: float = 0.0,
             "seconds": round(heard[-1]["end"] - heard[0]["start"], 3) if heard else None,
         })
     return out
-
-
-def term_usage(lines: list[dict], terms: list[str]) -> dict[str, int]:
-    """How often each term (folded) is said across the dub's lines."""
-    said = " ".join(_fold(line["text"]) for line in lines)
-    return {term: len(re.findall(r"\b" + re.escape(_fold(term)) + r"\b", said))
-            for term in terms if term.strip()}
 
 
 def frequent_names(lines: list[dict], minimum: int = 2) -> list[tuple[str, int]]:

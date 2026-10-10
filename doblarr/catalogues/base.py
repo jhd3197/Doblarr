@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from ..errors import DoblarrError
+
 USER_AGENT = "Doblarr/1 (title research; https://github.com/jhd3197/Doblarr)"
 ROLES = ("MAIN", "SUPPORTING", "BACKGROUND")
 
@@ -57,8 +59,10 @@ def name_key(text: str) -> str:
     return text
 
 
-class Unreachable(RuntimeError):
+class Unreachable(DoblarrError):
     """The catalogue could not answer now (offline, rate limited, no key)."""
+
+    http_status = 502
 
 
 class CastProvider(Protocol):

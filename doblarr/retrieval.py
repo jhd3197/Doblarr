@@ -24,14 +24,11 @@ recommendation never becomes evidence for itself.
 
 from __future__ import annotations
 
-import json
 import math
 import time
-from pathlib import Path
 
 from . import features, templates
 from .artifacts import digest
-from .fileio import write_json
 
 INDEX_VERSION = "patterns/1"
 BAND = 0.15               # warping band, share of the curve length
@@ -318,16 +315,3 @@ def retrieval_choice(ranked: dict, min_margin: float = 0.03) -> dict:
             return {**preserve, "reason": "the leading templates are too close to call; "
                                           "keeping the take as generated"}
     return {**top, "reason": "highest retrieval score"}
-
-
-def save_index(path: Path, entries: list[dict]) -> None:
-    payload = {"namespace": namespace(), "version": INDEX_VERSION, "entries": entries}
-    write_json(path, payload, indent=None)
-
-
-def load_index(path: Path) -> list[dict]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return payload.get("entries") or [] if payload.get("namespace") == namespace() else []
