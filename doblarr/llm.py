@@ -38,6 +38,30 @@ class BudgetExhausted(DoblarrError):
     """The run's allowance for model requests is spent."""
 
 
+def driver_for(model: str, *, endpoint: str | None = None, api_key: str | None = None):
+    """A Prompture driver for `model` ("provider/name"), or ModelUnavailable.
+
+    Keys come from the environment; `api_key` overrides that.
+    """
+    try:
+        import prompture
+    except ImportError as exc:
+        raise ModelUnavailable("Prompture is not installed") from exc
+    overrides: dict[str, Any] = {}
+    if endpoint:
+        overrides["endpoint"] = endpoint
+    # Prompture releases up to 1.13 read only CLAUDE_API_KEY; newer ones also
+    # read ANTHROPIC_API_KEY. Drop this once requirements pin such a release.
+    if not api_key and model.startswith("claude/"):
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key:
+        overrides["api_key"] = api_key
+    try:
+        return prompture.get_driver_for_model(model, **overrides)
+    except Exception as exc:  # noqa: BLE001 - any init failure: unavailable
+        raise ModelUnavailable(f"could not initialise {model}: {exc}") from exc
+
+
 class Client:
     """A lazily initialised Prompture driver for one model string."""
 
@@ -61,19 +85,7 @@ class Client:
     def _get_driver(self):
         if self._driver is not None:
             return self._driver
-        try:
-            import prompture
-        except ImportError as exc:
-            raise ModelUnavailable("Prompture is not installed") from exc
-        overrides: dict[str, Any] = {}
-        if self.endpoint:
-            overrides["endpoint"] = self.endpoint
-        if self.model.startswith("claude/") and os.environ.get("ANTHROPIC_API_KEY"):
-            overrides["api_key"] = os.environ["ANTHROPIC_API_KEY"]
-        try:
-            driver = prompture.get_driver_for_model(self.model, **overrides)
-        except Exception as exc:  # noqa: BLE001 - any init failure: unavailable
-            raise ModelUnavailable(f"could not initialise {self.model}: {exc}") from exc
+        driver = driver_for(self.model, endpoint=self.endpoint)
         if self.guard is not None:
             from .studio.holdout import GuardedDriver
 

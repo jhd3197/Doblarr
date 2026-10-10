@@ -56,10 +56,10 @@ def translator(ctx: Ctx) -> dict:
     provider = str(settings.get("provider") or "")
     model = str(settings.get("model") or "")
     if provider == "claude":
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY"):
             return _row("translator", "PASS", f"claude {model}")
-        return _row("translator", "FAIL", "translate.provider is claude but ANTHROPIC_API_KEY "
-                    "is not set; set the key or `doblarr settings set "
+        return _row("translator", "FAIL", "translate.provider is claude but neither "
+                    "ANTHROPIC_API_KEY nor CLAUDE_API_KEY is set; set one or `doblarr settings set "
                     "translate.provider=prompture translate.model=ollama/<model>`")
     if provider == "prompture" and model.startswith("ollama/"):
         endpoint = str(settings.get("endpoint") or os.environ.get("OLLAMA_HOST")
