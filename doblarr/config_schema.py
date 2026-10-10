@@ -51,7 +51,7 @@ class ConnectModel(_Section):
 
 class DiscoveryModel(_Section):
     only_original_foreign: bool = True
-    treat_undefined_as: str = "original"
+    treat_undefined_as: Literal["original", "target", "ignore", "unknown"] = "original"
     rescan_interval: str = "6h"
     auto_scan: bool = False
     cache_ttl: int = 300
@@ -105,7 +105,7 @@ class VoiceboxModel(_Section):
 
 
 class TranslateModel(_Section):
-    provider: str = "claude"
+    provider: Literal["claude", "prompture", "voicebox", "passthrough"] = "claude"
     model: str = "claude-sonnet-5"
     endpoint: str | None = None  # prompture driver URL override (local LLMs)
     batch_size: int = 12
@@ -139,7 +139,7 @@ class TranslateModel(_Section):
 
 
 class TranscribeModel(_Section):
-    source: str = "subtitles"
+    source: Literal["subtitles", "whisper"] = "subtitles"
     whisper_model: str = "large-v3"
     diarize: bool = True
     # auto: pyannote when HF_TOKEN is set, else local voice grouping (no account)
@@ -207,9 +207,9 @@ class DubModel(_Section):
     versions_kept: int = 0           # saved versions kept per output; 0 keeps all
     narrator_voice: str = ""
     narrator_delivery: str = ""
-    preset: str = "custom"
+    preset: Literal["custom", "preview", "final"] = "custom"
     target_locale: str = ""  # canonical regional target (es-MX); "" derives from the language
-    voice_mode: str = "clone"
+    voice_mode: Literal["clone", "preset"] = "clone"
     dry_run: bool = True
     duration_match: bool = True
     max_fit_attempts: int = 2
@@ -225,7 +225,7 @@ class DubModel(_Section):
     duck_threshold: float = 0.05
     duck_attack_ms: float = 100     # the bed eases down under a new line instead of snapping
     duck_release_ms: float = 350
-    output_codec: str = "aac"
+    output_codec: Literal["aac", "flac", "copy"] = "aac"
     output_bitrate: str = "192k"
     pronunciations: dict[str, str] = {}
     # Japanese source, Spanish target: respell the glossary's names for the
@@ -261,7 +261,7 @@ class QualityModel(_Section):
     enabled: bool = True
     normalize: bool = True
     dialogue_lufs: float = -18
-    asr: str = "off"
+    asr: Literal["off", "suspicious", "all"] = "off"
     # Fraction of otherwise-unsuspicious lines to verify anyway under the
     # `suspicious` policy. Deterministic per cue, so a rerun checks the same
     # lines; 0 keeps the historical behavior of checking none of them.
@@ -494,7 +494,6 @@ class VisionModel(_Section):
     backend: Literal["auto", "opencv", "off"] = "auto"
     domain: Literal["auto", "anime", "live_action"] = "auto"
     frame_height: int = 360
-    frames_per_shot: int = 3
     max_frames: int = 4000            # bound on frames sampled from one title
     asd_fps: float = 8.0              # frames per second read inside a line for mouth motion
     models_dir: str = ""              # blank: <work_dir>/models/vision

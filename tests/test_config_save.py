@@ -73,3 +73,12 @@ def test_a_new_key_sent_with_a_new_url_is_kept(tmp_path):
     cfg.apply_and_save({"connect": {"radarr_url": "http://r:7878", "radarr_api_key": "OLD"}})
     cfg.apply_and_save({"connect": {"radarr_url": "http://new:7878", "radarr_api_key": "NEW"}})
     assert cfg["connect"]["radarr_api_key"] == "NEW"
+
+
+@pytest.mark.parametrize("key,value", [
+    ("translate", {"provider": "nope"}), ("dub", {"voice_mode": "robot"}),
+    ("quality", {"asr": "sometimes"}), ("dub", {"output_codec": "mp3"})])
+def test_a_closed_choice_refuses_values_outside_it(tmp_path, key, value):
+    cfg = Config.load(tmp_path / "config.yaml")
+    with pytest.raises(InvalidSettings, match=f"{key}.{next(iter(value))}"):
+        cfg.apply_and_save({key: value})
