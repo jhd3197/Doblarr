@@ -3,7 +3,7 @@
 # pyannote on an NVIDIA GPU, use the GPU variant: Dockerfile.gpu, started with
 # docker-compose.gpu.yml (see README "GPU").
 # The web UI (React), built once and copied into the app image.
-FROM node:22-slim AS ui
+FROM node:25-slim AS ui
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
