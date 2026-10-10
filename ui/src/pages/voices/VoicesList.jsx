@@ -111,7 +111,7 @@ export function VoicesList() {
         </section>
       ))}
       {loose.length > 0 && (
-        <div className="panel voices-table"><table className="table">
+        <div className="panel voices-table"><div className="table-wrap"><table className="table">
           <thead><tr><th>Voice</th><th>Engine</th><th>Kind</th><th>Language</th></tr></thead>
           <tbody>{loose.map(v => (
             <tr key={v.key} data-voice={v.key} tabIndex={0} onClick={() => navigate(voiceHref(v.key))}
@@ -119,7 +119,7 @@ export function VoicesList() {
               <td><span className="voice-dot" style={dotStyle(v)} />{voiceTitle(v)}</td>
               <td className="m">{v.engine || ''}</td><td>{v.kind || ''}</td><td className="m">{v.language || '—'}</td></tr>
           ))}</tbody>
-        </table></div>
+        </table></div></div>
       )}
     </div>
   );

@@ -127,7 +127,7 @@ export function EnvelopePanel({ jobId, row }) {
           ))}
         </div>
         {line.candidates?.length ? (
-          <table className="table envelope-candidates">
+          <div className="table-wrap"><table className="table envelope-candidates">
             <thead><tr><th>Template</th><th>Score</th><th>Why</th></tr></thead>
             <tbody>
               {line.candidates.map(c => (
@@ -138,7 +138,7 @@ export function EnvelopePanel({ jobId, row }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         ) : <p className="hint">No recommendation was made for this line.</p>}
         <div className="envelope-choose">
           <label className="review-field">Template

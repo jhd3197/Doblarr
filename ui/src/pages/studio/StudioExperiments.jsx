@@ -161,7 +161,7 @@ function Experiment({ ctrl, id }) {
         <button type="button" className="btn btn-primary" id="exRun" onClick={run}>Write the conditions</button>
         <button type="button" className="btn btn-secondary" id="exEval" onClick={evaluate}>Judge blind</button></div>
       <p className="hint" id="exNote" role="status">{note}</p>
-      <table className="table"><thead><tr><th>Variant</th><th>State</th><th>Requests</th><th>Time</th><th>Inputs</th><th /></tr></thead><tbody>
+      <div className="table-wrap"><table className="table"><thead><tr><th>Variant</th><th>State</th><th>Requests</th><th>Time</th><th>Inputs</th><th /></tr></thead><tbody>
         {data.variants.length ? data.variants.map(v => (
           <tr key={v.id}><td>{v.condition} · repeat {v.repeat}</td>
             <td>{v.status}{v.error && <div className="review-marker">{v.error}</div>}
@@ -175,7 +175,7 @@ function Experiment({ ctrl, id }) {
                 <li>{v.guard_audit} request(s) scanned; {v.memory_rejected || 0} memory candidate(s) dropped</li></ul></details></td>
             <td>{v.frozen && ctrl.jobId() && <button type="button" className="btn btn-ghost" data-render={v.id} onClick={() => speak(v.id)}>Speak it</button>}</td></tr>
         )) : <tr><td colSpan="6" className="hint">Not written yet.</td></tr>}
-      </tbody></table>
+      </tbody></table></div>
       <details><summary>Limitations</summary><ul className="studio-list">{(e.limitations || []).map(l => <li key={l}>{l}</li>)}</ul></details>
       <div id="exJudge">{evaluation && <Judging key={evaluation} id={evaluation} />}</div>
     </div>

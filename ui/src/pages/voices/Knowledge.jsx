@@ -128,12 +128,12 @@ function EntryDetail({ id }) {
       {data.suppressed_by.length > 0 && <p className="hint knowledge-line">Suppressed by: {data.suppressed_by.map(s => s.phrase || s.id).join(', ')}</p>}
       <h4 className="knowledge-subhead">Engine realizations ({data.realizations.length})</h4>
       {data.realizations.length ? (
-        <table className="table"><thead><tr><th>Replacement</th><th>Engine</th><th>Model</th><th>Voice</th><th>Status</th></tr></thead>
+        <div className="table-wrap"><table className="table"><thead><tr><th>Replacement</th><th>Engine</th><th>Model</th><th>Voice</th><th>Status</th></tr></thead>
           <tbody>{data.realizations.map((r, n) => (
             <tr key={n}><td className="knowledge-strong">{r.replacement}</td>
               <td className="m">{r.engine}</td><td className="m">{r.model ?? 'any (broad)'}</td>
               <td className="m">{r.voice ?? 'any'}</td><td><StatusTag status={r.status} /></td></tr>
-          ))}</tbody></table>
+          ))}</tbody></table></div>
       ) : <p className="hint">No tested realization yet — this rule stays silent for every engine until one is added.</p>}
       <div className="knowledge-listen-row">
         <label className="review-field">Audition sentence<input className="input knowledge-sample" value={sentence ?? e.phrase}
@@ -176,7 +176,7 @@ function Entries({ view, setView, locales }) {
         {isPending ? <p className="hint">Searching…</p> : error ? <p className="hint">{error.message}</p> : (
           <>
             <div className="panel activity-panel">
-              <table className="table"><thead><tr><th>Phrase</th><th className="knowledge-col-locale">Locale</th>
+              <div className="table-wrap"><table className="table"><thead><tr><th>Phrase</th><th className="knowledge-col-locale">Locale</th>
                 <th className="knowledge-col-scope">Scope</th><th className="knowledge-col-status">Status</th><th className="knowledge-col-rules">Rules</th></tr></thead>
                 <tbody>{data.entries.length ? data.entries.map(e => (
                   <tr key={e.id} className="knowledge-row" data-id={e.id} onClick={() => setSelected(e.id)}>
@@ -185,7 +185,7 @@ function Entries({ view, setView, locales }) {
                     <td className="m knowledge-cell">{e.scope}</td>
                     <td><StatusTag status={e.status} /></td>
                     <td className="m knowledge-cell">v{e.revision}</td></tr>
-                )) : <tr><td colSpan="5" className="hint">No entries match. Add a correction above.</td></tr>}</tbody></table></div>
+                )) : <tr><td colSpan="5" className="hint">No entries match. Add a correction above.</td></tr>}</tbody></table></div></div>
             <div className="episode-actions knowledge-pager">
               <button className="btn btn-ghost knowledge-prev" disabled={view.page <= 1} onClick={() => setView({ ...view, page: view.page - 1 })}>← Newer</button>
               <span className="hint">Page {view.page} of {pages} · {data.total} entries</span>

@@ -106,13 +106,13 @@ export function Dubs() {
         <span className="tag tag-accent dubs-worker" id="workerTag">{counts.running ? `processing ${counts.running}` : 'worker idle'}</span>
       </div>
       <div className="panel dubs-panel">
-        <table className="table">
+        <div className="table-wrap"><table className="table">
           <thead>
             <tr><th>Item</th><th className="dubs-col-track">Track</th><th>Stage</th><th className="dubs-col-progress">Progress</th>
               <th className="dubs-col-status">Status</th><th className="dubs-col-actions" /></tr>
           </thead>
           <tbody id="dubsBody">{body}</tbody>
-        </table>
+        </table></div>
       </div>
       {reviewing && <ReviewDialog jobId={reviewing} onClose={() => setReviewing(null)} onQueued={refreshJobs} />}
     </div>

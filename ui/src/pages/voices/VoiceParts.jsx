@@ -119,13 +119,13 @@ export function UsedPanel({ used }) {
     <section className="panel voice-panel" aria-labelledby="voiceUsed">
       <h3 id="voiceUsed">Cast in</h3>
       {used?.length ? (
-        <table className="table">
+        <div className="table-wrap"><table className="table">
           <thead><tr><th>Title</th><th>Speaker</th><th>Shaping</th></tr></thead>
           <tbody>{used.map((u, n) => (
             <tr key={n}><td>{u.title || u.title_key}</td><td className="m">{u.label || u.speaker || ''}</td>
               <td className="m">{[semis(u.pitch_semitones, 'pitch'), semis(u.formant_semitones, 'formant')].filter(Boolean).join(' · ') || '—'}</td></tr>
           ))}</tbody>
-        </table>
+        </table></div>
       ) : <p className="hint">Not used in any saved dub yet.</p>}
     </section>
   );

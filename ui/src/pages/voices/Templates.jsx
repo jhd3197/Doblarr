@@ -68,14 +68,14 @@ export function Templates({ view, setView }) {
       <label className="hint"><input type="checkbox" data-retired checked={retired}
         onChange={e => setView({ ...view, showRetired: e.target.checked })} /> Show retired</label>
       <p className="hint">Adding a curve is a data change: save it here and it is offered, previewed and rendered like the built-in ones. Gains are relative dB; 0.5 linear gain is about −6 dB.</p>
-      <table className="table"><thead><tr><th></th><th>Template</th><th>Shape or settings</th><th>Version</th><th></th></tr></thead><tbody>
+      <div className="table-wrap"><table className="table"><thead><tr><th></th><th>Template</th><th>Shape or settings</th><th>Version</th><th></th></tr></thead><tbody>
         {data.templates.map(t => (
           <tr key={t.id}><td><input type="checkbox" data-pick={t.id} aria-label={`Select ${t.title}`} checked={picked.has(t.id)} onChange={() => toggle(t.id)} /></td>
             <td><strong>{t.title}</strong>{t.retired && <> <span className="tag tag-outline">retired</span></>}<br /><span className="hint">{t.purpose || FAMILY[t.family] || ''}</span></td>
             <td className="hint">{anchorsText(t)}</td>
             <td className="m">v{t.version}<span className="hint"> · {t.provenance?.origin || ''}</span></td>
             <td><button type="button" className="btn btn-ghost" data-edit={t.id} onClick={() => setEditor({ template: t })}>Open</button></td></tr>
-        ))}</tbody></table>
+        ))}</tbody></table></div>
       <div className="studio-actions">
         <button type="button" className="btn btn-secondary" data-new onClick={() => setEditor({ template: blank(kind) })}>New template</button>
         <button type="button" className="btn btn-ghost" data-export onClick={exportPicked}>Export selected</button>

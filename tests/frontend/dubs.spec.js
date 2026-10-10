@@ -17,3 +17,14 @@ test('cancelling a running dub leaves its button usable', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Remove' })).toBeEnabled();
 });
 
+
+test('the dubs table fits a phone screen and scrolls inside its card', async ({ page }) => {
+  const done = { ...RUNNING, id: 'd1', status: 'done', title: 'Harbor Lights S01E04 — a long episode title that runs on',
+    version_id: 'abcdef1234567890', translation_id: '0123456789abcdef', version_name: 'Kaito and Mina, warmer' };
+  await page.route('**/api/jobs', route => route.fulfill({ json: { counts: {}, paused: false, jobs: [RUNNING, done] } }));
+  await page.route('**/api/config', route => route.fulfill({ json: {} }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dubs');
+  await expect(page.getByText('Harbor Lights S01E03')).toBeVisible();
+  await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 390);
+});

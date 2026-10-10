@@ -171,7 +171,7 @@ function DescriptionEditor({ characterId, data, templates, locked, open, onToggl
       ))}
       <h4 className="voice-subhead">Performance range</h4>
       <p className="hint">What you want, what the cast engine can be asked for, and what an audition proved, kept apart.</p>
-      <table className="table"><thead><tr><th>State</th><th>Wanted</th><th>Engine can be asked</th><th>Auditioned</th></tr></thead><tbody>
+      <div className="table-wrap"><table className="table"><thead><tr><th>State</th><th>Wanted</th><th>Engine can be asked</th><th>Auditioned</th></tr></thead><tbody>
         {VARIATIONS.map(v => {
           const row = profile.variations[v] || {};
           const support = (data.assignments[0]?.variations || {})[v] || 'unknown';
@@ -184,7 +184,7 @@ function DescriptionEditor({ characterId, data, templates, locked, open, onToggl
                 defaultValue={VERDICTS.includes(row.auditioned) ? row.auditioned : VERDICTS[0]}>
                 {VERDICTS.map(o => <option key={o}>{o}</option>)}</select></td></tr>
           );
-        })}</tbody></table>
+        })}</tbody></table></div>
       <h4 className="voice-subhead">Templates</h4>
       <p className="hint">Envelope templates this character tends to suit, or should avoid. Recommendations weigh them; they never force one.</p>
       <div className="voice-form">
@@ -475,14 +475,14 @@ export function CharacterProfile() {
         {voice && <VoiceTraits key={voice.key} voice={voice} orbRef={orbRef} />}
         <h4 className="voice-subhead">Which voice, per language</h4>
         {data.assignments.length ? (
-          <table className="table"><thead><tr><th>Locale</th><th>Variant</th><th>Voice</th><th>Engine can do</th><th></th></tr></thead><tbody>
+          <div className="table-wrap"><table className="table"><thead><tr><th>Locale</th><th>Variant</th><th>Voice</th><th>Engine can do</th><th></th></tr></thead><tbody>
             {data.assignments.map((a, n) => (
               <tr key={n}><td className="m">{a.locale || 'any'}</td><td>{a.variant || 'any'}</td>
                 <td>{catalog.find(v => v.profile_id === a.voice || v.key === a.voice)?.display_name || catalog.find(v => v.profile_id === a.voice)?.name || a.voice}</td>
                 <td className="hint">{(a.capabilities?.supported_controls || []).join(', ') || 'unknown'}{a.capabilities?.unsupported?.length ? `; cannot: ${a.capabilities.unsupported.join(', ')}` : ''}</td>
                 <td><button type="button" className="btn btn-ghost" data-unassign={a.locale || ''} data-variant={a.variant || ''}
                   onClick={() => assign({ clear: true, locale: a.locale || '', variant: a.variant || '' })}>Remove</button></td></tr>
-            ))}</tbody></table>
+            ))}</tbody></table></div>
         ) : <p className="hint">{voice ? 'Not cast yet: the voice above is matched by its name only.' : 'No voice cast yet.'}</p>}
         <PublishedVoices published={character.published} />
         <Assign character={character} catalog={catalog} onAssign={assign} say={setStatus} />
@@ -500,7 +500,7 @@ export function CharacterProfile() {
       <section className="panel voice-panel" aria-labelledby="charRefs"><h3 id="charRefs">References</h3>
         <p className="hint">Lines of the original actor a clone learns from. {data.references.approved} approved{data.references.neutral ? '' : ', no neutral one yet'}{data.references.expressive ? '' : ', no expressive one yet'}.</p>
         {profile.references.length > 0 && (
-          <table className="table"><thead><tr><th>Kind</th><th>Line</th><th>Quality</th><th>State</th><th></th></tr></thead><tbody>
+          <div className="table-wrap"><table className="table"><thead><tr><th>Kind</th><th>Line</th><th>Quality</th><th>State</th><th></th></tr></thead><tbody>
             {profile.references.map(r => (
               <tr key={r.id}><td>{r.kind} · {r.variation}</td>
                 <td>{r.transcript || ''}<br /><span className="hint m">{r.source.start.toFixed(1)}–{r.source.end.toFixed(1)} s · {r.provenance || ''}</span></td>
@@ -509,7 +509,7 @@ export function CharacterProfile() {
                 <td>{!r.retired && <>
                   <button type="button" className="btn btn-ghost" data-ref={r.id} onClick={() => retouchReference(r.id, { approved: !r.approved })}>{r.approved ? 'Unapprove' : 'Approve'}</button>
                   <button type="button" className="btn btn-ghost" data-ref={r.id} data-retire="true" onClick={() => retouchReference(r.id, { retired: true })}>Retire</button></>}</td></tr>
-            ))}</tbody></table>
+            ))}</tbody></table></div>
         )}
         {profile.auditions.length > 0 && <><h4 className="voice-subhead">Auditions</h4>
           {profile.auditions.map((a, n) => <p key={n} className="hint">{a.at} · {a.language} · {a.verdict} · {a.context || ''}</p>)}</>}

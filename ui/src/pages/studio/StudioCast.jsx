@@ -228,7 +228,7 @@ export function StudioCast({ ctrl }) {
       <section className="panel studio-card" aria-labelledby="castNow">
         <h3 id="castNow">Who speaks with which voice</h3>
         {cast.speakers.length ? (
-          <table className="table"><thead><tr><th>Speaker</th><th>Voice</th><th>Decided at</th><th /></tr></thead><tbody>
+          <div className="table-wrap"><table className="table"><thead><tr><th>Speaker</th><th>Voice</th><th>Decided at</th><th /></tr></thead><tbody>
             {cast.speakers.map(r => (
               <tr key={r.speaker}>
                 <td><strong>{r.speaker}</strong>{r.character !== r.speaker && <span className="hint"> ({r.character})</span>}</td>
@@ -241,7 +241,7 @@ export function StudioCast({ ctrl }) {
                   onClick={() => whoFollows(r.character)}>Who follows this</button>}</td>
               </tr>
             ))}
-          </tbody></table>
+          </tbody></table></div>
         ) : <p className="hint">{job ? 'This run has no speakers yet.' : 'Render a draft to discover the speakers.'}</p>}
         {cast.line_exceptions.length > 0 && <p className="hint">Line exceptions: {cast.line_exceptions.map(l => `${l.cue_id} → ${l.voice}`).join(', ')}</p>}
         <div id="castAffected">{affected && (
