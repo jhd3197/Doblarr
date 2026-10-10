@@ -34,6 +34,7 @@ import subprocess
 from pathlib import Path
 
 from . import voice_models
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.speakers")
 
@@ -351,10 +352,8 @@ def _maps_for(tracks: list[tuple[int, Path]], evidence: list[dict] | None) -> li
 def _write_sidecar(path: Path, models, threshold: float, rows: list[tuple], vectors: list,
                    tracks: list[int] | None = None, diagnostics: dict | None = None,
                    track_evidence: list[dict] | None = None):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")
     per_line = (diagnostics or {}).get("lines") or [None] * len(rows)
-    temp.write_text(json.dumps({
+    write_json(path, {
         "detector": DETECTOR, "model": voice_models.combined_id(models), "threshold": threshold,
         "tracks": tracks or [], "track_evidence": track_evidence or [],
         "diagnostics": {k: v for k, v in (diagnostics or {}).items() if k != "lines"},
@@ -363,8 +362,7 @@ def _write_sidecar(path: Path, models, threshold: float, rows: list[tuple], vect
                    **({"why": why} if why else {})}
                   for (cue, start, end, speaker), v, why in zip(rows, vectors, per_line,
                                                                 strict=True)],
-    }), encoding="utf-8")
-    os.replace(temp, path)
+    }, indent=None)
 
 
 def move_lines(script: Path, sidecar: Path | None, moves: dict[str, str]) -> int:
@@ -384,9 +382,7 @@ def move_lines(script: Path, sidecar: Path | None, moves: dict[str, str]) -> int
                 source["speaker"] = label
             moved += 1
     data["speakers"] = sorted({str(seg.get("speaker")) for seg in data.get("segments") or []})
-    temp = script.with_suffix(script.suffix + ".tmp")
-    temp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(temp, script)
+    write_json(script, data, indent=1)
     if sidecar is not None and sidecar.is_file():
         evidence = json.loads(sidecar.read_text(encoding="utf-8"))
         for line in evidence.get("lines") or []:
@@ -394,9 +390,7 @@ def move_lines(script: Path, sidecar: Path | None, moves: dict[str, str]) -> int
                 line["speaker"] = moves[str(line["cue"])]
                 # A person decided this line; the grouping's reasons no longer apply.
                 line["why"] = {"method": "manual", "candidates": [], "margin": None}
-        temp = sidecar.with_suffix(sidecar.suffix + ".tmp")
-        temp.write_text(json.dumps(evidence), encoding="utf-8")
-        os.replace(temp, sidecar)
+        write_json(sidecar, evidence, indent=None)
     return moved
 
 
@@ -439,9 +433,7 @@ def regroup(script: Path, audio: Path, sidecar: Path, models: list[voice_models.
         if isinstance(source, dict) and "speaker" in source:
             source["speaker"] = label
     data["speakers"] = sorted(set(labels))
-    temp = script.with_suffix(script.suffix + ".tmp")
-    temp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(temp, script)
+    write_json(script, data, indent=1)
     _write_sidecar(sidecar, models, voice_models.threshold(models, threshold),
                    [((seg.get("cue") or {}).get("cue_id"), seg["start"], seg["end"],
                      seg["speaker"]) for seg in segments], vectors,

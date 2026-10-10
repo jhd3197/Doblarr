@@ -25,7 +25,6 @@ The model reads text only: nothing here claims to know how a take sounds.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import unicodedata
@@ -34,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import digest, read_json
+from .fileio import write_json
 from .stages.quality import apply_findings
 
 log = logging.getLogger("doblarr.decisions")
@@ -163,10 +163,7 @@ class Oracle:
     def close(self, release: bool = True) -> None:
         """Save the answer cache and, if asked, free the model's memory."""
         if self._dirty and self.cache_path is not None:
-            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp = self.cache_path.with_suffix(".partial.json")
-            temp.write_text(json.dumps(self._cache, ensure_ascii=False), encoding="utf-8")
-            temp.replace(self.cache_path)
+            write_json(self.cache_path, self._cache, indent=None)
             self._dirty = False
         if release and self._driver is not None and hasattr(self._driver, "unload"):
             try:

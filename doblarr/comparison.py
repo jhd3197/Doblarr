@@ -59,7 +59,7 @@ from .cues import (
     script_ref,
 )
 from .ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
-from .fileio import write_json
+from .fileio import read_json, write_json
 from .languages import resolve_target_locale
 from .levels import analyze as analyze_levels
 from .models import DubJob, Segment, Speaker
@@ -301,7 +301,7 @@ def cut_media(source: Path, scene: Scene, dest: Path, cancel=None) -> Path:
     request = {"source": stamp(source), "start": round(scene.start, 3),
                "end": round(scene.end, 3), "version": 3}
     receipt = dest.with_suffix(".cut.json")
-    if dest.is_file() and _read(receipt) == request:
+    if dest.is_file() and read_json(receipt) == request:
         return dest
     temp = dest.with_name(dest.stem + ".partial" + dest.suffix)
     try:
@@ -1280,8 +1280,3 @@ def _tree_bytes(root: Path) -> int:
     return total
 
 
-def _read(path: Path) -> dict:
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}

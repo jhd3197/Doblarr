@@ -132,3 +132,21 @@ def test_review_response_keeps_provenance_without_local_paths(client_factory, tm
     assert rendered[0]["proven"] is False
     assert "path" not in rendered[0] and rendered[0]["available"] is True
     assert "audio_clip" not in row
+
+
+def test_concurrent_verdicts_on_one_job_are_all_kept(tmp_path):
+    import threading
+
+    from doblarr.review import load_decisions, record_decision
+
+    def verdict(n):
+        record_decision(tmp_path, "job-1", "rev-1", f"cue-{n}",
+                        {"dispositions": {"f1": {"disposition": "accepted"}}})
+
+    threads = [threading.Thread(target=verdict, args=(n,)) for n in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    saved = load_decisions(tmp_path, "job-1")["cues"]
+    assert sorted(saved) == sorted(f"cue-{n}" for n in range(12))

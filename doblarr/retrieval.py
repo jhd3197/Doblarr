@@ -31,6 +31,7 @@ from pathlib import Path
 
 from . import features, templates
 from .artifacts import digest
+from .fileio import write_json
 
 INDEX_VERSION = "patterns/1"
 BAND = 0.15               # warping band, share of the curve length
@@ -321,10 +322,7 @@ def retrieval_choice(ranked: dict, min_margin: float = 0.03) -> dict:
 
 def save_index(path: Path, entries: list[dict]) -> None:
     payload = {"namespace": namespace(), "version": INDEX_VERSION, "entries": entries}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".partial.json")
-    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    temp.replace(path)
+    write_json(path, payload, indent=None)
 
 
 def load_index(path: Path) -> list[dict]:

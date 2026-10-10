@@ -21,13 +21,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import statistics
 from pathlib import Path
 from types import SimpleNamespace
 
 from . import identity, levels, voice_tags
 from .cues import SourceMeasurement, Span
+from .fileio import write_json
 from .studio import records
 
 log = logging.getLogger("doblarr.speaker_memory")
@@ -108,9 +108,7 @@ def refresh_baselines(script: Path) -> dict:
     for seg in segments:
         seg.raw.setdefault("cue", {})["measurement"] = seg.measurement.as_dict()
     data["dialogue_baseline"] = baseline
-    temp = Path(script).with_suffix(".json.tmp")
-    temp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(temp, script)
+    write_json(Path(script), data, indent=1)
     return {"changed": changed, "baseline": baseline, "overlaps": flips}
 
 

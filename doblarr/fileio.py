@@ -52,12 +52,14 @@ def write_text(path: Path, text: str) -> None:
     write_bytes(path, text.encode("utf-8"))
 
 
-def write_json(path: Path, data: Any, *, indent: int | None = 2) -> None:
-    write_text(path, json.dumps(data, ensure_ascii=False, indent=indent))
+def write_json(path: Path, data: Any, *, indent: int | None = 2, default=None) -> None:
+    write_text(path, json.dumps(data, ensure_ascii=False, indent=indent, default=default))
 
 
-def read_json(path: Path) -> dict:
+def read_json(path: Path | None) -> dict:
     """The JSON object stored at `path`, or {} when it is missing, unreadable or not an object."""
+    if path is None:
+        return {}
     try:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):

@@ -20,13 +20,14 @@ other than the configured local model.
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.emotion")
 
@@ -200,9 +201,7 @@ def run(job, work: Path, model: str, *, names: dict[str, str] | None = None,
             for ln, h, s in zip(lines, heard, seen, strict=True)]
     payload = {"request": key, "reader": READER, "model": model, "voice_model": VOICE_MODEL,
                "lines": rows}
-    temp = path.with_suffix(".partial.json")
-    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    temp.replace(path)
+    write_json(path, payload, indent=None)
     log.info("emotion: %d line(s) read, %d agreed", len(rows),
              sum(1 for r in rows if r.get("agree")))
     return path, False

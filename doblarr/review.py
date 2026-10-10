@@ -3,6 +3,7 @@
 import math
 import os
 import shutil
+import threading
 from dataclasses import asdict
 from pathlib import Path
 
@@ -298,6 +299,11 @@ def load_decisions(root, job_id: str) -> dict:
     return data
 
 
+# Two quick verdicts on one job would each read the file, change their own cue
+# and write it back, so the slower one would drop the other's change.
+_DECISIONS_LOCK = threading.Lock()
+
+
 def record_decision(root, job_id: str, revision: str, cue_id: str, patch: dict,
                     actor: str = "", scope: str = "cue") -> dict:
     """Store one cue's or one event's reviewer decision, keeping its history.
@@ -314,6 +320,11 @@ def record_decision(root, job_id: str, revision: str, cue_id: str, patch: dict,
         raise ValueError("a review decision needs the cue or event it is about")
     if scope not in ("cue", "event"):
         raise ValueError("a review decision is about a cue or an event")
+    with _DECISIONS_LOCK:
+        return _record(root, job_id, revision, cue_id, patch, actor, scope)
+
+
+def _record(root, job_id, revision, cue_id, patch, actor, scope) -> dict:
     data = load_decisions(root, job_id)
     where = data["cues"] if scope == "cue" else data["events"]
     entry = dict(where.get(cue_id) or {})

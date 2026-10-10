@@ -29,6 +29,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .discovery import LibraryItem, _audio_iso2
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.plex_library")
 
@@ -99,10 +100,7 @@ class AudioCache:
     def save(self) -> None:
         if not self.path:
             return
-        tmp = self.path.with_suffix(".partial")
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(self.data), encoding="utf-8")
-        tmp.replace(self.path)
+        write_json(self.path, self.data, indent=None)
 
 
 def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: set[int],

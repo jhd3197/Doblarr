@@ -20,6 +20,8 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 
+from .fileio import write_json
+
 log = logging.getLogger("doblarr.dub_reference")
 
 VERSION = "dubref/1"
@@ -121,7 +123,7 @@ def build(script: Path, audio: Path, stream: int, language: str, offset: float =
               "offset": offset, "rate": rate, "model": model, "audio": str(audio),
               "words": words, "lines": assign(words, lines, offset, rate)}
     out = sidecar(script, stream)
-    out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    write_json(out, result, indent=1)
     return result
 
 
@@ -206,12 +208,11 @@ def ensure(folder: Path, stem: str, track: dict, lines: list[dict], language: st
     else:
         log.info("dub reference: transcribing %s track %d", language, stream)
         words = transcribe(audio, language, model, device)
-        cache.write_text(json.dumps({"key": key, "words": words}, ensure_ascii=False),
-                         encoding="utf-8")
+        write_json(cache, {"key": key, "words": words}, indent=None)
     offset, rate = float(track.get("offset") or 0.0), float(track.get("rate") or 1.0)
     ref = {"language": language, "stream": stream, "offset": offset, "rate": rate,
            "words": words, "lines": assign(words, lines, offset, rate)}
     payload = reference(ref)
     target = folder / f"{stem}.dubref.{stream}.reference.json"
-    target.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    write_json(target, payload, indent=1)
     return ref, target

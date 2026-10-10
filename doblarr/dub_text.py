@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from pathlib import Path
 
+from .fileio import write_json
 from .languages import base_language, parse
 
 log = logging.getLogger("doblarr.dub_text")
@@ -95,12 +95,10 @@ def ensure(folder: Path, stem: str, track: dict, wav: Path, *, offset: float = 0
     if path.is_file():
         return path
     words = transcribe(wav, base_language(str(track.get("lang") or "")) or "", model, device)
-    temp = path.with_suffix(".part.json")
-    temp.write_text(json.dumps({
+    write_json(path, {
         "reader": READER, "stream": int(track["stream"]), "lang": track.get("lang", ""),
         "title": track.get("title", ""), "model": model, "offset": offset, "rate": rate,
-        "words": words}, ensure_ascii=False), encoding="utf-8")
-    os.replace(temp, path)
+        "words": words}, indent=None)
     log.info("dub text: %d words from audio %s (%s)", len(words), track["stream"],
              track.get("title") or track.get("lang"))
     return path

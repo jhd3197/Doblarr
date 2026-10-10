@@ -39,6 +39,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .fileio import write_json
 from .studio import records
 
 log = logging.getLogger("doblarr.identity")
@@ -144,10 +145,7 @@ def content_identity(path: str | Path, cache_dir: Path | None = None) -> dict:
             if len(table) > 5000:   # bounded: oldest insertions go first
                 for old in list(table)[:len(table) - 5000]:
                     table.pop(old, None)
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp = cache_path.with_suffix(".partial.json")
-            temp.write_text(json.dumps(table), encoding="utf-8")
-            temp.replace(cache_path)
+            write_json(cache_path, table, indent=None)
     return found
 
 
