@@ -243,6 +243,7 @@ def run_job(
                 options=dict(config["transcribe"]),
                 force=force,
                 compute=compute,
+                cancel=cancel_event,
             )
         if not dry_run and job.segments and config["transcribe"]["source"] != "whisper":
             _subtitle_roles()
@@ -314,7 +315,7 @@ def run_job(
     def _diarize():
         with gpu_stage("diarize", job, compute, retain=keep_models):
             diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run,
-                        compute=compute,
+                        compute=compute, cancel=cancel_event,
                         method=config["transcribe"].get("diarizer", "auto"),
                         voices=_voices())
         if not dry_run and job.segments and prior_groups.get("segments"):

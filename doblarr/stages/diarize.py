@@ -20,6 +20,7 @@ from typing import Any
 
 from .. import hardware, speakers, voice_models
 from ..cues import SOURCE, Span, split_cue
+from ..errors import JobCancelled
 from ..model_pool import model as pooled_model
 from ..models import DubJob, Segment, Speaker
 from .common import DryRunPlan, dry, stage, work_stem
@@ -202,7 +203,7 @@ def _local(job: DubJob, audio, device, why: str, voices: dict | None = None) -> 
 @stage("diarize")
 def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
         compute: dict | None = None, method: str = "auto",
-        voices: dict | None = None) -> DryRunPlan | None:
+        voices: dict | None = None, cancel=None) -> DryRunPlan | None:
     if not enabled:
         if job.speakers:
             # Turning diarization off means "do not run the model", not "throw
@@ -267,7 +268,6 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
             diarization = pipe(str(audio))
             if hasattr(diarization, "speaker_diarization"):
                 diarization = diarization.speaker_diarization
-            del pipe
     except Exception as exc:  # noqa: BLE001 — gated model, bad token, download failure
         if method == "auto" and _local(job, audio, device, f"pyannote unavailable: {exc}",
                                          voices):
@@ -279,6 +279,9 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
         )
         return None
 
+    if cancel is not None and cancel.is_set():
+        # pyannote cannot be interrupted mid-pass; stop as soon as it returns.
+        raise JobCancelled("cancelled during diarization")
     _assign_speakers(job, diarization)
     log.info("diarize -> %d speakers (%s)", len(job.speakers), ", ".join(job.speakers))
     return None

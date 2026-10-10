@@ -215,3 +215,35 @@ def test_an_explicit_missing_gpu_fails_before_loading(tmp_path, monkeypatch):
         transcribe.run(job, tmp_path / "work", source="whisper",
                        compute={"transcribe_device": "cuda:0"})
     assert "model" not in captured
+
+
+def test_a_cancel_stops_faster_whisper_between_segments(tmp_path, monkeypatch):
+    import threading
+
+    from doblarr.errors import JobCancelled
+
+    cancel = threading.Event()
+    heard: list[float] = []
+
+    def segments():
+        for n in range(5):
+            heard.append(n)
+            if n == 1:
+                cancel.set()            # the user cancels while the second is decoded
+            yield types.SimpleNamespace(start=n, end=n + 0.5, text="Kaito", words=[])
+
+    mod = types.ModuleType("faster_whisper")
+
+    class WhisperModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def transcribe(self, audio, language=None, word_timestamps=False):
+            return segments(), None
+
+    mod.WhisperModel = WhisperModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", mod)
+    job = _job_with_audio(tmp_path)
+    with pytest.raises(JobCancelled):
+        transcribe._faster_whisper_segments(job, job.vocals, "small", cancel=cancel)
+    assert heard == [0, 1]              # stopped at the cancel, not at the end of the file
