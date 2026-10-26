@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Require a merged dev promotion for stable releases
         if: github.ref_name != 'dev'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { owner, repo } = context.repo;
