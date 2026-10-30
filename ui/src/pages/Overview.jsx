@@ -93,7 +93,7 @@ function Ready({ ready, items }) {
     <Card title="Ready to review" sub="Listen before it goes to Plex" link={<Link to="/dubs" className="ov-link">All dubs</Link>}>
       <div className="ov-stack" id="recentTitles">
         {ready.length ? ready.slice(0, 3).map(j => <ReadyRow key={j.id} job={j} item={itemFor(j, items)} />)
-          : <div className="ov-empty">No finished dubs to watch yet.</div>}
+          : <div className="note">No finished dubs to watch yet.</div>}
       </div>
     </Card>
   );
@@ -145,7 +145,7 @@ function Needs({ failed, pausedQueued, warnings }) {
     action={<Link to="/settings/connections" className="btn btn-secondary ov-btn-sm">Settings</Link>} />);
   return (
     <Card title="Needs you" sub={rows.length ? plural(rows.length, 'thing') : null}>
-      <div className="ov-stack ov-stack-tight">{rows.length ? rows : <div className="ov-empty">Nothing needs you right now.</div>}</div>
+      <div className="ov-stack ov-stack-tight">{rows.length ? rows : <div className="note">Nothing needs you right now.</div>}</div>
     </Card>
   );
 }
@@ -233,9 +233,9 @@ function Queue({ active, library, libraryPending, libraryError }) {
   }
 
   let list;
-  if (libraryError) list = <div className="ov-empty">The library scan is unavailable — check Settings › Connections.</div>;
-  else if (libraryPending) list = <div className="ov-empty">Loading the library…</div>;
-  else if (!flagged.length) list = <div className="ov-empty">No titles are flagged <span className="m">needs-dub</span>.</div>;
+  if (libraryError) list = <div className="note">The library scan is unavailable — check Settings › Connections.</div>;
+  else if (libraryPending) list = <div className="note">Loading the library…</div>;
+  else if (!flagged.length) list = <div className="note">No titles are flagged <span className="m">needs-dub</span>.</div>;
   else list = shown.map(i => <FlaggedRow key={itemKey(i)} item={i} on={picked.includes(itemKey(i))} toggle={() => toggle(itemKey(i))} />);
 
   return (
@@ -289,7 +289,7 @@ function Activity({ jobs }) {
             </div>
             <span className={`tag ${jobStatusClass(j.status)}`}>{j.status}</span>
           </div>
-        )) : <div className="ov-empty">No activity yet.</div>}
+        )) : <div className="note">No activity yet.</div>}
       </div>
     </Card>
   );

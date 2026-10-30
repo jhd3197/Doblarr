@@ -90,8 +90,10 @@ export function Dubs() {
   }
 
   let body;
-  if (isError && !data) body = <tr><td colSpan="6" className="dubs-empty">Jobs unavailable — is Doblarr running (doblarr serve)?</td></tr>;
-  else if (!jobs.length) body = <tr><td colSpan="6" className="dubs-empty">No jobs yet — queue one from the Library.</td></tr>;
+  if (isError && !data) body = <tr><td colSpan="6" className="empty">Jobs unavailable — is Doblarr running (doblarr serve)?</td></tr>;
+  else if (!jobs.length) {
+    body = <tr><td colSpan="6" className="empty">{data?.jobs?.length ? 'No jobs match.' : 'No jobs yet — queue one from the Library.'}</td></tr>;
+  }
   else body = jobs.map(j => (
     <JobRow key={j.id} job={j} onReview={job => setReviewing(job.id)}
       onWatch={job => navigate('/watch/' + encodeURIComponent(job.id))}

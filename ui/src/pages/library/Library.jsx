@@ -125,9 +125,9 @@ export function Library() {
   if (sort === 'recent') rows.sort((a, b) => (activity[b.title] || '').localeCompare(activity[a.title] || ''));
 
   let grid;
-  if (scan.busy) grid = <div className="muted-note">Rescanning Sonarr and Radarr…</div>;
-  else if (scan.error) grid = <div className="muted-note">Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? {scan.error}</div>;
-  else if (!rows.length) grid = <div className="muted-note">No titles match.</div>;
+  if (scan.busy) grid = <div className="empty">Rescanning Sonarr and Radarr…</div>;
+  else if (scan.error) grid = <div className="empty">Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? {scan.error}</div>;
+  else if (!rows.length) grid = <div className="empty">No titles match.</div>;
   else grid = rows.map(item => <PosterCard key={itemKey(item)} item={item} targets={targets} />);
 
   return (
