@@ -47,7 +47,8 @@ def test_deleting_a_study_removes_only_its_records(db, tmp_path, films):
     keep = voice_studies.create(db, tmp_path, "Other", *args[1:], floor=0.3, margin=0.05)
     gone = voice_studies.create(db, tmp_path, *args, floor=0.3, margin=0.05)
     voice_studies.probe(db, tmp_path, gone["id"], two)
-    assert voice_studies.delete(db, gone["id"]) == 5          # study (2 revisions), 2 profiles, 1 result
+    # study (2 revisions), 2 profiles, 1 result
+    assert voice_studies.delete(db, gone["id"]) == 5
     assert voice_studies.detail(db, gone["id"]) is None
     assert voice_studies.detail(db, keep["id"])["profiles"]
     with pytest.raises(KeyError):
