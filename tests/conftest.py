@@ -31,8 +31,9 @@ with contextlib.suppress(ImportError):
 # `dev.ps1 validate` skips them while watching; `check` and CI run everything.
 SLOW_FILES = {
     "test_adaptive_pipeline.py", "test_benchmarks.py", "test_comparison.py",
-    "test_generation_integration.py", "test_plan03_integration.py",
-    "test_plan04_integration.py", "test_plan05_integration.py", "test_review_workflow.py",
+    "test_generation_integration.py", "test_pipeline_budget_and_reuse.py",
+    "test_pipeline_timing_and_coverage.py", "test_pipeline_treatments_and_export.py",
+    "test_review_workflow.py",
 }
 
 
