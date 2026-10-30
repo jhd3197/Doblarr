@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { api, apiUrl, withKey } from '../../ui/src/lib/api.js';
+import { currentDialog, settleDialog } from '../../ui/src/lib/dialogs.js';
 
 const originalFetch = globalThis.fetch;
 beforeEach(() => {
   const values = new Map();
   globalThis.localStorage = { getItem: k => values.get(k), setItem: (k, v) => values.set(k, v) };
-  globalThis.window = { prompt: () => '', dispatchEvent: () => {} };
+  globalThis.window = { dispatchEvent: () => {} };
 });
 afterEach(() => { globalThis.fetch = originalFetch; });
 
@@ -40,10 +41,17 @@ test('invalid JSON produces a useful error', async () => {
 });
 
 test('unauthorized requests retry with the supplied key', async () => {
-  window.prompt = () => 'new-key';
   let calls = 0;
   globalThis.fetch = async (url, options) => {
-    if (++calls === 1) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    if (++calls === 1) {
+      // The in-app dialog opens once the 401 lands; answer it like the user would.
+      (async () => {
+        while (!currentDialog()) await new Promise(r => setImmediate(r));
+        assert.equal(currentDialog().title, 'API key');
+        settleDialog('new-key');
+      })();
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     assert.equal(options.headers.get('X-Api-Key'), 'new-key');
     return Response.json({ ok: true });
   };

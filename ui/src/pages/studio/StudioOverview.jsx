@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { probeQuery } from './queries.js';
+import { promptDialog } from '../../lib/dialogs.js';
 
 // Overview: how this episode is worked on, what it may read, and what exists.
 
@@ -159,8 +160,8 @@ function DirectionCard({ ctrl }) {
 }
 
 async function transcribe(ctrl, refId) {
-  const text = window.prompt('Windows to transcribe, in seconds (e.g. "60-120, 300-360"). '
-    + 'Each is at most 240 s; nothing outside them is read.', '');
+  const text = await promptDialog({ title: 'Transcribe windows', label: 'Windows, in seconds (e.g. "60-120, 300-360")',
+    message: 'Each is at most 240 s; nothing outside them is read.' });
   if (!text) return;
   const windows = text.split(',').map(w => w.split('-').map(Number)).filter(w => w.length === 2
     && w.every(Number.isFinite));

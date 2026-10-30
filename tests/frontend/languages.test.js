@@ -6,7 +6,7 @@ const originalFetch = globalThis.fetch;
 beforeEach(() => {
   const values = new Map();
   globalThis.localStorage = { getItem: k => values.get(k), setItem: (k, v) => values.set(k, v) };
-  globalThis.window = { prompt: () => '', dispatchEvent: () => {} };
+  globalThis.window = { dispatchEvent: () => {} };
 });
 afterEach(() => { globalThis.fetch = originalFetch; });
 

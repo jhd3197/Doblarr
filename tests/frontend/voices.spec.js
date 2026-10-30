@@ -103,3 +103,13 @@ test('a character shows who voices them in published versions, as reference only
   await expect(block).toContainText('Spanish: Lucia Prado per ann');
   await expect(block).toContainText('never picks a voice');
 });
+
+test('a loose voice row opens from the keyboard with Space', async ({ page }) => {
+  await routes(page);
+  await page.route('**/api/characters', route => route.fulfill({ json: { series_id: '', characters: [] } }));
+  await page.goto('/voices');
+  await page.getByRole('button', { name: /Working clones/ }).click();
+  await page.locator('.voices-table tbody tr').focus();
+  await page.keyboard.press('Space');
+  await expect(page).toHaveURL(/\/voices\/.*vb-x/);
+});

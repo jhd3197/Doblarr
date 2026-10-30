@@ -67,7 +67,7 @@ Priority is for a showcase demo: P0 breaks trust or looks broken in the first mi
 2. **Failure is not visually distinct from anything else.** *Still true on dev.* There are no success / warning / danger tokens (`ui/src/styles/base/tokens.css` defines accent and neutrals only). A failed, cancelled or planned job all get `tag-outline`, the accent outline (`ui/src/lib/jobs.js:12-13`); analysis "failed" and "stale" share one style (`ui/src/styles/pages/analysis.css:58`). The accent coral is also the primary button and link colour, so an error looks like a call to action.
 3. **No page title or heading on the busiest list pages.** *Still true on dev.* Overview has an `<h1>` (`Overview.jsx:332`), Watch an `<h1>` (`Watch.jsx:215`), Voices an `<h2>` plus a one-line description (`VoicesList.jsx:90-91`); Library, Dubs and Settings start straight with a toolbar or tabs. Heading levels skip.
 4. **Dubs empty state lies when searching.** *Still true on dev.* `Dubs.jsx:77` filters by the header search, then `Dubs.jsx:93` shows "No jobs yet — queue one from the Library." for any empty result. Library says "No titles match." correctly.
-5. **Native browser dialogs.** **Mostly fixed on dev.** Failures from queueing, queue pause/resume/clear, Watch, studio and template flows go through `notify()` (`lib/notice.js`, rendered by `Shell.jsx` as `role="alert"`). Five native dialogs remain, all needing text input or a destructive confirmation: the API-key prompt (`lib/api.js:40`), `StudioExperiments.jsx:45` (prompt) and `:101` (confirm to reveal the official dub), `StudioOverview.jsx:162` (prompt) and `voices/Templates.jsx:134` (prompt). Replacing them needs a small input-dialog component.
+5. **Native browser dialogs.** **Fixed on feat/ui-shared-states-dialogs.** Failures go through `notify()` (`lib/notice.js`, rendered by `Shell.jsx` as `role="alert"`). The five input and confirm dialogs (API key, studio correction, holdout reveal, transcribe windows, template copy) use `confirmDialog` / `promptDialog` (`lib/dialogs.js`), rendered by `components/Dialog.jsx` as a native `<dialog>` mounted in `main.jsx` so a 401 during the first route load can still ask.
 
 ### P1
 
@@ -85,7 +85,7 @@ Priority is for a showcase demo: P0 breaks trust or looks broken in the first mi
 14. **Inconsistent naming** (ids and classes mixed, per-page prefixes, generic `.m`, `.opt`, `.dot9`). *Still true;* many ids are Playwright hooks. Left unfixed.
 15. **Sidebar "Star on GitHub" nudge** (`Sidebar.jsx:55-63`) is shown only while due and is snoozable with "Not now"; there is also a small star link by the brand. Acceptable; left alone.
 16. **Breakpoints are scattered:** 560, 650, 720, 760, 860, 900, 980, 1000px. *Still true;* left unfixed.
-17. **Accessibility is mostly good.** Remaining gap: clickable voice rows (`VoicesList.jsx:117`) are mouse-only `onClick` rows; the inner `<Link>` is the keyboard path.
+17. **Accessibility is mostly good.** Voice rows in `VoicesList.jsx` are now focusable and open with Enter or Space.
 18. **Large page components:** `ScenePanel.jsx` (556 lines), `CharacterProfile.jsx` (536), `Breakdown.jsx` (472), `StudioOverview.jsx` (463). *Still true;* left unfixed.
 
 ---
@@ -100,8 +100,8 @@ Status is relative to `dev` plus the `doblarr-polish` branch.
 | 2 | `--ok`, `--warn`, `--danger` tokens; map job/analysis states | `tokens.css`, `lib/jobs.js`, `analysis.css` | Fixed on doblarr-polish |
 | 3 | Dubs empty state: "no jobs" vs "no match" | `Dubs.jsx` | Fixed on doblarr-polish |
 | 4 | One `PageHeader` (title + hint, one `h1`) | Library, Dubs, Settings, Voices, Knowledge (`components/PageHeader.jsx`) | Fixed on doblarr-polish |
-| 5 | Replace native dialogs with toast / inline errors | see P0-5 | Alerts fixed on dev; five input/confirm dialogs left |
-| 6 | Merge duplicate empty / loading classes | four CSS files | Partly: `.empty` and `.note` replace the four classes; the many bare "Loading…" paragraphs are not unified |
+| 5 | Replace native dialogs with toast / inline errors | see P0-5 | Fixed on feat/ui-shared-states-dialogs |
+| 6 | Merge duplicate empty / loading classes | four CSS files | Fixed on feat/ui-shared-states-dialogs: `Loading` (`role="status"`) and `EmptyState` in `components/States.jsx`; table-cell empties stay as `td.empty` |
 | 7 | Radius tokens and a small type scale on `.btn`, `.input`, `.panel`, `.card` | `elements.css`, `layout.css`, `tokens.css` | Partly: tokens used in `.btn`, `.input`, `.panel`, `.card`, `.table`, `.tag`; the other ~100 literal radii and sizes remain |
 | 8 | Equalise `.btn-ghost` height | `elements.css` | Fixed on doblarr-polish |
 | 9 | Wrap wide tables | all `.table` users | Fixed on dev |

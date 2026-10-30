@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js';
 import { languageName, targetChoices } from '../../lib/languages.js';
 import { queryClient } from '../../lib/queries.js';
 import { seriesEpisodesQuery } from './queries.js';
+import { Loading, EmptyState } from '../../components/States.jsx';
 
 const LABELS = { 'audio-present': 'Audio present', 'dub-ready': 'AI dub ready',
   'not-downloaded': 'Not downloaded', 'needs-dub': 'Needs dub', 'unknown-audio': 'Audio unknown',
@@ -48,7 +49,7 @@ export function EpisodesTab({ item, target, targets, onTarget, onCast }) {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (isPending) return <p className="hint">Loading seasons and episodes from Sonarr…</p>;
+  if (isPending) return <Loading>Loading seasons and episodes from Sonarr…</Loading>;
   if (error) return <>Episodes unavailable: {error.message}</>;
 
   async function refresh() {
@@ -126,7 +127,7 @@ export function EpisodesTab({ item, target, targets, onTarget, onCast }) {
               onSelect={select} onQueue={queue} onCast={onCast} />
           ))}
         </details>
-      )) : <p className="hint">No episodes match this filter.</p>}
+      )) : <EmptyState>No episodes match this filter.</EmptyState>}
     </>
   );
 }

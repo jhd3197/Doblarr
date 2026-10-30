@@ -114,7 +114,14 @@ export function VoicesList() {
         <div className="panel voices-table"><div className="table-wrap"><table className="table">
           <thead><tr><th>Voice</th><th>Engine</th><th>Kind</th><th>Language</th></tr></thead>
           <tbody>{loose.map(v => (
-            <tr key={v.key} data-voice={v.key} onClick={() => navigate(voiceHref(v.key))}>
+            <tr key={v.key} data-voice={v.key} tabIndex={0} onClick={() => navigate(voiceHref(v.key))}
+              onKeyDown={e => {
+                // The inner link handles its own Enter; the row answers to Enter and Space.
+                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  navigate(voiceHref(v.key));
+                }
+              }}>
               <td><span className="voice-dot" style={dotStyle(v)} />
                 <Link to={voiceHref(v.key)} onClick={e => e.stopPropagation()}>{voiceTitle(v)}</Link></td>
               <td className="m">{v.engine || ''}</td><td>{v.kind || ''}</td><td className="m">{v.language || '—'}</td></tr>
