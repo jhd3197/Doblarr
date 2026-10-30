@@ -97,18 +97,18 @@ Status is relative to `dev` plus the `doblarr-polish` branch.
 | # | Win | Where | Status |
 |---|---|---|---|
 | 1 | Real worker state and version in the sidebar | `Sidebar.jsx` | Fixed on dev |
-| 2 | `--ok`, `--warn`, `--danger` tokens; map job/analysis states | `tokens.css`, `lib/jobs.js`, `analysis.css` | polish branch |
-| 3 | Dubs empty state: "no jobs" vs "no match" | `Dubs.jsx` | polish branch |
-| 4 | One `PageHeader` (title + hint, one `h1`) | Library, Dubs, Settings, Voices | polish branch |
+| 2 | `--ok`, `--warn`, `--danger` tokens; map job/analysis states | `tokens.css`, `lib/jobs.js`, `analysis.css` | Fixed on doblarr-polish |
+| 3 | Dubs empty state: "no jobs" vs "no match" | `Dubs.jsx` | Fixed on doblarr-polish |
+| 4 | One `PageHeader` (title + hint, one `h1`) | Library, Dubs, Settings, Voices, Knowledge (`components/PageHeader.jsx`) | Fixed on doblarr-polish |
 | 5 | Replace native dialogs with toast / inline errors | see P0-5 | Alerts fixed on dev; five input/confirm dialogs left |
-| 6 | Merge duplicate empty / loading classes | four CSS files | polish branch |
-| 7 | Radius tokens and a small type scale on `.btn`, `.input`, `.panel`, `.card` | `elements.css`, `layout.css`, `tokens.css` | polish branch |
-| 8 | Equalise `.btn-ghost` height | `elements.css` | polish branch |
+| 6 | Merge duplicate empty / loading classes | four CSS files | Partly: `.empty` and `.note` replace the four classes; the many bare "Loading…" paragraphs are not unified |
+| 7 | Radius tokens and a small type scale on `.btn`, `.input`, `.panel`, `.card` | `elements.css`, `layout.css`, `tokens.css` | Partly: tokens used in `.btn`, `.input`, `.panel`, `.card`, `.table`, `.tag`; the other ~100 literal radii and sizes remain |
+| 8 | Equalise `.btn-ghost` height | `elements.css` | Fixed on doblarr-polish |
 | 9 | Wrap wide tables | all `.table` users | Fixed on dev |
-| 10 | Real 404 route | `router.jsx` | polish branch |
-| 11 | Follow the OS theme on first visit | `Shell.jsx` | polish branch |
+| 10 | Real 404 route | `router.jsx` | Fixed on doblarr-polish |
+| 11 | Follow the OS theme on first visit | `Shell.jsx` | Fixed on doblarr-polish |
 | 12 | README repair | `README.md` | Fixed on dev |
-| 13 | Keyboard-complete clickable rows | `VoicesList.jsx` | polish branch |
+| 13 | Keyboard-complete clickable rows | `Knowledge.jsx` rows | Fixed on doblarr-polish; `VoicesList.jsx` rows keep their inner link as the keyboard path |
 | 14 | Collapse the nav star nudge | `Sidebar.jsx` | left alone (already snoozable) |
 
 ---
