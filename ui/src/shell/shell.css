@@ -34,6 +34,9 @@ a.navitem { text-decoration: none; }
 
 .page { padding: 30px 26px 44px; }
 .app > .page { min-height: 100vh; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); }
+.page-head { display: flex; align-items: flex-end; gap: 20px; justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head h1 { margin: 0 0 4px; font-family: var(--font-heading); font-size: 22px; }
+.page-head .hint { margin: 0; max-width: 62ch; }
 .route-error { padding: 22px 24px; }
 .route-error-title { margin: 0; font-weight: 600; }
 .route-error-back { margin-top: 12px; }

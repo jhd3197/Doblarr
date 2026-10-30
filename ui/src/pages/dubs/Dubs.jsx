@@ -6,6 +6,7 @@ import { configQuery, ensure, jobsQuery, queryClient } from '../../lib/queries.j
 import { jobStatusClass, useJobs } from '../../lib/jobs.js';
 import { useOpenStudio } from '../../lib/studio.js';
 import { useSearch } from '../../shell/Shell.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { ReviewDialog } from './Review.jsx';
 import './dubs.css';
 import { notify } from '../../lib/notice.js';
@@ -99,6 +100,7 @@ export function Dubs() {
 
   return (
     <div className="page">
+      <PageHeader title="Dubs" hint="The job queue: what is running, waiting and finished." />
       <div className="dubs-toolbar">
         <button type="button" className="btn btn-secondary" id="pauseQueue" onClick={toggleQueue}>{paused ? 'Resume queue' : 'Pause queue'}</button>
         <button type="button" className="btn btn-secondary" id="clearFinished" onClick={clearFinished}>Clear finished</button>

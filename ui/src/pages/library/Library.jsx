@@ -7,6 +7,7 @@ import { useJobs } from '../../lib/jobs.js';
 import { isShow, itemKey, titleHref } from '../../lib/library.js';
 import { useSearch } from '../../shell/Shell.jsx';
 import { Poster } from '../../components/Poster.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { LangChips, QueueButton, StatusTag } from './parts.jsx';
 import './library.css';
 
@@ -131,6 +132,7 @@ export function Library() {
 
   return (
     <div className="page">
+      <PageHeader title="Library" hint="Films and shows from Radarr and Sonarr, and which still need a dubbed track." />
       <div className="library-toolbar">
         <Pills id="libraryFilters" options={FILTERS.map(f => [f, f === 'all' ? 'All' : f])} value={filter} onChange={setFilter} />
         <Pills id="librarySort" options={SORTS} value={sort} onChange={setSort} />

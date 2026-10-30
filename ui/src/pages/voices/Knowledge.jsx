@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js';
 import { baseLanguage as baseOf, languageName } from '../../lib/languages.js';
 import { entriesQuery, pageCount } from '../../lib/knowledge.js';
 import { KnowledgeCorrection, useVoiceSample } from '../../components/KnowledgeCorrection.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { catalogQuery, coverageQuery } from './queries.js';
 import { Narrative } from './Narrative.jsx';
 import { Templates } from './Templates.jsx';
@@ -209,10 +210,7 @@ export function Knowledge() {
 
   return (
     <div className="page" id="knowledgeRoot">
-      <div className="knowledge-head">
-        <h3>Language knowledge</h3>
-        <span className="hint">Corrections you save apply to new dubs; existing jobs keep their frozen rules.</span>
-      </div>
+      <PageHeader title="Language knowledge" hint="Corrections you save apply to new dubs; existing jobs keep their frozen rules." />
       <div className="knowledge-cards">
         {coverage.locales.map(c => (
           <div key={c.locale} className="panel knowledge-card">
