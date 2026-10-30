@@ -278,10 +278,6 @@ def _rerun_plan(edits, candidate_requests: dict, events=()) -> dict:
 def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus) -> APIRouter:
     api = APIRouter()
 
-    def _allowed_path(path_str: str) -> Path | None:
-        # Read live: saving an output directory must also update the download guard.
-        return allowed_path(config, path_str)
-
     def _ranged_response(path: Path, range_header: str | None):
         return ranged_response(path, range_header)
 
@@ -290,9 +286,9 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         jobs = store.list()
         for j in jobs:
             # computed server-side so the UI never guesses about the filesystem
-            out = _allowed_path(j["output_file"]) if j.get("output_file") else None
+            out = allowed_path(config,j["output_file"]) if j.get("output_file") else None
             j["has_file"] = bool(out and out.exists())
-            review = _allowed_path(j["review_file"]) if j.get("review_file") else None
+            review = allowed_path(config,j["review_file"]) if j.get("review_file") else None
             j["has_review"] = bool(review and review.is_file())
         return {"jobs": jobs, "counts": store.counts(), "paused": worker.paused}
 
@@ -351,7 +347,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         job = store.get(job_id)
         if job is None or not job.output_file:
             raise NotFoundError(f"no output file for job {job_id}")
-        path = _allowed_path(job.output_file)
+        path = allowed_path(config,job.output_file)
         if path is None:
             raise ForbiddenError("output path is outside the configured directories")
         if not path.exists():
@@ -363,7 +359,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         name = getattr(job, field, None)
         if not job or not name:
             raise NotFoundError("No report is available for this job")
-        path = _allowed_path(name)
+        path = allowed_path(config,name)
         if path is None:
             raise ForbiddenError("report path is outside the configured directories")
         data = read_json(path)
@@ -399,11 +395,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         for take in cue.get("audio", {}).get("takes", []):
             raw = take.get("raw")
             if isinstance(raw, dict):
-                raw["available"] = bool(_allowed_path(raw.get("path") or "")
+                raw["available"] = bool(allowed_path(config,raw.get("path") or "")
                                         and Path(raw["path"]).is_file())
                 raw.pop("path", None)
         for render in cue.get("audio", {}).get("renders", []):
-            render["available"] = bool(_allowed_path(render.get("path") or "")
+            render["available"] = bool(allowed_path(config,render.get("path") or "")
                                        and Path(render["path"]).is_file())
             render.pop("path", None)
 
@@ -414,7 +410,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             row = dict(raw)
             artifact = row.get("artifact")
             if isinstance(artifact, dict):
-                path = _allowed_path(artifact.get("path") or "")
+                path = allowed_path(config,artifact.get("path") or "")
                 artifact["available"] = bool(path and Path(artifact["path"]).is_file())
                 artifact.pop("path", None)
             # A replacement sound lives somewhere on this machine. The reviewer
@@ -431,7 +427,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         row = copy.deepcopy(report)
         output = row.pop("output", None)
         row["output_name"] = Path(output).name if output else ""
-        row["available"] = bool(output and _allowed_path(output)
+        row["available"] = bool(output and allowed_path(config,output)
                                 and Path(output).is_file())
         return row
 
@@ -446,7 +442,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         found = {}
         for key in ("source_track", "source_audio", "dubbed_track", "output",
                     "vocals", "background"):
-            path = _allowed_path(media[key]) if media.get(key) else None
+            path = allowed_path(config,media[key]) if media.get(key) else None
             found[key] = bool(path and path.is_file())
         return {
             "source": found["source_track"] or found["source_audio"],
@@ -465,7 +461,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         job, data = artifact(job_id, "review_file")
         check_schema(data.get("cue_schema"), "review snapshot")
         for row in data["segments"]:
-            clip = _allowed_path(row["audio_clip"]) if row.get("audio_clip") else None
+            clip = allowed_path(config,row["audio_clip"]) if row.get("audio_clip") else None
             row["has_audio"] = bool(clip and clip.is_file())
             row.pop("audio_clip", None)
             row.pop("words", None)
@@ -526,7 +522,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 value = media.get(key)
                 if not value:
                     continue
-                path = _allowed_path(value)
+                path = allowed_path(config,value)
                 if path and path.is_file():
                     return path
             return None
@@ -553,7 +549,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         rebuilt.envelope_edits = {str(k): dict(v) for k, v
                                   in (data.get("envelope_edits") or {}).items()
                                   if isinstance(v, dict)}
-        work = _allowed_path(media["work"]) if media.get("work") else None
+        work = allowed_path(config,media["work"]) if media.get("work") else None
         rebuilt.artifacts_dir = work or config.work_dir / "previews"
         segments = []
         for row in data["segments"]:
@@ -562,7 +558,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                           speaker=row.get("speaker", "SPEAKER_00"),
                           text_translated=row.get("text_translated"))
             record = row.get("cue")
-            clip = _allowed_path(row["audio_clip"]) if row.get("audio_clip") else None
+            clip = allowed_path(config,row["audio_clip"]) if row.get("audio_clip") else None
             if clip and clip.is_file():
                 seg.audio_clip = clip
             if record:
@@ -579,7 +575,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         # Speakers exist here only to carry their clone reference, which is
         # what the "reference" preview plays.
         for label, clip in (data.get("references") or {}).items():
-            resolved_clip = _allowed_path(str(clip))
+            resolved_clip = allowed_path(config,str(clip))
             rebuilt.speakers[label] = Speaker(
                 label=label,
                 reference_clip=resolved_clip if resolved_clip and resolved_clip.is_file()
@@ -700,7 +696,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                              event=event)
         except scene_preview.PreviewError as exc:
             raise HTTPException(409, str(exc)) from exc
-        path = _allowed_path(str(resolved["path"]))
+        path = allowed_path(config,str(resolved["path"]))
         if path is None:
             raise ForbiddenError("preview media is outside the configured directories")
         if not path.is_file():
@@ -718,7 +714,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         job = store.get(job_id)
         if job is None:
             raise NotFoundError(f"no job with id {job_id}")
-        output = _allowed_path(job.output_file) if job.output_file else None
+        output = allowed_path(config,job.output_file) if job.output_file else None
         if output is None:
             return {"versions": [], "current": job.version_id}
         root = _versions_root(output)
@@ -727,7 +723,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             manifest = read_json(manifest_path)
             if not manifest.get("version_id"):
                 continue
-            media = _allowed_path(manifest.get("output") or "")
+            media = allowed_path(config,manifest.get("output") or "")
             rows.append({
                 "version_id": manifest["version_id"],
                 "name": manifest.get("name") or "Dub",
@@ -801,7 +797,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         for candidate in (version_id, other_id):
             if not re.fullmatch(r"[0-9a-f]{8,128}", candidate):
                 raise ForbiddenError("that is not a version id")
-        output = _allowed_path(job.output_file)
+        output = allowed_path(config,job.output_file)
         if output is None:
             raise ForbiddenError("output path is outside the configured directories")
         root = _versions_root(output)
@@ -830,11 +826,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             raise NotFoundError(f"no job with id {job_id}")
         if not re.fullmatch(r"[0-9a-f]{8,128}", version_id):
             raise ForbiddenError("that is not a version id")
-        output = _allowed_path(job.output_file)
+        output = allowed_path(config,job.output_file)
         if output is None:
             raise ForbiddenError("output path is outside the configured directories")
         manifest = read_json(_versions_root(output) / version_id / "version.json")
-        media = _allowed_path(manifest.get("output") or "")
+        media = allowed_path(config,manifest.get("output") or "")
         if media is None or not media.is_file():
             raise NotFoundError("that version's media is not on disk")
         return _ranged_response(media, request.headers.get("range"))
@@ -883,7 +879,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         row = next((s for s in data["segments"] if s["index"] == index), None)
         if not row or not row.get("audio_clip"):
             raise NotFoundError("No generated audio for this line")
-        path = _allowed_path(row["audio_clip"])
+        path = allowed_path(config,row["audio_clip"])
         if path is None:
             raise ForbiddenError("clip is outside the configured directories")
         if not path.is_file():
@@ -925,7 +921,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 # A local sound file. Checked against the same guard the
                 # download routes use: a coverage decision must not become a
                 # way to read an arbitrary path off this machine.
-                asset = _allowed_path(choice.asset)
+                asset = allowed_path(config,choice.asset)
                 if asset is None or not asset.is_file():
                     raise HTTPException(
                         422, "A replacement sound must be a file inside the configured "
