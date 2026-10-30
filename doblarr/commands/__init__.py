@@ -11,10 +11,10 @@ import sys
 from collections.abc import Callable
 
 from ..config import Config
-from . import doctor, episodes, jobs, make, research, settings
+from . import doctor, episodes, jobs, make, research, settings, voice_study
 from .base import ApiError, Ctx
 
-MODULES = (make, doctor, episodes, research, jobs, settings)
+MODULES = (make, doctor, episodes, research, jobs, settings, voice_study)
 COMMANDS: dict[str, Callable[[Ctx], int]] = {
     name: fn for module in MODULES for name, fn in module.COMMANDS.items()}
 
