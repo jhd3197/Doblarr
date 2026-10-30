@@ -180,7 +180,8 @@ function Entries({ view, setView, locales }) {
               <div className="table-wrap"><table className="table"><thead><tr><th>Phrase</th><th className="knowledge-col-locale">Locale</th>
                 <th className="knowledge-col-scope">Scope</th><th className="knowledge-col-status">Status</th><th className="knowledge-col-rules">Rules</th></tr></thead>
                 <tbody>{data.entries.length ? data.entries.map(e => (
-                  <tr key={e.id} className="knowledge-row" data-id={e.id} onClick={() => setSelected(e.id)}>
+                  <tr key={e.id} className="knowledge-row" data-id={e.id} onClick={() => setSelected(e.id)}
+                    tabIndex={0} onKeyDown={ev => { if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); setSelected(e.id); } }}>
                     <td className="knowledge-strong">{e.phrase || '(suppression)'}{e.sense && <> <span className="hint">· {e.sense}</span></>}{e.register && <> <span className="hint">· {e.register}</span></>}</td>
                     <td className="m knowledge-cell">{languageName(e.locale)}</td>
                     <td className="m knowledge-cell">{e.scope}</td>

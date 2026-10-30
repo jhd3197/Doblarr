@@ -11,6 +11,7 @@
 .knowledge-filters { padding: 16px 20px; margin-bottom: 14px; }
 .knowledge-filter-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
 .knowledge-row { cursor: pointer; }
+.knowledge-row:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .knowledge-strong { font-weight: 600; }
 .knowledge-cell { font-size: 13px; }
 .knowledge-col-locale { width: 130px; }

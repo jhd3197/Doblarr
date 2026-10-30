@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Outlet, useMatches, useNavigation } from 'react-router';
 import { dismiss, useNotice } from '../lib/notice.js';
-import { safeGet, safeSet } from '../lib/storage.js';
+import { initialTheme, safeSet } from '../lib/storage.js';
 import { Sidebar } from './Sidebar.jsx';
 import { NewDubModal } from './NewDubModal.jsx';
 
@@ -10,7 +10,7 @@ const SearchContext = createContext('');
 export const useSearch = () => useContext(SearchContext);
 
 function useTheme() {
-  const [theme, setTheme] = useState(() => (safeGet('doblarr.theme', 'light') === 'dark' ? 'dark' : 'light'));
+  const [theme, setTheme] = useState(initialTheme);
   useEffect(() => { safeSet('doblarr.theme', theme); }, [theme]);
   return [theme, setTheme];
 }

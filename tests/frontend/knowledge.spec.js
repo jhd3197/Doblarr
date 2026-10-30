@@ -40,7 +40,9 @@ test('knowledge page lists the initial locales and a correction is created, hear
   await expect(card).toContainText('1 proposed');  // real count, still marked unreviewed
   await page.locator('.knowledge-locale').selectOption('es-MX');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.locator('.knowledge-row').filter({ hasText: 'Sora' }).click();
+  const row = page.locator('.knowledge-row').filter({ hasText: 'Sora' });
+  await row.focus();                    // a row opens from the keyboard, not only a click
+  await page.keyboard.press('Enter');
   const detail = page.locator('.knowledge-detail');
   await expect(detail).toContainText('Zo-ra');
   await expect(detail).toContainText('Unreviewed');
