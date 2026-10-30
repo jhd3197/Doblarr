@@ -56,6 +56,29 @@ doblarr research show:tvdb:123 "How does the Latin American dub say the guild's 
 
 `analyze` prints the series id of a file.
 
+## Voice study
+
+```
+doblarr voice-study run "Harbor Lights.speakers.json" "Harbor Lights 2.speakers.json" --names names.json
+doblarr voice-study run FILM1.mkv FILM2.mkv --names names.json --floor 0.35 --json
+```
+
+Builds a voice profile per character from film 1 and recognises film 2's lines
+against them, held out: film 2 never teaches the profiles. Each film is an
+analysed media file or its `.speakers.json`, and both must have been analysed
+with the same voice model. `names.json` says which character each voice group is:
+
+```
+{"film1": {"SPEAKER_00": "Kaito", "SPEAKER_01": "Mina"},
+ "film2": {"SPEAKER_00": "Mina", "SPEAKER_02": "Kaito"}}
+```
+
+Film 2 lines in a group without a name are not scored. The output is top-1,
+precision and coverage at the floor and margin, a confusion matrix with a
+column for abstentions, and precision, recall and abstained share per character;
+`--json` adds every line's answer. It works offline and never translates,
+clones or speaks. See [voice-study.md](voice-study.md).
+
 ## Settings
 
 ```

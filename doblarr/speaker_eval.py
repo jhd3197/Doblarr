@@ -149,7 +149,7 @@ def recognition(vectors: list, truth: list[str], seconds: list[float], *,
                          "score": round(ranked[0][0], 3), "margin": round(gap, 3),
                          "abstained": not ok})
     total = len(tests)
-    out = {"lines": total, "top1": round(top1 / total, 3) if total else None,
+    out: dict = {"lines": total, "top1": round(top1 / total, 3) if total else None,
            "answered": answered, "coverage": round(answered / total, 3) if total else None,
            "precision": round(correct / answered, 3) if answered else None,
            "floor": floor, "margin": margin, "prototypes": use_prototypes}
