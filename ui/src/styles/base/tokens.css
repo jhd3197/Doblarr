@@ -20,6 +20,8 @@
     --color-neutral-800: #2f2c2a;
     --color-neutral-900: #1c1a19;
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+    /* Status text stays above 4.5:1 on the page and on its own 14% tint. */
+    --ok: #1f7a46; --warn: #8a5a00; --danger: #b3261e;
 
     --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
     --line: color-mix(in srgb, var(--color-text) 12%, transparent);
@@ -35,5 +37,6 @@
     --color-neutral-600: #9c9795; --color-neutral-700: #b4afac; --color-neutral-800: #d6d2cf; --color-neutral-900: #f2f0ef;
     --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.16);
     --muted: rgba(242,240,239,0.70); --panel: #201f1e;
+    --ok: #6fd39a; --warn: #f0c060; --danger: #ff8a80;
     color-scheme: dark;
   }

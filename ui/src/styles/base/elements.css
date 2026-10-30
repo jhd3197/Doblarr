@@ -33,6 +33,9 @@
   .tag-neutral { background: color-mix(in srgb, var(--color-text) 8%, transparent); color: var(--color-neutral-800); }
   .tag-accent { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent-700); }
   .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
+  .tag-ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .tag-warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+  .tag-danger { background: color-mix(in srgb, var(--danger) 14%, transparent); border-color: var(--danger); color: var(--danger); }
   .app[data-theme="dark"] .tag-neutral { background: rgba(255,255,255,0.08); color: var(--color-neutral-800); }
   .app[data-theme="dark"] .tag-accent { background: rgba(255,106,80,0.16); color: #ffb4a3; }
   .app[data-theme="dark"] .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
