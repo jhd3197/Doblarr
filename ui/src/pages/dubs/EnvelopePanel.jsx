@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, apiUrl, withKey } from '../../lib/api.js';
+import { Loading } from '../../components/States.jsx';
 
 // One line's voice envelope in review: what was chosen and why, what the
 // render actually did, the other candidates, and the same take heard four
@@ -64,7 +65,7 @@ export function EnvelopePanel({ jobId, row }) {
   const [problem, setProblem] = useState(PROBLEMS[0][0]);
 
   if (!jobId || !cue) return <div id="reviewEnvelope" />;
-  if (state.loading) return <div id="reviewEnvelope"><p className="hint">Reading the envelope recommendations…</p></div>;
+  if (state.loading) return <div id="reviewEnvelope"><Loading>Reading the envelope recommendations…</Loading></div>;
   if (state.error) return <div id="reviewEnvelope"><p className="hint">{state.error}</p></div>;
   if (!line) return <div id="reviewEnvelope" />;
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
+import { Loading, EmptyState } from '../../components/States.jsx';
 
 // Writing experiments: A (original only), B (English dub only, a diagnostic),
 // C (original + aligned English). Frozen before judging; judged blind; the
@@ -130,7 +131,7 @@ function Experiment({ ctrl, id }) {
   const { data } = useQuery({ queryKey: ['studio', 'experiment', id], queryFn: () => api(`studio/experiments/${id}`), gcTime: 5_000 });
   const [note, setNote] = useState('');
   const [judging, setJudging] = useState('');
-  if (!data) return <p className="hint">Loading…</p>;
+  if (!data) return <Loading />;
   const e = data.experiment;
   const evaluation = judging || data.evaluations[0]?.id;
 
@@ -271,7 +272,7 @@ export function StudioExperiments({ ctrl }) {
             <span className="hint">{e.conditions.join('/')} · {e.excerpts} excerpt(s) · {e.target_locale}
               {' '}· {e.provider}{e.model ? `/${e.model}` : ''}</span>
             <button type="button" className="btn btn-ghost" data-exp={e.id} onClick={() => setOpen(e.id)}>Open</button></div>
-        )) : <p className="hint">No experiment yet.</p>}</div>
+        )) : <EmptyState>No experiment yet.</EmptyState>}</div>
         <DefineExperiment ctrl={ctrl} onCreated={setOpen} />
         <div id="exDetail">{open && <Experiment key={open} ctrl={ctrl} id={open} />}</div>
       </section>
