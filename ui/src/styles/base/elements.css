@@ -6,37 +6,40 @@
   h2, h3 { font-family: var(--font-heading); }
 
   /* ---- Components (replaces classes the _ds bundle provided) ---- */
-  .btn { font-family: var(--font-body); font-size: 13px; font-weight: 600; line-height: 1;
-    padding: 9px 15px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+  .btn { font-family: var(--font-body); font-size: var(--text-sm); font-weight: 600; line-height: 1;
+    padding: 9px 15px; border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer;
     display: inline-flex; align-items: center; gap: 8px; background: transparent;
     color: var(--color-text); white-space: nowrap; }
   .btn-primary { background: var(--color-accent-fill); border-color: var(--color-accent-fill); color: var(--color-on-accent); }
   .btn-primary:hover { filter: brightness(1.06); }
   .btn-secondary { border-color: var(--line-strong); background: var(--color-surface); color: var(--color-text); }
   .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
-  .btn-ghost { color: var(--muted); background: transparent; padding: 7px 11px; }
+  .btn-ghost { color: var(--muted); background: transparent; padding-inline: 11px; } /* same height as .btn, narrower sides */
   .btn-ghost:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 
-  .input { font-family: var(--font-body); font-size: 14px; padding: 9px 13px; width: 100%;
-    border-radius: 10px; border: 1px solid var(--line-strong); background: var(--color-surface); color: var(--color-text); }
+  .input { font-family: var(--font-body); font-size: var(--text-md); padding: 9px 13px; width: 100%;
+    border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: var(--color-surface); color: var(--color-text); }
   .input::placeholder { color: var(--muted); }
   .input:focus { outline: 2px solid color-mix(in srgb, var(--color-accent) 45%, transparent); outline-offset: 1px; }
 
-  .table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .table th { text-align: left; padding: 11px 10px; font-weight: 600; font-size: 12px;
+  .table { width: 100%; border-collapse: collapse; font-size: var(--text-md); }
+  .table th { text-align: left; padding: 11px 10px; font-weight: 600; font-size: var(--text-xs);
     border-bottom: 1px solid var(--line-strong); color: var(--muted); }
   .table td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   .table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
 
-  .tag { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600;
+  .tag { display: inline-flex; align-items: center; font-size: var(--text-xs); font-weight: 600;
     border: 1px solid transparent; border-radius: 999px; padding: 4px 11px; }
   .tag-neutral { background: color-mix(in srgb, var(--color-text) 8%, transparent); color: var(--color-neutral-800); }
   .tag-accent { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent-700); }
   .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
+  .tag-ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .tag-warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+  .tag-danger { background: color-mix(in srgb, var(--danger) 14%, transparent); border-color: var(--danger); color: var(--danger); }
   .app[data-theme="dark"] .tag-neutral { background: rgba(255,255,255,0.08); color: var(--color-neutral-800); }
   .app[data-theme="dark"] .tag-accent { background: rgba(255,106,80,0.16); color: #ffb4a3; }
   .app[data-theme="dark"] .tag-outline { border-color: var(--color-accent); color: var(--color-accent); }
 
-  .card { border-radius: 14px; background: var(--panel); border: 1px solid var(--line); padding: 16px; }
+  .card { border-radius: var(--radius-lg); background: var(--panel); border: 1px solid var(--line); padding: 16px; }
   .card-kicker { display: block; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
   .card-title { display: block; font-family: var(--font-heading); font-weight: 800; font-size: 17px; margin: 7px 0 8px; }

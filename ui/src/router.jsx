@@ -1,7 +1,7 @@
 import { createBrowserRouter, redirect } from 'react-router';
 import { ensure, languagesQuery } from './lib/queries.js';
 import { Shell } from './shell/Shell.jsx';
-import { BootScreen, RootError, RouteError } from './shell/BootScreen.jsx';
+import { BootScreen, NotFound, RootError, RouteError } from './shell/BootScreen.jsx';
 import { Overview, overviewLoader } from './pages/Overview.jsx';
 import { Settings, settingsLoader } from './pages/Settings.jsx';
 import { routes as libraryRoutes } from './pages/library/routes.jsx';
@@ -29,7 +29,7 @@ export const router = createBrowserRouter([{
       ...dubsRoutes,
       ...voicesRoutes,
       ...studioRoutes,
-      { path: '*', loader: () => redirect('/') },
+      { path: '*', element: <NotFound />, handle: { title: 'Not found' } },
     ],
   }],
 }]);

@@ -6,6 +6,7 @@ import { configQuery, ensure, jobsQuery, queryClient } from '../../lib/queries.j
 import { jobStatusClass, useJobs } from '../../lib/jobs.js';
 import { useOpenStudio } from '../../lib/studio.js';
 import { useSearch } from '../../shell/Shell.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { ReviewDialog } from './Review.jsx';
 import './dubs.css';
 import { notify } from '../../lib/notice.js';
@@ -89,8 +90,10 @@ export function Dubs() {
   }
 
   let body;
-  if (isError && !data) body = <tr><td colSpan="6" className="dubs-empty">Jobs unavailable — is Doblarr running (doblarr serve)?</td></tr>;
-  else if (!jobs.length) body = <tr><td colSpan="6" className="dubs-empty">No jobs yet — queue one from the Library.</td></tr>;
+  if (isError && !data) body = <tr><td colSpan="6" className="empty">Jobs unavailable — is Doblarr running (doblarr serve)?</td></tr>;
+  else if (!jobs.length) {
+    body = <tr><td colSpan="6" className="empty">{data?.jobs?.length ? 'No jobs match.' : 'No jobs yet — queue one from the Library.'}</td></tr>;
+  }
   else body = jobs.map(j => (
     <JobRow key={j.id} job={j} onReview={job => setReviewing(job.id)}
       onWatch={job => navigate('/watch/' + encodeURIComponent(job.id))}
@@ -99,6 +102,7 @@ export function Dubs() {
 
   return (
     <div className="page">
+      <PageHeader title="Dubs" hint="The job queue: what is running, waiting and finished." />
       <div className="dubs-toolbar">
         <button type="button" className="btn btn-secondary" id="pauseQueue" onClick={toggleQueue}>{paused ? 'Resume queue' : 'Pause queue'}</button>
         <button type="button" className="btn btn-secondary" id="clearFinished" onClick={clearFinished}>Clear finished</button>

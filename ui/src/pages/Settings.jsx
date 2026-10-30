@@ -5,6 +5,7 @@ import { configQuery, ensure, hardwareQuery, languagesQuery, queryClient } from 
 import { api } from '../lib/api.js';
 import { applyDeviceOptions, FIELD_BY_KEY, isBoolField, TABS } from '../lib/settings-model.js';
 import { hardwareDetails } from '../lib/hardware.js';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 const configValue = (config, dotted) =>
   dotted.split('.').reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), config);
@@ -124,6 +125,7 @@ export function Settings() {
 
   return (
     <div className="settings">
+      <PageHeader title="Settings" hint="Connections, models and dubbing defaults, saved to config.yaml." />
       <div className="settings-tabs" id="settingsTabs">
         {TABS.map(t => (
           <Link key={t.id} to={`/settings/${t.id}`} className="tab" aria-current={t.id === current.id ? 'page' : 'false'}>{t.title}</Link>

@@ -11,5 +11,6 @@ export function useJobs() {
 
 export function jobStatusClass(status) {
   return status === 'running' ? 'tag-accent'
-    : status === 'failed' || status === 'cancelled' || status === 'planned' ? 'tag-outline' : 'tag-neutral';
+    : status === 'failed' ? 'tag-danger'
+      : status === 'planned' ? 'tag-outline' : 'tag-neutral'; // cancelled stays grey
 }

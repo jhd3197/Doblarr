@@ -1,5 +1,5 @@
 import { isRouteErrorResponse, Link, useMatches, useRouteError } from 'react-router';
-import { safeGet } from '../lib/storage.js';
+import { initialTheme } from '../lib/storage.js';
 
 const SECTION_PATH = { Overview: '/', Library: '/library', Dubs: '/dubs', Voices: '/voices',
   Knowledge: '/knowledge', Settings: '/settings' };
@@ -32,11 +32,24 @@ export function RouteError() {
   );
 }
 
+// An address no route owns: a typo or an old bookmark.
+export function NotFound() {
+  return (
+    <div className="page">
+      <div className="panel route-error">
+        <p className="route-error-title">Page not found.</p>
+        <p className="hint">Nothing lives at this address.</p>
+        <Link className="btn btn-ghost route-error-back" to="/">← Overview</Link>
+      </div>
+    </div>
+  );
+}
+
 // The last resort, when the shell itself failed: the same panel in the app's
 // frame and theme, so it never renders unstyled.
 export function RootError() {
   return (
-    <div className="app" data-theme={safeGet('doblarr.theme', 'light') === 'dark' ? 'dark' : 'light'}>
+    <div className="app" data-theme={initialTheme()}>
       <RouteError />
     </div>
   );

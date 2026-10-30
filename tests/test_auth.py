@@ -74,17 +74,25 @@ def test_no_key_is_generated_when_unauthenticated_is_chosen(tmp_path):
     assert config["web"]["api_key"] == ""
 
 
+def _api_routes(routes, prefix=""):
+    """(full path, route) for every APIRoute; newer FastAPI wraps included routers."""
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield prefix + route.path, route
+        elif hasattr(route, "original_router"):
+            inner = prefix + route.include_context.prefix
+            yield from _api_routes(route.original_router.routes, inner)
+
+
 def test_every_api_route_requires_the_key(tmp_path):
     client = _app(tmp_path, {"api_key": "k"})
     checked = 0
-    for route in client.app.routes:
-        if not isinstance(route, APIRoute) or not route.path.startswith("/api/"):
+    for full, route in _api_routes(client.app.routes):
+        if not full.startswith("/api/") or full in OPEN_PATHS:
             continue
-        if route.path in OPEN_PATHS:
-            continue
-        path = re.sub(r"\{[^}]+\}", "x", route.path)
+        path = re.sub(r"\{[^}]+\}", "x", full)
         method = sorted(route.methods)[0]
         r = client.request(method, path)
-        assert r.status_code == 401, f"{method} {route.path} answered {r.status_code}"
+        assert r.status_code == 401, f"{method} {full} answered {r.status_code}"
         checked += 1
     assert checked > 150

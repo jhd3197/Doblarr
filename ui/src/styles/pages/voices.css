@@ -1,7 +1,4 @@
 /* ---- Voices: the catalogue as a cast, one voice with its orb ---- */
-.voices-head { display:flex; align-items:flex-end; gap:20px; justify-content:space-between; flex-wrap:wrap; }
-.voices-head h2 { margin:0 0 4px; font-size:22px; }
-.voices-head .hint { margin:0; max-width:62ch; }
 .voices-search { width:min(320px,100%); }
 .voices-filter { margin:18px 0 22px; }
 .voices-filter .m { color:var(--muted); font-size:12px; margin-left:4px; }

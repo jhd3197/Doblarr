@@ -68,20 +68,20 @@ function CastLinks({ series, cast, enabled }) {
             <li key={link.id}>
               <SourceBadge name={link.source} />
               {link.url ? <a href={link.url} target="_blank" rel="noreferrer">{link.title || link.url}</a> : <span>{link.title}</span>}
-              <span className="title-muted">{link.characters} characters{link.complete ? '' : ' (more exist)'}
+              <span className="note">{link.characters} characters{link.complete ? '' : ' (more exist)'}
                 {link.season != null ? ` · season ${link.season}` : ''}</span>
-              {link.why && <span className="title-muted">· {link.why}</span>}
+              {link.why && <span className="note">· {link.why}</span>}
               {enabled && link.source !== 'research' &&
                 <button type="button" className="btn btn-ghost research-mini" onClick={() => refresh(link)}>Refresh</button>}
             </li>
           ))}
         </ul>
-      ) : <p className="title-muted">No published cast linked yet. Search a catalogue below and link the entry that is this title.</p>}
+      ) : <p className="note">No published cast linked yet. Search a catalogue below and link the entry that is this title.</p>}
       {links.length > 0 && (
         <div className="research-row">
           <button type="button" className="btn btn-secondary" id="researchImportMain" onClick={() => importCast(['MAIN'])}>Import main cast</button>
           <button type="button" className="btn btn-ghost" onClick={() => importCast(['MAIN', 'SUPPORTING'])}>Main and supporting</button>
-          <span className="title-muted">Creates series characters or adds the published facts to ones you already have. Never renames.</span>
+          <span className="note">Creates series characters or adds the published facts to ones you already have. Never renames.</span>
         </div>
       )}
       <Status>{status}</Status>
@@ -132,7 +132,7 @@ function CastSearch({ series, title, catalogues, linked }) {
       </form>
       {linked.length > 0 && others.length > 0 && (
         <div className="research-row">
-          <span className="title-muted">Find the linked title in</span>
+          <span className="note">Find the linked title in</span>
           {others.map(c => <button key={c.name} type="button" className="btn btn-ghost research-mini" onClick={() => suggest(c.name)}>{c.label}</button>)}
         </div>
       )}
@@ -143,15 +143,15 @@ function CastSearch({ series, title, catalogues, linked }) {
           {hits.length ? hits.map(hit => (
             <div key={hit.url} className="research-hit">
               <a href={hit.url} target="_blank" rel="noreferrer">{hit.title}</a>
-              <span className="title-muted">{[hit.format, hit.year, hit.episodes && `${hit.episodes} eps`].filter(Boolean).join(' · ')}</span>
+              <span className="note">{[hit.format, hit.year, hit.episodes && `${hit.episodes} eps`].filter(Boolean).join(' · ')}</span>
               {hit.why && <span className="research-why">{hit.why}</span>}
               <button type="button" className="btn btn-ghost research-mini" onClick={() => link(hit)}>Link</button>
             </div>
-          )) : <p className="title-muted">Nothing found.</p>}
+          )) : <p className="note">Nothing found.</p>}
         </div>
       ))}
       {found && Object.entries(found.skipped).map(([name, why]) => (
-        <p key={name} className="title-muted">{name}: skipped ({why})</p>
+        <p key={name} className="note">{name}: skipped ({why})</p>
       ))}
     </div>
   );
@@ -174,7 +174,7 @@ function MergedCast({ cast, target }) {
                 <span className="research-name">{c.name}</span>
                 {c.conflicts.length > 0 && <span className="research-conflict" title="the catalogues disagree; nothing was chosen"> sources disagree on {c.conflicts.join(', ')}</span>}
               </td>
-              <td className="title-muted">{(c.role || '').toLowerCase() || '—'}</td>
+              <td className="note">{(c.role || '').toLowerCase() || '—'}</td>
               <td>{c.sources.map(s => <SourceBadge key={s} name={s} />)}</td>
               {languages.map(l => (
                 <td key={l}>{voicesIn(c, l).map(v => (
@@ -207,8 +207,8 @@ function Answer({ text, sources }) {
 function RunDetail({ runId }) {
   const { data: run, error } = useQuery({ queryKey: ['research-run', runId], queryFn: () => api(`research/runs/${runId}`) });
   const [status, setStatus] = useState('');
-  if (error) return <p className="title-muted">{error.message}</p>;
-  if (!run) return <p className="title-muted">Loading…</p>;
+  if (error) return <p className="note">{error.message}</p>;
+  if (!run) return <p className="note">Loading…</p>;
   async function decide(index, decision) {
     try {
       await api('research/leads', { method: 'POST', json: { run_id: runId, index, decision } });
@@ -220,20 +220,20 @@ function RunDetail({ runId }) {
   const cited = run.sources.filter(s => s.n != null);
   return (
     <div className="research-run-detail">
-      <p className="title-muted">Sent: “{run.sent}” · {run.model} · {run.depth} · ${Number(run.cost || 0).toFixed(4)}</p>
+      <p className="note">Sent: “{run.sent}” · {run.model} · {run.depth} · ${Number(run.cost || 0).toFixed(4)}</p>
       <Answer text={run.answer || '(no answer)'} sources={run.sources} />
       {cited.length > 0 && (
         <ol className="research-sources">
           {cited.map(s => <li key={s.url} value={s.n}><a href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a>{s.cited ? '' : ' (read, not cited)'}</li>)}
         </ol>
       )}
-      {run.gaps?.length > 0 && <p className="title-muted">Not answered by what was read: {run.gaps.join('; ')}</p>}
-      {run.claim_id && <p className="title-muted">The answer waits in <Link to="/knowledge">Knowledge → Narrative</Link> as an external note, apart from what episodes taught.</p>}
+      {run.gaps?.length > 0 && <p className="note">Not answered by what was read: {run.gaps.join('; ')}</p>}
+      {run.claim_id && <p className="note">The answer waits in <Link to="/knowledge">Knowledge → Narrative</Link> as an external note, apart from what episodes taught.</p>}
       {run.terms?.length > 0 && (
         <div className="research-terms">
           <p className="research-hits-head">Terms for review</p>
-          {run.terms.map(t => <p key={t.source_form + t.phrase}>{t.source_form} → <b>{t.phrase}</b> <span className="title-muted">{t.usage}</span></p>)}
-          <p className="title-muted">{run.terms.some(t => t.entry_id) ? <>Proposed in <Link to="/knowledge">Knowledge → Terms</Link>; inactive until you review them.</> : 'Kept with the run only: this title has no show or film file to scope them to.'}</p>
+          {run.terms.map(t => <p key={t.source_form + t.phrase}>{t.source_form} → <b>{t.phrase}</b> <span className="note">{t.usage}</span></p>)}
+          <p className="note">{run.terms.some(t => t.entry_id) ? <>Proposed in <Link to="/knowledge">Knowledge → Terms</Link>; inactive until you review them.</> : 'Kept with the run only: this title has no show or film file to scope them to.'}</p>
         </div>
       )}
       {run.leads?.length > 0 && (
@@ -248,7 +248,7 @@ function RunDetail({ runId }) {
                   <button type="button" className="btn btn-ghost research-mini" onClick={() => decide(i, 'accept')}>Accept</button>
                   <button type="button" className="btn btn-ghost research-mini" onClick={() => decide(i, 'dismiss')}>Dismiss</button>
                 </>
-              ) : <span className="title-muted">{lead.state}</span>}
+              ) : <span className="note">{lead.state}</span>}
             </div>
           ))}
         </div>
@@ -287,7 +287,7 @@ function Questions({ series, title, enabled }) {
               <option value="standard">Standard</option><option value="deep">Deep</option>
             </select>
             <button type="submit" className="btn btn-primary research-ask-btn" disabled={question.trim().length < 3}>Ask</button>
-            <span className="title-muted">Only your question and the title leave this machine. What comes back waits for your review.</span>
+            <span className="note">Only your question and the title leave this machine. What comes back waits for your review.</span>
           </div>
         </form>
       )}
@@ -299,14 +299,14 @@ function Questions({ series, title, enabled }) {
               <button type="button" className="research-run-head" aria-expanded={open === run.id}
                 onClick={() => setOpen(open === run.id ? null : run.id)}>
                 <span className="research-run-q">{run.question}</span>
-                <span className="title-muted">{new Date(run.created_at).toLocaleString()} · {run.sources} sources
+                <span className="note">{new Date(run.created_at).toLocaleString()} · {run.sources} sources
                   {run.terms ? ` · ${run.terms} terms` : ''}{run.open_leads ? ` · ${run.open_leads} open leads` : ''}</span>
               </button>
               {open === run.id && <RunDetail runId={run.id} />}
             </li>
           ))}
         </ul>
-      ) : <p className="title-muted">No questions asked about this title yet.</p>}
+      ) : <p className="note">No questions asked about this title yet.</p>}
     </div>
   );
 }
@@ -360,7 +360,7 @@ function Scripts({ series, enabled, show }) {
                     <input className="input research-episode" type="number" min="0" defaultValue={s.episode ?? ''}
                       aria-label="Episode number" onBlur={e => { if (String(s.episode ?? '') !== e.target.value) place(s, e.target.value); }} />
                   ) : '—'}</td>
-                  <td><SourceBadge name={s.source.split(':')[0]} /> <span className="title-muted">{s.source.split(':')[1] || ''}</span></td>
+                  <td><SourceBadge name={s.source.split(':')[0]} /> <span className="note">{s.source.split(':')[1] || ''}</span></td>
                   <td>{s.kind}{s.language ? ` · ${s.language}` : ''}</td>
                   <td>{s.lines}{s.speakers ? ` · ${s.speakers} speakers` : ''}</td>
                   <td>{/^https?:/.test(s.url) ? <a href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a> : (s.title || s.url)}</td>
@@ -369,7 +369,7 @@ function Scripts({ series, enabled, show }) {
             </tbody>
           </table>
         </div>
-      ) : <p className="title-muted">No reference scripts found yet. Most titles have none; that is normal.</p>}
+      ) : <p className="note">No reference scripts found yet. Most titles have none; that is normal.</p>}
     </div>
   );
 }
@@ -395,7 +395,7 @@ function TitleIds({ series, enabled }) {
         {enabled && <button type="button" className="btn btn-ghost research-mini" onClick={refresh}>Look up ids and names</button>}
       </div>
       {aliases.length > 0 && (
-        <p className="title-muted research-aliases">{aliases.slice(0, 30).map(a => `${a.title}${a.language || a.region ? ` (${[a.language, a.region].filter(Boolean).join('-')})` : ''}`).join(' · ')}</p>
+        <p className="note research-aliases">{aliases.slice(0, 30).map(a => `${a.title}${a.language || a.region ? ` (${[a.language, a.region].filter(Boolean).join('-')})` : ''}`).join(' · ')}</p>
       )}
       <Status>{status}</Status>
     </div>
@@ -408,7 +408,7 @@ export function ResearchTab({ item, targets }) {
   const { data: cast } = useQuery({ queryKey: castKey(series), enabled: Boolean(series),
     queryFn: () => api(`published-cast?series_id=${encodeURIComponent(series)}`) });
   if (!series) {
-    return <div className="panel title-panel"><p className="title-muted">Research needs this title&apos;s TVDB or TMDB id; this one has neither.</p></div>;
+    return <div className="panel title-panel"><p className="note">Research needs this title&apos;s TVDB or TMDB id; this one has neither.</p></div>;
   }
   const enabled = Boolean(catalogues?.enabled);
   const linked = (cast?.sources || []).map(s => s.source);
