@@ -4,6 +4,7 @@ import { queryClient } from '../../lib/queries.js';
 import { anchorsText } from '../../lib/knowledge.js';
 import { api, apiUrl } from '../../lib/api.js';
 import { safeGet } from '../../lib/storage.js';
+import { promptDialog } from '../../lib/dialogs.js';
 
 // The template catalogue: voice envelopes, background policies and presets.
 // A template is data; editing one saves a new version and saved dubs keep the
@@ -131,7 +132,7 @@ function Editor({ template, onSaved, onChanged }) {
     } catch (error) { setStatus(error.message); }
   }
   async function duplicate() {
-    const id = window.prompt('Id for the copy', `${template.id}-copy`);
+    const id = await promptDialog({ title: 'Duplicate template', label: 'Id for the copy', defaultValue: `${template.id}-copy` });
     if (!id) return;
     try { await api(`templates/${template.id}/duplicate`, { method: 'POST', json: { new_id: id } }); await onChanged(); }
     catch (error) { setStatus(error.message); }
