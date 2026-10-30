@@ -1,4 +1,5 @@
 .settings { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.settings > .page-head { padding: 26px 26px 0; margin-bottom: 0; }
 .settings-tabs { display: flex; gap: 6px; padding: 14px 26px 0; overflow-x: auto; }
 a.tab { text-decoration: none; }
 .settings-body { padding: 26px 26px 0; flex: 1; }

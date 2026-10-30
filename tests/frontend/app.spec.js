@@ -13,6 +13,22 @@ test.beforeEach(async ({ page }) => {
   await mockLibraryItems(page, LIBRARY);
 });
 
+test('an unknown address says so instead of landing on Overview', async ({ page }) => {
+  await page.goto('/no-such-page');
+  await expect(page.getByText('Page not found.')).toBeVisible();
+  await page.getByRole('link', { name: '← Overview' }).click();
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test('the first visit follows the OS theme and a saved choice wins', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/settings/voices');
+  await expect(page.locator('#app')).toHaveAttribute('data-theme', 'dark');
+  await page.locator('[data-theme-set="light"]').click();
+  await page.reload();
+  await expect(page.locator('#app')).toHaveAttribute('data-theme', 'light');
+});
+
 test('nested routes load modules and save real settings', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));

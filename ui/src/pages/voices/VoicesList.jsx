@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery } from '../../lib/queries.js';
 import { characterFor, seriesOfShow, showOfSeries, voiceFor } from '../../lib/voices.js';
 import { catalogQuery, charactersQuery } from './queries.js';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { dotStyle, voiceTitle, VoiceTags } from './VoiceParts.jsx';
 
 // The voice catalogue as a cast. A show's characters are the cast: each one
@@ -86,12 +87,11 @@ export function VoicesList() {
 
   return (
     <div className="page" id="voicesRoot">
-      <div className="voices-head">
-        <div><h2>Voices</h2>
-          <p className="hint">Every show’s characters and the voice each one speaks with. Open one to hear it, see where it talks and describe it.</p></div>
+      <PageHeader title="Voices"
+        hint="Every show’s characters and the voice each one speaks with. Open one to hear it, see where it talks and describe it.">
         <input className="input voices-search" type="search" placeholder="Search characters and voices" aria-label="Search voices"
           value={query} onChange={e => setQuery(e.target.value)} />
-      </div>
+      </PageHeader>
       <div className="opts voices-filter" role="group" aria-label="Which voices">
         {FILTERS.map(([id, label]) => (
           <button key={id} type="button" className="opt" data-filter={id} aria-pressed={filter === id ? 'true' : 'false'}

@@ -175,7 +175,7 @@ function CastEditor({ item, targets, plan }) {
   let rows;
   if (cast === null) rows = null;
   else if (!cast.length) {
-    rows = <p className="title-muted">No speakers discovered for this file yet. Assign a narrator above, or run an episode audition to discover its speakers.</p>;
+    rows = <p className="note">No speakers discovered for this file yet. Assign a narrator above, or run an episode audition to discover its speakers.</p>;
   } else {
     rows = cast.map((e, i) => (
       <div key={e.speaker_id || i} className="cast-row">

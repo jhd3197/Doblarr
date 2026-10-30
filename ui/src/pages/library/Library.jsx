@@ -7,6 +7,7 @@ import { useJobs } from '../../lib/jobs.js';
 import { isShow, itemKey, titleHref } from '../../lib/library.js';
 import { useSearch } from '../../shell/Shell.jsx';
 import { Poster } from '../../components/Poster.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { LangChips, QueueButton, StatusTag } from './parts.jsx';
 import './library.css';
 
@@ -124,13 +125,14 @@ export function Library() {
   if (sort === 'recent') rows.sort((a, b) => (activity[b.title] || '').localeCompare(activity[a.title] || ''));
 
   let grid;
-  if (scan.busy) grid = <div className="muted-note">Rescanning Sonarr and Radarr…</div>;
-  else if (scan.error) grid = <div className="muted-note">Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? {scan.error}</div>;
-  else if (!rows.length) grid = <div className="muted-note">No titles match.</div>;
+  if (scan.busy) grid = <div className="empty">Rescanning Sonarr and Radarr…</div>;
+  else if (scan.error) grid = <div className="empty">Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? {scan.error}</div>;
+  else if (!rows.length) grid = <div className="empty">No titles match.</div>;
   else grid = rows.map(item => <PosterCard key={itemKey(item)} item={item} targets={targets} />);
 
   return (
     <div className="page">
+      <PageHeader title="Library" hint="Films and shows from Radarr and Sonarr, and which still need a dubbed track." />
       <div className="library-toolbar">
         <Pills id="libraryFilters" options={FILTERS.map(f => [f, f === 'all' ? 'All' : f])} value={filter} onChange={setFilter} />
         <Pills id="librarySort" options={SORTS} value={sort} onChange={setSort} />

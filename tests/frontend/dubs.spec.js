@@ -29,6 +29,19 @@ test('the dubs table fits a phone screen and scrolls inside its card', async ({ 
   await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 390);
 });
 
+test('an empty search says no jobs match, an empty queue says no jobs yet', async ({ page }) => {
+  let jobs = [];
+  await page.route('**/api/jobs', route => route.fulfill({ json: { counts: {}, paused: false, jobs } }));
+  await page.route('**/api/config', route => route.fulfill({ json: {} }));
+  await page.goto('/dubs');
+  await expect(page.getByText('No jobs yet')).toBeVisible();
+  jobs = [RUNNING];
+  await page.goto('/dubs');
+  await page.locator('#globalSearch').fill('no such title');
+  await expect(page.getByText('No jobs match.')).toBeVisible();
+  await expect(page.getByText('No jobs yet')).toHaveCount(0);
+});
+
 test('a library card opens its title through a real link', async ({ page }) => {
   await page.route('**/api/library', route => route.fulfill({ json: { target_languages: ['es'], counts: {}, warnings: [],
     items: [{ title: 'Harbor Lights', year: 2021, tvdb_id: 81234, media_type: 'show', source: 'Sonarr',
