@@ -83,7 +83,7 @@ export function PlanTab({ item, targets, planState }) {
         <button type="button" className="btn btn-ghost plan-reset" id="planReset" onClick={() => save({})}>Reset to global</button>
       </div>
       <div id="planFields" className="plan-fields">
-        {!plan ? <p className="title-muted">Loading plan…</p>
+        {!plan ? <p className="note">Loading plan…</p>
           : PLAN_FIELDS.map(f => <PlanField key={f.k} field={f} plan={plan} config={config} targets={targets}
               onSet={setValue} onError={setStatus} />)}
       </div>

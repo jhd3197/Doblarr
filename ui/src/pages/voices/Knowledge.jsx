@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js';
 import { baseLanguage as baseOf, languageName } from '../../lib/languages.js';
 import { entriesQuery, pageCount } from '../../lib/knowledge.js';
 import { KnowledgeCorrection, useVoiceSample } from '../../components/KnowledgeCorrection.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { catalogQuery, coverageQuery } from './queries.js';
 import { Narrative } from './Narrative.jsx';
 import { Templates } from './Templates.jsx';
@@ -179,7 +180,8 @@ function Entries({ view, setView, locales }) {
               <div className="table-wrap"><table className="table"><thead><tr><th>Phrase</th><th className="knowledge-col-locale">Locale</th>
                 <th className="knowledge-col-scope">Scope</th><th className="knowledge-col-status">Status</th><th className="knowledge-col-rules">Rules</th></tr></thead>
                 <tbody>{data.entries.length ? data.entries.map(e => (
-                  <tr key={e.id} className="knowledge-row" data-id={e.id} onClick={() => setSelected(e.id)}>
+                  <tr key={e.id} className="knowledge-row" data-id={e.id} onClick={() => setSelected(e.id)}
+                    tabIndex={0} onKeyDown={ev => { if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); setSelected(e.id); } }}>
                     <td className="knowledge-strong">{e.phrase || '(suppression)'}{e.sense && <> <span className="hint">· {e.sense}</span></>}{e.register && <> <span className="hint">· {e.register}</span></>}</td>
                     <td className="m knowledge-cell">{languageName(e.locale)}</td>
                     <td className="m knowledge-cell">{e.scope}</td>
@@ -209,10 +211,7 @@ export function Knowledge() {
 
   return (
     <div className="page" id="knowledgeRoot">
-      <div className="knowledge-head">
-        <h3>Language knowledge</h3>
-        <span className="hint">Corrections you save apply to new dubs; existing jobs keep their frozen rules.</span>
-      </div>
+      <PageHeader title="Language knowledge" hint="Corrections you save apply to new dubs; existing jobs keep their frozen rules." />
       <div className="knowledge-cards">
         {coverage.locales.map(c => (
           <div key={c.locale} className="panel knowledge-card">
