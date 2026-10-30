@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, apiUrl, withKey } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { castingQuery, studioVoicesQuery } from './queries.js';
+import { Loading } from '../../components/States.jsx';
 
 // Cast: who speaks with which voice, where that choice came from, and
 // auditions that compare voices on the same fixed lines.
@@ -126,7 +127,7 @@ function Audition({ ctrl, id, character }) {
   const { data, error } = useQuery(query);
   const [note, setNote] = useState('');
   if (error) return <section className="panel studio-card studio-audition" data-audition={id}>{error.message}</section>;
-  if (!data) return <section className="panel studio-card studio-audition" data-audition={id}><p className="hint">Loading audition {character}…</p></section>;
+  if (!data) return <section className="panel studio-card studio-audition" data-audition={id}><Loading>Loading audition {character}…</Loading></section>;
   const a = data.audition;
   const plan = a.plan || { excerpts: [], missing: [], notes: [] };
   const runnable = !['running'].includes(a.status);
@@ -214,7 +215,7 @@ export function StudioCast({ ctrl }) {
   const [affected, setAffected] = useState(null);
   useEffect(() => stopTake, []);
   if (error) return <p>{error.message}</p>;
-  if (!cast || !voices) return <p className="hint">Loading the cast…</p>;
+  if (!cast || !voices) return <Loading>Loading the cast…</Loading>;
   const auditions = ctrl.state.overview.auditions || [];
 
   async function whoFollows(character) {

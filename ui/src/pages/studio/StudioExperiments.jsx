@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
+import { Loading, EmptyState } from '../../components/States.jsx';
+import { confirmDialog, promptDialog } from '../../lib/dialogs.js';
 
 // Writing experiments: A (original only), B (English dub only, a diagnostic),
 // C (original + aligned English). Frozen before judging; judged blind; the
@@ -42,7 +44,7 @@ function JudgingUnit({ unit, ev, holdout, post, competent }) {
   }
   async function correct(label, line) {
     const elapsed = stopwatch();
-    const text = window.prompt('Corrected line (saved as a new revision; the frozen candidate stays):', line.text);
+    const text = await promptDialog({ title: 'Correct the line', message: 'Saved as a new revision; the frozen candidate stays.', label: 'Corrected line', defaultValue: line.text });
     if (!text) return;
     try {
       await post('revisions', { label, unit_id: unit.unit_id, slot_id: line.slot_id, text,
@@ -98,8 +100,8 @@ function Judging({ id }) {
     return r;
   };
   async function reveal(what) {
-    if (what === 'holdout' && !window.confirm('Reveal the official dub? Judgments and corrections made after '
-      + 'this are recorded as assisted, and the clean results stay as they are.')) return;
+    if (what === 'holdout' && !await confirmDialog({ title: 'Reveal the official dub?', confirmLabel: 'Reveal', danger: true,
+      message: 'Judgments and corrections made after this are recorded as assisted, and the clean results stay as they are.' })) return;
     await post(`reveal/${what}`, undefined, '&actor=studio', true);
   }
   return (
@@ -130,7 +132,7 @@ function Experiment({ ctrl, id }) {
   const { data } = useQuery({ queryKey: ['studio', 'experiment', id], queryFn: () => api(`studio/experiments/${id}`), gcTime: 5_000 });
   const [note, setNote] = useState('');
   const [judging, setJudging] = useState('');
-  if (!data) return <p className="hint">Loading…</p>;
+  if (!data) return <Loading />;
   const e = data.experiment;
   const evaluation = judging || data.evaluations[0]?.id;
 
@@ -271,7 +273,7 @@ export function StudioExperiments({ ctrl }) {
             <span className="hint">{e.conditions.join('/')} · {e.excerpts} excerpt(s) · {e.target_locale}
               {' '}· {e.provider}{e.model ? `/${e.model}` : ''}</span>
             <button type="button" className="btn btn-ghost" data-exp={e.id} onClick={() => setOpen(e.id)}>Open</button></div>
-        )) : <p className="hint">No experiment yet.</p>}</div>
+        )) : <EmptyState>No experiment yet.</EmptyState>}</div>
         <DefineExperiment ctrl={ctrl} onCreated={setOpen} />
         <div id="exDetail">{open && <Experiment key={open} ctrl={ctrl} id={open} />}</div>
       </section>

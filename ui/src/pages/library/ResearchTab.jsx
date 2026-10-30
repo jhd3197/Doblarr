@@ -6,6 +6,7 @@ import { useJobs } from '../../lib/jobs.js';
 import { queryClient } from '../../lib/queries.js';
 import { isShow } from '../../lib/library.js';
 import { citedParts, languageColumns, seriesIdOf, voicesIn } from '../../lib/research.js';
+import { Loading, EmptyState } from '../../components/States.jsx';
 import './research.css';
 
 const SCRIPT_SOURCES = [
@@ -76,7 +77,7 @@ function CastLinks({ series, cast, enabled }) {
             </li>
           ))}
         </ul>
-      ) : <p className="note">No published cast linked yet. Search a catalogue below and link the entry that is this title.</p>}
+      ) : <EmptyState>No published cast linked yet. Search a catalogue below and link the entry that is this title.</EmptyState>}
       {links.length > 0 && (
         <div className="research-row">
           <button type="button" className="btn btn-secondary" id="researchImportMain" onClick={() => importCast(['MAIN'])}>Import main cast</button>
@@ -147,7 +148,7 @@ function CastSearch({ series, title, catalogues, linked }) {
               {hit.why && <span className="research-why">{hit.why}</span>}
               <button type="button" className="btn btn-ghost research-mini" onClick={() => link(hit)}>Link</button>
             </div>
-          )) : <p className="note">Nothing found.</p>}
+          )) : <EmptyState>Nothing found.</EmptyState>}
         </div>
       ))}
       {found && Object.entries(found.skipped).map(([name, why]) => (
@@ -208,7 +209,7 @@ function RunDetail({ runId }) {
   const { data: run, error } = useQuery({ queryKey: ['research-run', runId], queryFn: () => api(`research/runs/${runId}`) });
   const [status, setStatus] = useState('');
   if (error) return <p className="note">{error.message}</p>;
-  if (!run) return <p className="note">Loading…</p>;
+  if (!run) return <Loading />;
   async function decide(index, decision) {
     try {
       await api('research/leads', { method: 'POST', json: { run_id: runId, index, decision } });
@@ -306,7 +307,7 @@ function Questions({ series, title, enabled }) {
             </li>
           ))}
         </ul>
-      ) : <p className="note">No questions asked about this title yet.</p>}
+      ) : <EmptyState>No questions asked about this title yet.</EmptyState>}
     </div>
   );
 }
@@ -369,7 +370,7 @@ function Scripts({ series, enabled, show }) {
             </tbody>
           </table>
         </div>
-      ) : <p className="note">No reference scripts found yet. Most titles have none; that is normal.</p>}
+      ) : <EmptyState>No reference scripts found yet. Most titles have none; that is normal.</EmptyState>}
     </div>
   );
 }

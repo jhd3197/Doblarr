@@ -16,6 +16,7 @@
   .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
   .btn-ghost { color: var(--muted); background: transparent; padding-inline: 11px; } /* same height as .btn, narrower sides */
   .btn-ghost:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+  .btn-danger { background: var(--danger); border-color: var(--danger); color: var(--color-bg); }
 
   .input { font-family: var(--font-body); font-size: var(--text-md); padding: 9px 13px; width: 100%;
     border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: var(--color-surface); color: var(--color-text); }
