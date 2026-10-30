@@ -89,12 +89,13 @@ def naming_precision(predicted: list[str], truth: list[str]) -> float | None:
 def recognition(vectors: list, truth: list[str], seconds: list[float], *,
                 floor: float = 0.3, margin: float = 0.05, min_seconds: float = 0.8,
                 use_prototypes: bool = False, held_vectors: list | None = None,
-                held_truth: list[str] | None = None) -> dict:
+                held_truth: list[str] | None = None, detail: bool = False) -> dict:
     """Leave-one-out (or held-out) recognition with abstention.
 
     With `held_vectors`, prints come from `vectors`/`truth` and the held lines
     are recognised; otherwise each line is recognised against prints built from
-    every other line.
+    every other line. With `detail`, the result also lists each line's answer
+    (`per_line`), which `study_summary` turns into a confusion matrix.
     """
     import numpy as np
 
@@ -123,16 +124,16 @@ def recognition(vectors: list, truth: list[str], seconds: list[float], *,
     usable = [i for i, v in enumerate(vectors) if v is not None and seconds[i] >= min_seconds]
     if held_vectors is not None:
         known = prints_from([(vectors[i], truth[i], seconds[i]) for i in usable])
-        queries = [(np.asarray(v), t) for v, t in zip(held_vectors, held_truth or [],
-                                                      strict=True) if v is not None]
-        tests = [(q, t, known) for q, t in queries]
+        tests = [(i, np.asarray(v), t, known) for i, (v, t) in
+                 enumerate(zip(held_vectors, held_truth or [], strict=True)) if v is not None]
     else:
         tests = []
         for i in usable:
             rest = [(vectors[j], truth[j], seconds[j]) for j in usable if j != i]
-            tests.append((np.asarray(vectors[i]), truth[i], prints_from(rest)))
+            tests.append((i, np.asarray(vectors[i]), truth[i], prints_from(rest)))
     answered = correct = top1 = 0
-    for query, actual, known in tests:
+    per_line = []
+    for index, query, actual, known in tests:
         if not known:
             continue
         q = query / (float(np.linalg.norm(query)) or 1.0)
@@ -140,14 +141,70 @@ def recognition(vectors: list, truth: list[str], seconds: list[float], *,
                          for name, p in known.items()), reverse=True)
         top1 += ranked[0][1] == actual
         gap = ranked[0][0] - ranked[1][0] if len(ranked) > 1 else 1.0
-        if ranked[0][0] >= floor and gap >= margin:
+        ok = ranked[0][0] >= floor and gap >= margin
+        if ok:
             answered += 1
             correct += ranked[0][1] == actual
+        per_line.append({"index": index, "true": actual, "pred": ranked[0][1],
+                         "score": round(ranked[0][0], 3), "margin": round(gap, 3),
+                         "abstained": not ok})
     total = len(tests)
-    return {"lines": total, "top1": round(top1 / total, 3) if total else None,
-            "answered": answered, "coverage": round(answered / total, 3) if total else None,
-            "precision": round(correct / answered, 3) if answered else None,
-            "floor": floor, "margin": margin, "prototypes": use_prototypes}
+    out: dict = {"lines": total, "top1": round(top1 / total, 3) if total else None,
+           "answered": answered, "coverage": round(answered / total, 3) if total else None,
+           "precision": round(correct / answered, 3) if answered else None,
+           "floor": floor, "margin": margin, "prototypes": use_prototypes}
+    if detail:
+        out["per_line"] = per_line
+    return out
+
+
+ABSTAINED = "(abstained)"
+
+
+def confusion_matrix(true: list[str], pred: list[str], labels: list[str] | None = None,
+                     abstain_label: str = ABSTAINED) -> dict:
+    """Rows are the true character, columns the predicted one plus a last
+    column for abstentions (a `pred` equal to `abstain_label`)."""
+    if labels is None:
+        labels = sorted({*true, *(p for p in pred if p != abstain_label)})
+    where = {name: i for i, name in enumerate(labels)}
+    counts = [[0] * (len(labels) + 1) for _ in labels]
+    for t, p in zip(true, pred, strict=True):
+        if t in where:
+            counts[where[t]][where.get(p, len(labels))] += 1
+    return {"labels": labels, "abstained": abstain_label, "counts": counts}
+
+
+def per_character_metrics(matrix: dict) -> dict:
+    """Precision, recall, F1, support and abstained share for each row label.
+    Precision counts every answer given as that character; a label never
+    answered has no precision (None)."""
+    labels, counts = matrix["labels"], matrix["counts"]
+    out = {}
+    for i, name in enumerate(labels):
+        support = sum(counts[i])
+        hit = counts[i][i]
+        said = sum(row[i] for row in counts)
+        p = round(hit / said, 3) if said else None
+        r = round(hit / support, 3) if support else None
+        f1 = None if p is None or r is None else \
+            round(2 * p * r / (p + r), 3) if p + r else 0.0
+        out[name] = {"precision": p, "recall": r, "f1": f1, "support": support,
+                     "abstained": round(counts[i][-1] / support, 3) if support else None}
+    return out
+
+
+def study_summary(per_line: list[dict]) -> dict:
+    """Headline numbers and the per-character table from `recognition(detail=True)`."""
+    pred = [ABSTAINED if r["abstained"] else r["pred"] for r in per_line]
+    matrix = confusion_matrix([r["true"] for r in per_line], pred)
+    answered = [r for r in per_line if not r["abstained"]]
+    n = len(per_line)
+    return {"matrix": matrix, "per_character": per_character_metrics(matrix), "lines": n,
+            "top1": round(sum(r["true"] == r["pred"] for r in per_line) / n, 3) if n else None,
+            "precision": round(sum(r["true"] == r["pred"] for r in answered) / len(answered), 3)
+            if answered else None,
+            "coverage": round(len(answered) / n, 3) if n else None}
 
 
 def evaluate(predicted: list[str], truth: list[str], seconds: list[float]) -> dict:

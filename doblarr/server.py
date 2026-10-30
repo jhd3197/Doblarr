@@ -41,6 +41,7 @@ from .routes import studio as studio_routes
 from .routes import templates as template_routes
 from .routes import titles as title_routes
 from .routes import voice_catalog as catalog_routes
+from .routes import voice_studies as voice_study_routes
 from .routes import watch as watch_routes
 from .scheduler import Scheduler
 from .services import Services
@@ -183,6 +184,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(studio_routes.build_router(config, store, worker, bus))
     api.include_router(catalog_routes.build_router(config, services, db))
     api.include_router(character_routes.build_router(config, services, db))
+    api.include_router(voice_study_routes.build_router(config, db))
     api.include_router(narrative_routes.build_router(config, store))
     api.include_router(cast_routes.build_router(config, db))
     api.include_router(research_routes.build_router(config, store, bus))
