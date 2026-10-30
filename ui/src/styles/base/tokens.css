@@ -24,6 +24,7 @@
     --ok: #1f7a46; --warn: #8a5a00; --danger: #b3261e;
 
     --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+    --text-xs: 12px; --text-sm: 13px; --text-md: 14px;
     --line: color-mix(in srgb, var(--color-text) 12%, transparent);
     --line-strong: color-mix(in srgb, var(--color-text) 18%, transparent);
     --muted: color-mix(in srgb, var(--color-text) 70%, transparent);
