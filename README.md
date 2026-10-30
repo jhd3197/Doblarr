@@ -500,6 +500,9 @@ emphasis inside itself) and background policies are data templates under
 changing one reprocesses existing takes and never generates speech. See
 [voice envelopes and background policies](docs/adaptive-audio.md).
 
+A **voice study** learns each character's voice from one film and tests it, held out, on a
+second film (`doblarr voice-study run`, `/api/voice-studies`). See [voice study](docs/voice-study.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE). voicebox is MIT; neutrinus/dubarr is GPL-3.0 (used
