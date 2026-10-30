@@ -29,7 +29,10 @@ KINDS = ("session", "reference", "alignment", "experiment", "variant", "audition
          "published_cast",
          # Title research (docs/title-research.md): a cited answer to a person's
          # question, a reference script found online, a title's other names and ids.
-         "research_run", "title_script", "title_info")
+         "research_run", "title_script", "title_info",
+         # A voice study (docs/voice-study.md): two films, the profiles built from
+         # the first and the held-out results on the second. Scoped to the study.
+         "voice_study", "voice_profile", "voice_probe_result")
 # A document larger than this is a sign that media or a whole transcript is
 # being stored as state. Structured state stays small; artifacts go to disk.
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
@@ -96,6 +99,16 @@ def list_latest(db, kind: str, scope: str | None = None) -> list[dict]:
         sql += " AND r.scope=?"
         params = (kind, scope)
     return [_row(r) for r in db.query(sql + " ORDER BY r.created_at, r.id", params)]
+
+
+def purge(db, kinds: tuple[str, ...], scope: str) -> int:
+    """Delete every revision of the records of `kinds` in `scope` (a privacy
+    action; ordinary records are never deleted)."""
+    with db._lock, db._conn:
+        cur = db._conn.execute(
+            f"DELETE FROM studio_records WHERE scope=? AND kind IN ({','.join('?' * len(kinds))})",
+            (scope, *kinds))
+    return cur.rowcount
 
 
 def put(db, kind: str, record_id: str, document: dict, *, scope: str = "",
