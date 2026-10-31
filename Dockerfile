@@ -10,7 +10,7 @@ RUN npm ci --no-audit --no-fund
 COPY ui ./ui
 RUN npm run build:ui
 
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
