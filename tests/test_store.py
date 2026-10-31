@@ -36,7 +36,7 @@ def test_migration_applies_to_old_schema(tmp_path, monkeypatch):
 def test_legacy_jobs_json_import(tmp_path):
     legacy = tmp_path / "jobs.json"
     legacy.write_text(json.dumps([
-        {"id": "old1", "title": "Godzilla", "source": "Radarr", "source_lang": "ja",
+        {"id": "old1", "title": "Tidewater", "source": "Radarr", "source_lang": "ja",
          "target_lang": "en", "input_file": None, "status": "done", "stage": "mux",
          "progress": 100, "message": "dubbed", "created_at": "2024-01-01T00:00:00",
          "updated_at": "2024-01-01T01:00:00"},
@@ -64,6 +64,7 @@ def test_reset_running_requeues_interrupted_jobs(tmp_path):
     store.update(j.id, status="running", stage="mix")
     store.close()
     store = JobStore(tmp_path / "jobs.db")  # simulates a restart
+    assert store.reset_running() == 1       # the server does this at startup
     assert store.get(j.id).status == "queued"
     store.close()
 

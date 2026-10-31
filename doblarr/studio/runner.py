@@ -188,14 +188,16 @@ def _recognize(clip: Path, language: str, config, services, engine: str) -> list
         if importlib.util.find_spec("faster_whisper") is None:
             engine = "voicebox"
         else:
+            from .. import whisper
+
             device = resolve_device("transcribe", dict(config.get("compute", {})))
-            kind = device.kind if device.kind in ("cuda", "cpu") else "cpu"
-            model = _whisper(config["transcribe"].get("whisper_model", "large-v3"), kind,
-                             device.device_index or 0)
-            segments, _info = model.transcribe(str(clip), language=language,
-                                               vad_filter=True)
-            return [{"start": s.start, "end": s.end, "text": s.text.strip()}
-                    for s in segments if s.text.strip() and s.end > s.start]
+            # Kept loaded between clips; the pool bounds how many models stay resident.
+            with whisper.loaded(config["transcribe"].get("whisper_model", "large-v3"), device,
+                                keep=True) as model:
+                segments, _info = model.transcribe(str(clip), language=language,
+                                                   vad_filter=True)
+                return [{"start": s.start, "end": s.end, "text": s.text.strip()}
+                        for s in segments if s.text.strip() and s.end > s.start]
     heard = services.speech.transcribe(clip, language=language) or {}
     text = str(heard.get("text") or "").strip()
     if not text:
@@ -205,15 +207,3 @@ def _recognize(clip: Path, language: str, config, services, engine: str) -> list
     return [{"start": 0.0, "end": duration(clip), "text": text}]
 
 
-_MODELS: dict = {}
-
-
-def _whisper(name: str, kind: str, index: int):
-    from faster_whisper import WhisperModel
-
-    key = (name, kind, index)
-    if key not in _MODELS:
-        _MODELS.clear()   # one model resident at a time
-        _MODELS[key] = WhisperModel(name, device=kind, device_index=index,
-                                    compute_type="float16" if kind == "cuda" else "int8")
-    return _MODELS[key]

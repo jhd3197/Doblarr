@@ -23,6 +23,8 @@ from collections.abc import Mapping
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 
+from .errors import ConfigError
+
 log = logging.getLogger("doblarr.hardware")
 
 LIBRARIES = ("demucs", "whisperx", "faster_whisper", "pyannote.audio")
@@ -215,7 +217,7 @@ CUDA_INSTALL_HINT = (
 DEVICE_KINDS = ("cpu", "cuda", "mps")
 
 
-class DeviceUnavailable(RuntimeError):
+class DeviceUnavailable(ConfigError):
     """An explicitly chosen device this machine cannot provide."""
 
 

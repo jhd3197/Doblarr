@@ -10,6 +10,8 @@ import { languageName } from '../lib/languages.js';
 import { isShow, itemKey, titleHref } from '../lib/library.js';
 import { Poster } from '../components/Poster.jsx';
 import { queueDub } from './library/parts.jsx';
+import { notify } from '../lib/notice.js';
+import { Loading, EmptyState } from '../components/States.jsx';
 
 export async function overviewLoader() {
   // Jobs, counts and the GPU card are quick; the library scan and the audio
@@ -92,7 +94,7 @@ function Ready({ ready, items }) {
     <Card title="Ready to review" sub="Listen before it goes to Plex" link={<Link to="/dubs" className="ov-link">All dubs</Link>}>
       <div className="ov-stack" id="recentTitles">
         {ready.length ? ready.slice(0, 3).map(j => <ReadyRow key={j.id} job={j} item={itemFor(j, items)} />)
-          : <div className="ov-empty">No finished dubs to watch yet.</div>}
+          : <EmptyState>No finished dubs to watch yet.</EmptyState>}
       </div>
     </Card>
   );
@@ -122,14 +124,14 @@ function RetryButton({ job }) {
       refreshJobs();
     } catch (err) {
       setState('Retry');
-      window.alert('Could not queue it again: ' + err.message);
+      notify('Could not queue it again: ' + err.message);
     }
   }
   return <button type="button" className="btn btn-secondary ov-btn-sm" disabled={state !== 'Retry'} onClick={retry}>{state}</button>;
 }
 
 async function resumeQueue() {
-  try { await api('api/queue/resume', { method: 'POST' }); } catch (e) { window.alert(e.message); }
+  try { await api('api/queue/resume', { method: 'POST' }); } catch (e) { notify(e.message); }
   refreshJobs();
 }
 
@@ -144,7 +146,7 @@ function Needs({ failed, pausedQueued, warnings }) {
     action={<Link to="/settings/connections" className="btn btn-secondary ov-btn-sm">Settings</Link>} />);
   return (
     <Card title="Needs you" sub={rows.length ? plural(rows.length, 'thing') : null}>
-      <div className="ov-stack ov-stack-tight">{rows.length ? rows : <div className="ov-empty">Nothing needs you right now.</div>}</div>
+      <div className="ov-stack ov-stack-tight">{rows.length ? rows : <EmptyState>Nothing needs you right now.</EmptyState>}</div>
     </Card>
   );
 }
@@ -232,9 +234,9 @@ function Queue({ active, library, libraryPending, libraryError }) {
   }
 
   let list;
-  if (libraryError) list = <div className="ov-empty">The library scan is unavailable — check Settings › Connections.</div>;
-  else if (libraryPending) list = <div className="ov-empty">Loading the library…</div>;
-  else if (!flagged.length) list = <div className="ov-empty">No titles are flagged <span className="m">needs-dub</span>.</div>;
+  if (libraryError) list = <div className="note">The library scan is unavailable — check Settings › Connections.</div>;
+  else if (libraryPending) list = <Loading>Loading the library…</Loading>;
+  else if (!flagged.length) list = <EmptyState>No titles are flagged <span className="m">needs-dub</span>.</EmptyState>;
   else list = shown.map(i => <FlaggedRow key={itemKey(i)} item={i} on={picked.includes(itemKey(i))} toggle={() => toggle(itemKey(i))} />);
 
   return (
@@ -288,7 +290,7 @@ function Activity({ jobs }) {
             </div>
             <span className={`tag ${jobStatusClass(j.status)}`}>{j.status}</span>
           </div>
-        )) : <div className="ov-empty">No activity yet.</div>}
+        )) : <EmptyState>No activity yet.</EmptyState>}
       </div>
     </Card>
   );

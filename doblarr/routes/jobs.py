@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .. import delivery as export_delivery
 from .. import preview as scene_preview
-from .. import treatments
 from ..artifacts import read_json
 from ..config import Config
 from ..cues import (
@@ -27,11 +26,11 @@ from ..cues import (
 )
 from ..errors import ForbiddenError, NotFoundError
 from ..events import EventBus
-from ..jobs import JobStore, Worker
+from ..jobs import JobStore, Worker, queue_rerender
 from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language, normalize
 from ..models import DubJob, Segment, Speaker
-from ..review import load_decisions, merge_decisions, record_decision
+from ..review import load_decisions, merge_decisions, policy_settings, record_decision
 from ..voices import cast_key
 from .media_delivery import allowed_path, ranged_response
 
@@ -112,7 +111,7 @@ class LineEditIn(BaseModel):
     delivery: str | None = Field(default=None, max_length=500)
     exclude: bool | None = None
     regenerate: bool = False
-    # Plan 03: structured acting direction, a chosen take, a per-line gain and
+    # Structured acting direction, a chosen take, a per-line gain and
     # a request for alternatives. All optional; omitting one leaves whatever
     # the run already decided untouched.
     mode: str | None = Field(default=None, max_length=32)
@@ -121,13 +120,13 @@ class LineEditIn(BaseModel):
     take: str | None = Field(default=None, max_length=64)
     gain_db: float | None = Field(default=None, ge=-24, le=24)
     candidates: int | None = Field(default=None, ge=0, le=4)
-    # Plan 04: phrase timing decisions. None of them generates speech — they
+    # Phrase timing decisions. None of them generates speech — they
     # change how the take that already exists is cut and placed.
     anchors: list[AnchorIn] | None = Field(default=None, max_length=32)
     pauses: list[PauseIn] | None = Field(default=None, max_length=32)
     bypass_timing: bool | None = None
     overlap: bool | None = None
-    # Plan 05: which space or device this line is played through. Like the
+    # Which space or device this line is played through. Like the
     # timing edits it generates no speech — it re-renders the dry line that
     # already exists.
     treatment: TreatmentIn | None = None
@@ -279,10 +278,6 @@ def _rerun_plan(edits, candidate_requests: dict, events=()) -> dict:
 def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus) -> APIRouter:
     api = APIRouter()
 
-    def _allowed_path(path_str: str) -> Path | None:
-        # Read live: saving an output directory must also update the download guard.
-        return allowed_path(config, path_str)
-
     def _ranged_response(path: Path, range_header: str | None):
         return ranged_response(path, range_header)
 
@@ -291,9 +286,9 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         jobs = store.list()
         for j in jobs:
             # computed server-side so the UI never guesses about the filesystem
-            out = _allowed_path(j["output_file"]) if j.get("output_file") else None
+            out = allowed_path(config,j["output_file"]) if j.get("output_file") else None
             j["has_file"] = bool(out and out.exists())
-            review = _allowed_path(j["review_file"]) if j.get("review_file") else None
+            review = allowed_path(config,j["review_file"]) if j.get("review_file") else None
             j["has_review"] = bool(review and review.is_file())
         return {"jobs": jobs, "counts": store.counts(), "paused": worker.paused}
 
@@ -352,7 +347,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         job = store.get(job_id)
         if job is None or not job.output_file:
             raise NotFoundError(f"no output file for job {job_id}")
-        path = _allowed_path(job.output_file)
+        path = allowed_path(config,job.output_file)
         if path is None:
             raise ForbiddenError("output path is outside the configured directories")
         if not path.exists():
@@ -364,7 +359,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         name = getattr(job, field, None)
         if not job or not name:
             raise NotFoundError("No report is available for this job")
-        path = _allowed_path(name)
+        path = allowed_path(config,name)
         if path is None:
             raise ForbiddenError("report path is outside the configured directories")
         data = read_json(path)
@@ -400,11 +395,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         for take in cue.get("audio", {}).get("takes", []):
             raw = take.get("raw")
             if isinstance(raw, dict):
-                raw["available"] = bool(_allowed_path(raw.get("path") or "")
+                raw["available"] = bool(allowed_path(config,raw.get("path") or "")
                                         and Path(raw["path"]).is_file())
                 raw.pop("path", None)
         for render in cue.get("audio", {}).get("renders", []):
-            render["available"] = bool(_allowed_path(render.get("path") or "")
+            render["available"] = bool(allowed_path(config,render.get("path") or "")
                                        and Path(render["path"]).is_file())
             render.pop("path", None)
 
@@ -415,7 +410,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             row = dict(raw)
             artifact = row.get("artifact")
             if isinstance(artifact, dict):
-                path = _allowed_path(artifact.get("path") or "")
+                path = allowed_path(config,artifact.get("path") or "")
                 artifact["available"] = bool(path and Path(artifact["path"]).is_file())
                 artifact.pop("path", None)
             # A replacement sound lives somewhere on this machine. The reviewer
@@ -432,7 +427,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         row = copy.deepcopy(report)
         output = row.pop("output", None)
         row["output_name"] = Path(output).name if output else ""
-        row["available"] = bool(output and _allowed_path(output)
+        row["available"] = bool(output and allowed_path(config,output)
                                 and Path(output).is_file())
         return row
 
@@ -447,7 +442,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         found = {}
         for key in ("source_track", "source_audio", "dubbed_track", "output",
                     "vocals", "background"):
-            path = _allowed_path(media[key]) if media.get(key) else None
+            path = allowed_path(config,media[key]) if media.get(key) else None
             found[key] = bool(path and path.is_file())
         return {
             "source": found["source_track"] or found["source_audio"],
@@ -466,7 +461,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         job, data = artifact(job_id, "review_file")
         check_schema(data.get("cue_schema"), "review snapshot")
         for row in data["segments"]:
-            clip = _allowed_path(row["audio_clip"]) if row.get("audio_clip") else None
+            clip = allowed_path(config,row["audio_clip"]) if row.get("audio_clip") else None
             row["has_audio"] = bool(clip and clip.is_file())
             row.pop("audio_clip", None)
             row.pop("words", None)
@@ -480,6 +475,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         # availability flags computed from them instead.
         data.pop("media", None)
         reference_clips = data.pop("references", None) or {}
+        current = policy_settings(effective)
         payload = {
             **data,
             "title": job.title,
@@ -487,37 +483,23 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "title_ref": cast_key(path=str(job.input_file)) if job.input_file else "",
             "show_ref": effective["dub"].get("cast_group", ""),
             "previews": previews,
-            "levels": frozen.get("levels") or {
-                k: effective["levels"].get(k) for k in
-                ("mode", "target_db", "strength", "max_boost_db", "max_cut_db")},
-            "verification_policy": frozen.get(
-                "verification_policy", effective["quality"].get("asr", "off")),
-            "candidate_limit": int(frozen.get(
-                "candidate_limit", effective["dub"].get("candidate_limit", 4))),
+            "levels": frozen.get("levels") or current["levels"],
+            "verification_policy": frozen.get("verification_policy",
+                                              current["verification_policy"]),
+            "candidate_limit": int(frozen.get("candidate_limit", current["candidate_limit"])),
             "references": sorted(reference_clips),
             "frozen_settings": bool(frozen),
-            # Plan 04. The timing owner and the coverage policy this run used,
+            # The timing owner and the coverage policy this run used,
             # the event ledger, and what the bed under the dub actually is.
-            "timing": frozen.get("timing") or {
-                k: effective["timing"].get(k) for k in
-                ("mode", "max_stretch", "min_stretch", "protect_pause",
-                 "anchor_tolerance", "repair")},
-            "coverage": frozen.get("coverage") or {
-                k: effective["coverage"].get(k) for k in
-                ("mode", "gain_db", "handle_ms", "fade_ms", "max_seconds",
-                 "leakage_check", "generate")},
+            "timing": frozen.get("timing") or current["timing"],
+            "coverage": frozen.get("coverage") or current["coverage"],
             "background": frozen.get("background") or {},
             "nonverbal": _redact_events(data),
             "coverage_summary": (data.get("metrics") or {}).get("coverage") or {},
             "conversation": (data.get("metrics") or {}).get("conversation") or {},
-            # Plan 05. Which acoustic space this run used and what it could
+            # Which acoustic space this run used and what it could
             # render here, plus what the exported file was measured to be.
-            "treatments": frozen.get("treatments") or {
-                **{k: effective["treatments"].get(k)
-                   for k in ("mode", "default", "intensity")},
-                "scenes": treatments.settings(dict(effective["treatments"]))["scenes"],
-                "catalogue": treatments.catalogue(),
-            },
+            "treatments": frozen.get("treatments") or current["treatments"],
             "treatment_summary": (data.get("metrics") or {}).get("treatments") or {},
             "treatment_edits": dict(data.get("treatment_edits") or {}),
             "envelope_edits": dict(data.get("envelope_edits") or {}),
@@ -540,7 +522,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 value = media.get(key)
                 if not value:
                     continue
-                path = _allowed_path(value)
+                path = allowed_path(config,value)
                 if path and path.is_file():
                     return path
             return None
@@ -567,7 +549,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         rebuilt.envelope_edits = {str(k): dict(v) for k, v
                                   in (data.get("envelope_edits") or {}).items()
                                   if isinstance(v, dict)}
-        work = _allowed_path(media["work"]) if media.get("work") else None
+        work = allowed_path(config,media["work"]) if media.get("work") else None
         rebuilt.artifacts_dir = work or config.work_dir / "previews"
         segments = []
         for row in data["segments"]:
@@ -576,7 +558,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                           speaker=row.get("speaker", "SPEAKER_00"),
                           text_translated=row.get("text_translated"))
             record = row.get("cue")
-            clip = _allowed_path(row["audio_clip"]) if row.get("audio_clip") else None
+            clip = allowed_path(config,row["audio_clip"]) if row.get("audio_clip") else None
             if clip and clip.is_file():
                 seg.audio_clip = clip
             if record:
@@ -593,7 +575,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         # Speakers exist here only to carry their clone reference, which is
         # what the "reference" preview plays.
         for label, clip in (data.get("references") or {}).items():
-            resolved_clip = _allowed_path(str(clip))
+            resolved_clip = allowed_path(config,str(clip))
             rebuilt.speakers[label] = Speaker(
                 label=label,
                 reference_clip=resolved_clip if resolved_clip and resolved_clip.is_file()
@@ -677,7 +659,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                (t["checks"] or {}).get("state") == "defective",
                                t["attempt"])),
             "selection": (seg.audio.selection.as_dict() if seg.audio.selection else None),
-            # Plan 04: how this line's internal timing was decided, what it
+            # How this line's internal timing was decided, what it
             # collides with, and which reactions sit inside the window.
             "phrasing": _phrasing(seg),
             "collisions": [
@@ -689,7 +671,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             "events": [_event_row(event, rebuilt)
                        for event in scene_preview.events_in(rebuilt, frame)],
             "timing_edit": rebuilt.timing_edits.get(seg.cue_id) or {},
-            # Plan 05: the space this line was played through, what it could
+            # The space this line was played through, what it could
             # not do here, and the findings a reviewer should listen for.
             "treatment": seg.treatment.as_dict(),
             "treatment_edit": rebuilt.treatment_edits.get(seg.cue_id) or {},
@@ -714,7 +696,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                              event=event)
         except scene_preview.PreviewError as exc:
             raise HTTPException(409, str(exc)) from exc
-        path = _allowed_path(str(resolved["path"]))
+        path = allowed_path(config,str(resolved["path"]))
         if path is None:
             raise ForbiddenError("preview media is outside the configured directories")
         if not path.is_file():
@@ -732,7 +714,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         job = store.get(job_id)
         if job is None:
             raise NotFoundError(f"no job with id {job_id}")
-        output = _allowed_path(job.output_file) if job.output_file else None
+        output = allowed_path(config,job.output_file) if job.output_file else None
         if output is None:
             return {"versions": [], "current": job.version_id}
         root = _versions_root(output)
@@ -741,7 +723,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             manifest = read_json(manifest_path)
             if not manifest.get("version_id"):
                 continue
-            media = _allowed_path(manifest.get("output") or "")
+            media = allowed_path(config,manifest.get("output") or "")
             rows.append({
                 "version_id": manifest["version_id"],
                 "name": manifest.get("name") or "Dub",
@@ -815,7 +797,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         for candidate in (version_id, other_id):
             if not re.fullmatch(r"[0-9a-f]{8,128}", candidate):
                 raise ForbiddenError("that is not a version id")
-        output = _allowed_path(job.output_file)
+        output = allowed_path(config,job.output_file)
         if output is None:
             raise ForbiddenError("output path is outside the configured directories")
         root = _versions_root(output)
@@ -844,11 +826,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             raise NotFoundError(f"no job with id {job_id}")
         if not re.fullmatch(r"[0-9a-f]{8,128}", version_id):
             raise ForbiddenError("that is not a version id")
-        output = _allowed_path(job.output_file)
+        output = allowed_path(config,job.output_file)
         if output is None:
             raise ForbiddenError("output path is outside the configured directories")
         manifest = read_json(_versions_root(output) / version_id / "version.json")
-        media = _allowed_path(manifest.get("output") or "")
+        media = allowed_path(config,manifest.get("output") or "")
         if media is None or not media.is_file():
             raise NotFoundError("that version's media is not on disk")
         return _ranged_response(media, request.headers.get("range"))
@@ -897,7 +879,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         row = next((s for s in data["segments"] if s["index"] == index), None)
         if not row or not row.get("audio_clip"):
             raise NotFoundError("No generated audio for this line")
-        path = _allowed_path(row["audio_clip"])
+        path = allowed_path(config,row["audio_clip"])
         if path is None:
             raise ForbiddenError("clip is outside the configured directories")
         if not path.is_file():
@@ -939,7 +921,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 # A local sound file. Checked against the same guard the
                 # download routes use: a coverage decision must not become a
                 # way to read an arbitrary path off this machine.
-                asset = _allowed_path(choice.asset)
+                asset = allowed_path(config,choice.asset)
                 if asset is None or not asset.is_file():
                     raise HTTPException(
                         422, "A replacement sound must be a file inside the configured "
@@ -1052,7 +1034,6 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         overrides = copy.deepcopy(original.overrides or {})
         overrides["dub.line_edits"] = edits
         overrides["dub.candidates"] = candidate_requests
-        overrides["dub.dry_run"] = False
         if coverage_events:
             overrides["coverage.events"] = coverage_events
         if coverage_assets:
@@ -1060,24 +1041,11 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         if treatment_lines:
             overrides["treatments.lines"] = treatment_lines
         rerun = _rerun_plan(body.edits, candidate_requests, body.events)
-        updated = store.add(
-            title=original.title,
-            source=original.source,
-            source_lang=original.source_lang,
-            target_lang=original.target_lang,
-            target_locale=original.target_locale,
-            input_file=original.input_file,
-            # Frozen rules are inherited unless the author explicitly asks for
-            # the updated knowledge (a saved correction only applies on request).
-            knowledge_snapshot=(
-                knowledge_snapshot(store.db)
-                if body.use_updated_knowledge
-                else original.knowledge_snapshot
-            ),
-            kind=original.kind,
-            overrides=overrides,
-        )
-        bus.publish("job", {"type": "queued", "job_id": updated.id, "title": updated.title})
+        # Frozen rules are inherited unless the author explicitly asks for
+        # the updated knowledge (a saved correction only applies on request).
+        updated = queue_rerender(
+            store, bus, original, overrides,
+            knowledge=knowledge_snapshot(store.db) if body.use_updated_knowledge else None)
         return {"ok": True, "job": asdict(updated), "rerun": rerun,
                 "previous_version": original.version_id}
 

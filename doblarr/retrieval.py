@@ -24,10 +24,8 @@ recommendation never becomes evidence for itself.
 
 from __future__ import annotations
 
-import json
 import math
 import time
-from pathlib import Path
 
 from . import features, templates
 from .artifacts import digest
@@ -317,19 +315,3 @@ def retrieval_choice(ranked: dict, min_margin: float = 0.03) -> dict:
             return {**preserve, "reason": "the leading templates are too close to call; "
                                           "keeping the take as generated"}
     return {**top, "reason": "highest retrieval score"}
-
-
-def save_index(path: Path, entries: list[dict]) -> None:
-    payload = {"namespace": namespace(), "version": INDEX_VERSION, "entries": entries}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".partial.json")
-    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    temp.replace(path)
-
-
-def load_index(path: Path) -> list[dict]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return payload.get("entries") or [] if payload.get("namespace") == namespace() else []

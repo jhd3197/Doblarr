@@ -31,6 +31,7 @@ from pathlib import Path
 from . import features, judge, retrieval, speaking, templates
 from .artifacts import digest, read_json, stamp
 from .cues import LEVELED, EnvelopeDecision
+from .fileio import write_json
 from .studio import records
 
 log = logging.getLogger("doblarr.adaptive")
@@ -52,10 +53,6 @@ def settings(options: dict | None) -> dict:
             "lines": {str(k): dict(v) for k, v in (values.get("lines") or {}).items()}}
 
 
-def _cache(path: Path) -> dict:
-    return read_json(path)
-
-
 def source_features(job, work: Path, cancel=None) -> dict[str, dict]:
     """The original performance of every line, from its source spans."""
     from .levels import dialogue_stream
@@ -74,7 +71,7 @@ def source_features(job, work: Path, cancel=None) -> dict[str, dict]:
 
     path = Path(work) / f"{work_stem(job)}.source-features.json"
     request = digest([features.FEATURES, stamp(stream), spans])[:16]
-    saved = _cache(path)
+    saved = read_json(path)
     if saved.get("request") == request:
         return saved["lines"]
     flags = [["contaminated"] if contaminated else [] for _ in spans]
@@ -91,7 +88,7 @@ def take_features(job, work: Path) -> dict[str, dict]:
     from .stages.common import work_stem
 
     path = Path(work) / f"{work_stem(job)}.take-features.json"
-    saved = _cache(path).get("lines") or {}
+    saved = read_json(path).get("lines") or {}
     out, changed = {}, False
     for seg in job.segments:
         upstream = seg.audio.upstream_of(LEVELED)
@@ -203,7 +200,7 @@ def recommend(job, config, *, db=None, work: Path, cancel=None, progress=None,
     # Model answers are kept by engine and packet: a resumed or repeated run
     # with the same evidence never asks the provider again.
     judge_cache_path = Path(work) / f"{work_stem(job)}.judge-cache.json"
-    judge_cache = _cache(judge_cache_path) if judge_engine.is_model else {}
+    judge_cache = read_json(judge_cache_path) if judge_engine.is_model else {}
     cache_hits = 0
     takes = take_features(job, work)
     profiles_by_character: dict[str, dict] = {}
@@ -290,9 +287,7 @@ def recommend(job, config, *, db=None, work: Path, cancel=None, progress=None,
         if progress is not None and n % 20 == 0:
             progress(n, len(job.segments), f"line {n}/{len(job.segments)}")
     if judge_engine.is_model and judge_cache:
-        temp = judge_cache_path.with_suffix(".partial.json")
-        temp.write_text(json.dumps(judge_cache, ensure_ascii=False, default=str), encoding="utf-8")
-        temp.replace(judge_cache_path)
+        write_json(judge_cache_path, judge_cache, indent=None, default=str)
     out = Path(work) / f"{work_stem(job)}.recommendations.json"
     payload = {"recommender": RECOMMENDER, "mode": mode, "judge": judge_engine.engine,
                "judge_is_model": judge_engine.is_model, "namespace": retrieval.namespace(),
@@ -366,9 +361,9 @@ def background(job, config, *, db=None, work: Path, cancel=None, scene_starts=No
                                             "sidechain": "used"}
         return None
     params = templates.resolve_params(template)["values"]
-    from .stages.fit_timing import _duration
+    from .ffmpeg import media_duration
 
-    duration = _duration(Path(bed), cancel=cancel)
+    duration = media_duration(Path(bed), cancel=cancel)
     if activity is None:
         activity = []
         takes = take_features(job, work)

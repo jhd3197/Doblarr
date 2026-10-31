@@ -6,7 +6,7 @@ from doblarr.voices import cast_key
 def setup_series(client, tmp_path):
     show = {
         "id": 10,
-        "tvdbId": 79214,
+        "tvdbId": 81234,
         "title": "Quiet Valley",
         "path": str(tmp_path),
         "originalLanguage": {"name": "Japanese"},
@@ -61,7 +61,7 @@ def test_episode_status_is_per_language_and_full_output(client_factory, tmp_path
         target_lang="es",
         status="done",
     )
-    spanish = client.get("/api/series/79214/episodes?target_lang=es").json()
+    spanish = client.get("/api/series/81234/episodes?target_lang=es").json()
     assert spanish["total"] == 4 and spanish["downloaded"] == 3 and spanish["dubbed"] == 0
     assert [e["status"] for e in spanish["episodes"]] == [
         "needs-dub",
@@ -69,7 +69,7 @@ def test_episode_status_is_per_language_and_full_output(client_factory, tmp_path
         "needs-dub",
         "not-downloaded",
     ]
-    english = client.get("/api/series/79214/episodes?target_lang=en").json()
+    english = client.get("/api/series/81234/episodes?target_lang=en").json()
     assert english["episodes"][0]["status"] == "audio-present"
     store.add(
         source="Sonarr",
@@ -81,9 +81,9 @@ def test_episode_status_is_per_language_and_full_output(client_factory, tmp_path
         kind="full",
         output_file=str(output),
     )
-    assert client.get("/api/series/79214/episodes?target_lang=es").json()["dubbed"] == 2
+    assert client.get("/api/series/81234/episodes?target_lang=es").json()["dubbed"] == 2
     output.unlink()
-    assert client.get("/api/series/79214/episodes?target_lang=es").json()["dubbed"] == 0
+    assert client.get("/api/series/81234/episodes?target_lang=es").json()["dubbed"] == 0
 
 
 def test_episode_queue_deduplicates_and_inherits_series_narrator(client_factory, tmp_path):
@@ -99,16 +99,16 @@ def test_episode_queue_deduplicates_and_inherits_series_narrator(client_factory,
         cast_key(path=str(second)), "Second", {"dub.narrator_voice": "episode-voice"}
     )
     request = {"episode_ids": [1, 2, 3, 4], "target_lang": "es"}
-    response = client.post("/api/series/79214/queue", json=request)
+    response = client.post("/api/series/81234/queue", json=request)
     assert response.status_code == 200
     assert len(response.json()["queued"]) == 2 and len(response.json()["skipped"]) == 2
     jobs = store.list()
     assert {j["input_file"] for j in jobs} == {str(first), str(second)}
     assert all(j["target_lang"] == "es" and not j["overrides"]["dub.dry_run"] for j in jobs)
     assert {j["overrides"]["dub.narrator_voice"] for j in jobs} == {"warm-voice", "episode-voice"}
-    assert not client.post("/api/series/79214/queue", json=request).json()["queued"]
+    assert not client.post("/api/series/81234/queue", json=request).json()["queued"]
     assert (
-        client.post("/api/series/79214/queue", json={**request, "episode_ids": [999]}).status_code
+        client.post("/api/series/81234/queue", json={**request, "episode_ids": [999]}).status_code
         == 422
     )
 
@@ -148,8 +148,8 @@ def test_show_voices_share_talk_across_episodes_and_link_named_voices(client_fac
         preset_voices=lambda e: [])
     assert client.put("/api/voice-catalog/traits", json={
         "key": "profile:vb-n", "display_name": "Kaito", "character": "KAITO",
-        "show": "tvdb-79214"}).status_code == 200
-    data = client.get("/api/series/79214/voices").json()
+        "show": "tvdb-81234"}).status_code == 200
+    data = client.get("/api/series/81234/voices").json()
     rows = {r["speaker"]: r for r in data["speakers"]}
     assert [r["speaker"] for r in data["speakers"]] == ["KAITO", "MINA", "TAMAKI"]
     assert rows["KAITO"]["seconds"] == 8 and rows["KAITO"]["share"] == 0.6667
@@ -175,7 +175,7 @@ def test_analysing_an_episode_again_runs_the_way_its_first_analysis_did(client_f
         "input": str(first), "source_lang": "ja", "target_lang": "es"}, "segments": []}),
         encoding="utf-8")
     # The page's dub goes to English; the analysis was made under es-419.
-    queued = client.post("/api/series/79214/queue", json={
+    queued = client.post("/api/series/81234/queue", json={
         "episode_ids": [1], "target_lang": "en", "kind": "analyze", "missing_only": False}).json()
     job = client.app.state.jobs.get(queued["queued"][0]["job_id"])
     assert (job.kind, job.source_lang, job.target_lang, job.target_locale) == (
@@ -185,10 +185,10 @@ def test_analysing_an_episode_again_runs_the_way_its_first_analysis_did(client_f
 def test_single_episode_matches_the_series_row(client_factory, tmp_path):
     client = client_factory()
     setup_series(client, tmp_path)
-    listed = client.get("/api/series/79214/episodes?target_lang=es").json()
-    one = client.get("/api/series/79214/episodes/2?target_lang=es").json()
+    listed = client.get("/api/series/81234/episodes?target_lang=es").json()
+    one = client.get("/api/series/81234/episodes/2?target_lang=es").json()
     assert one["episode"] == next(e for e in listed["episodes"] if e["id"] == 2)
     assert one["show"] == {"title": "Quiet Valley", "source": "Sonarr · Shows",
-                           "path": str(tmp_path), "original": "ja", "tvdb_id": 79214}
+                           "path": str(tmp_path), "original": "ja", "tvdb_id": 81234}
     assert one["target_lang"] == "es"
-    assert client.get("/api/series/79214/episodes/99?target_lang=es").status_code == 404
+    assert client.get("/api/series/81234/episodes/99?target_lang=es").status_code == 404

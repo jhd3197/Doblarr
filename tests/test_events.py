@@ -129,3 +129,40 @@ def test_log_records_stream_to_bus(sse_client):
     bus_handlers = [h for h in logging.getLogger().handlers
                     if isinstance(h, BusLogHandler)]
     assert len(bus_handlers) == 1 and bus_handlers[0].bus is app2.state.events
+
+
+def test_api_keys_in_access_log_urls_are_masked():
+    import logging
+
+    from doblarr.logging_setup import RedactApiKey
+
+    record = logging.LogRecord("uvicorn.access", logging.INFO, "", 0,
+                               '%s - "%s %s HTTP/%s" %d', ("127.0.0.1:5", "GET",
+                               "/api/events?api_key=s3cret&since=4", "1.1", 200), None)
+    RedactApiKey().filter(record)
+    assert "s3cret" not in record.getMessage()
+    assert "api_key=***&since=4" in record.getMessage()
+
+
+def test_a_burst_of_log_lines_keeps_job_events_in_the_replay():
+    bus = EventBus()
+    bus.publish("job", {"type": "started", "job_id": "j1"})
+    for i in range(200):
+        bus.publish("log", {"message": f"line {i}"})
+    q = bus.subscribe()
+    replayed = [q.get_nowait() for _ in range(q.qsize())]
+    assert replayed[0] == {**replayed[0], "topic": "job", "type": "started"}
+    assert sum(e["topic"] == "log" for e in replayed) == 50
+
+
+def test_an_event_loop_subscriber_gets_events_from_any_thread():
+    import asyncio
+    import threading
+
+    async def receive():
+        bus = EventBus()
+        q = bus.subscribe_async(replay=False)
+        threading.Thread(target=bus.publish, args=("job", {"type": "done"})).start()
+        return await q.get(timeout=2)
+
+    assert asyncio.run(receive())["type"] == "done"

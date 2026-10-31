@@ -242,7 +242,7 @@ def test_a_tease_keeps_its_own_namespace_and_still_measures_nothing_it_should_no
     job.script_is_target = True
     run_job(job, config, services=services)
     assert job.output_file.is_file()
-    assert ".tease" in str(job.artifacts_dir) or "tease" in job.output_file.name
+    assert job.source_audio.name.endswith(".tease.source.wav")
     assert all(s.audio.render(LEVELED) is not None for s in job.segments)
 
 
@@ -301,7 +301,7 @@ def test_a_version_one_snapshot_still_loads_and_gains_no_invented_evidence(tmp_p
         assert seg.measurement.state == "unknown" and seg.measurement.speech_db is None
         assert seg.level.outcome == "unknown"
         assert seg.verification.state == "unknown" and not seg.verification.checked
-        # Plan 04's records are equally empty: that run fitted whole clips and
+        # The phrase timing records are equally empty: that run fitted whole clips and
         # never planned a phrase, which is what an empty plan says.
         assert seg.phrasing.mode == "unknown" and not seg.phrasing.phrases
     # And it round-trips forward without inventing anything.

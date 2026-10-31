@@ -30,8 +30,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .artifacts import digest, read_json
+from .cues import apply_findings
 from .errors import JobCancelled
-from .stages.quality import apply_findings
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.prepass")
 
@@ -142,10 +143,7 @@ def analyze(job, translator, mode: str, *, work_dir: Path, budget=None, cancel=N
             return None
         result["key"] = key
         if result["state"] == "complete":
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            temp = cache.with_suffix(".partial.json")
-            temp.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
-            temp.replace(cache)
+            write_json(cache, result, indent=1)
     return result
 
 

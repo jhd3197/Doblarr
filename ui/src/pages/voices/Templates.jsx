@@ -4,6 +4,7 @@ import { queryClient } from '../../lib/queries.js';
 import { anchorsText } from '../../lib/knowledge.js';
 import { api, apiUrl } from '../../lib/api.js';
 import { safeGet } from '../../lib/storage.js';
+import { promptDialog } from '../../lib/dialogs.js';
 
 // The template catalogue: voice envelopes, background policies and presets.
 // A template is data; editing one saves a new version and saved dubs keep the
@@ -68,14 +69,14 @@ export function Templates({ view, setView }) {
       <label className="hint"><input type="checkbox" data-retired checked={retired}
         onChange={e => setView({ ...view, showRetired: e.target.checked })} /> Show retired</label>
       <p className="hint">Adding a curve is a data change: save it here and it is offered, previewed and rendered like the built-in ones. Gains are relative dB; 0.5 linear gain is about −6 dB.</p>
-      <table className="table"><thead><tr><th></th><th>Template</th><th>Shape or settings</th><th>Version</th><th></th></tr></thead><tbody>
+      <div className="table-wrap"><table className="table"><thead><tr><th></th><th>Template</th><th>Shape or settings</th><th>Version</th><th></th></tr></thead><tbody>
         {data.templates.map(t => (
           <tr key={t.id}><td><input type="checkbox" data-pick={t.id} aria-label={`Select ${t.title}`} checked={picked.has(t.id)} onChange={() => toggle(t.id)} /></td>
             <td><strong>{t.title}</strong>{t.retired && <> <span className="tag tag-outline">retired</span></>}<br /><span className="hint">{t.purpose || FAMILY[t.family] || ''}</span></td>
             <td className="hint">{anchorsText(t)}</td>
             <td className="m">v{t.version}<span className="hint"> · {t.provenance?.origin || ''}</span></td>
             <td><button type="button" className="btn btn-ghost" data-edit={t.id} onClick={() => setEditor({ template: t })}>Open</button></td></tr>
-        ))}</tbody></table>
+        ))}</tbody></table></div>
       <div className="studio-actions">
         <button type="button" className="btn btn-secondary" data-new onClick={() => setEditor({ template: blank(kind) })}>New template</button>
         <button type="button" className="btn btn-ghost" data-export onClick={exportPicked}>Export selected</button>
@@ -131,7 +132,7 @@ function Editor({ template, onSaved, onChanged }) {
     } catch (error) { setStatus(error.message); }
   }
   async function duplicate() {
-    const id = window.prompt('Id for the copy', `${template.id}-copy`);
+    const id = await promptDialog({ title: 'Duplicate template', label: 'Id for the copy', defaultValue: `${template.id}-copy` });
     if (!id) return;
     try { await api(`templates/${template.id}/duplicate`, { method: 'POST', json: { new_id: id } }); await onChanged(); }
     catch (error) { setStatus(error.message); }

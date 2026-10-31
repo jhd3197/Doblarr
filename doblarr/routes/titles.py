@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from ..clients.speech import SpeechError
-from ..config import Config
+from ..config import Config, check_overrides
 from ..errors import ConfigError
 from ..events import EventBus
 from ..knowledge import portable
@@ -180,6 +180,7 @@ def build_router(config: Config, db: Database, bus: EventBus, services: Services
     @api.put("/api/plan")
     def put_plan(body: PlanPutIn):
         k = body.resolve()
+        check_overrides(body.plan)
         db.save_plan(k, body.title, body.plan)
         bus.publish("plan", {"type": "updated", "key": k})
         return {"ok": True, "key": k, "overrides": len(body.plan)}

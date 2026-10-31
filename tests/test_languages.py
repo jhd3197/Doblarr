@@ -160,8 +160,8 @@ def test_discovery_maps_delegate_to_the_catalog():
 def test_mux_lang3_comes_from_the_catalog():
     from doblarr.stages import mux
 
-    assert mux._LANG3["fr"] == "fre"
-    assert mux._LANG3["zh"] == "chi"
+    assert mux.LANG3["fr"] == "fre"
+    assert mux.LANG3["zh"] == "chi"
 
 
 def test_resolver_prefers_explicit_matching_locale():
@@ -409,8 +409,8 @@ def test_review_telemetry_and_versions_record_the_locale(tmp_path):
     from doblarr.versions import preserve_version
 
     job = DubJob(tmp_path / "movie.mkv", "en", "es", target_locale="es-MX")
-    job.segments = [Segment(0, 1, 2, "Hello", text_translated="Hola", speaker="GINKO")]
-    job.speakers = {"GINKO": Speaker("GINKO")}
+    job.segments = [Segment(0, 1, 2, "Hello", text_translated="Hola", speaker="SORA")]
+    job.speakers = {"SORA": Speaker("SORA")}
     report = RunReport(job, tmp_path)
     assert report.data["language"] == "es"
     assert report.data["locale"] == "es-MX"
@@ -452,14 +452,14 @@ def test_series_routes_accept_and_deduplicate_regional_locales(client_factory, t
     first, second = setup_series(client, tmp_path)
     store = client.app.state.jobs
 
-    assert client.get("/api/series/79214/episodes?target_lang=es-419").status_code == 200
-    assert client.get("/api/series/79214/episodes?target_lang=es-VE").status_code == 200
-    canonical = client.get("/api/series/79214/episodes?target_lang=es-mx").json()
+    assert client.get("/api/series/81234/episodes?target_lang=es-419").status_code == 200
+    assert client.get("/api/series/81234/episodes?target_lang=es-VE").status_code == 200
+    canonical = client.get("/api/series/81234/episodes?target_lang=es-mx").json()
     assert canonical["target_lang"] == "es-MX"
-    assert client.get("/api/series/79214/episodes?target_lang=es-MXX").status_code == 422
+    assert client.get("/api/series/81234/episodes?target_lang=es-MXX").status_code == 422
 
     response = client.post(
-        "/api/series/79214/queue",
+        "/api/series/81234/queue",
         json={"episode_ids": [1, 2], "target_lang": "es-mx", "missing_only": False},
     )
     assert response.status_code == 200
@@ -468,13 +468,13 @@ def test_series_routes_accept_and_deduplicate_regional_locales(client_factory, t
     assert all(j["target_lang"] == "es" and j["target_locale"] == "es-MX" for j in jobs)
 
     again = client.post(
-        "/api/series/79214/queue",
+        "/api/series/81234/queue",
         json={"episode_ids": [1, 2], "target_lang": "es-MX", "missing_only": False},
     )
     assert again.json()["queued"] == []  # same locale, different case: no double-queue
 
     other = client.post(
-        "/api/series/79214/queue",
+        "/api/series/81234/queue",
         json={"episode_ids": [1], "target_lang": "es-VE", "missing_only": False},
     )
     assert len(other.json()["queued"]) == 1  # a different locale is a different dub

@@ -41,8 +41,8 @@ def _plex():
                  "Guid": [{"id": "tvdb://81234"}, {"id": "tmdb://40404"}],
                  "_leaves": [_leaf(1, "M:/Shows/HarborLights/Season 01/e1.mkv"),
                              _leaf(2, "M:/Shows/HarborLights/Season 01/e2.mkv")]}
-    in_sonarr = {"ratingKey": "100", "title": "Quiet Valley", "Guid": [{"id": "tvdb://79214"}],
-                 "_leaves": [_leaf(5, "M:/Shows/Mushi/e1.mkv")]}
+    in_sonarr = {"ratingKey": "100", "title": "Quiet Valley", "Guid": [{"id": "tvdb://70002"}],
+                 "_leaves": [_leaf(5, "M:/Shows/QuietValley/e1.mkv")]}
     movie = {"ratingKey": "4200", "title": "Harbor Lights: The Movie", "year": 2007,
              "Guid": [{"id": "tmdb://50505"}], "updatedAt": 3,
              "Media": [{"Part": [{"file": "M:/Movies/Harbor Lights Movie/movie.mkv"}]}]}
@@ -60,7 +60,7 @@ def _plex():
 
 def _scan(plex, tmp_path, **kw):
     return plex_library.scan_plex(
-        plex, ["en", "es"], known_tvdb={79214}, known_tmdb={42},
+        plex, ["en", "es"], known_tvdb={70002}, known_tmdb={42},
         known_paths={"M:\\Movies\\Known"},
         cache=plex_library.AudioCache(tmp_path / "plex-audio.json"), **kw)
 

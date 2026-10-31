@@ -20,6 +20,7 @@ from typing import Any
 
 from .. import hardware, speakers, voice_models
 from ..cues import SOURCE, Span, split_cue
+from ..errors import JobCancelled
 from ..model_pool import model as pooled_model
 from ..models import DubJob, Segment, Speaker
 from .common import DryRunPlan, dry, stage, work_stem
@@ -30,10 +31,18 @@ MODEL_ID = "pyannote/speaker-diarization-3.1"
 
 
 def _single_narrator(job: DubJob, reason: str) -> None:
+    """Give every line one voice, and record why so the job says so and a resume retries."""
     job.speakers = {"NARRATOR": Speaker(label="NARRATOR")}
     for seg in job.segments:
         seg.speaker = "NARRATOR"
+    job.metrics["diarize"] = {"method": "narrator", "reason": reason}
     log.warning("diarize: %s — falling back to a single narrator voice", reason)
+
+
+def narrator_fallback(job: DubJob) -> str | None:
+    """Why this job's lines all share one voice, or None when diarization ran."""
+    found = job.metrics.get("diarize") or {}
+    return found.get("reason") if found.get("method") == "narrator" else None
 
 
 def _load_pipeline(token: str, device: hardware.Device | None = None):
@@ -194,7 +203,7 @@ def _local(job: DubJob, audio, device, why: str, voices: dict | None = None) -> 
 @stage("diarize")
 def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
         compute: dict | None = None, method: str = "auto",
-        voices: dict | None = None) -> DryRunPlan | None:
+        voices: dict | None = None, cancel=None) -> DryRunPlan | None:
     if not enabled:
         if job.speakers:
             # Turning diarization off means "do not run the model", not "throw
@@ -215,9 +224,15 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
         job.speakers = {"SPEAKER_00": Speaker(label="SPEAKER_00")}
         return dry(f"would run pyannote diarization on {job.vocals or job.source_audio}")
 
-    if job.speakers:
+    if job.speakers and narrator_fallback(job) is None:
         log.info("diarize: speakers already assigned (restored script) — skipping")
         return None
+    if job.speakers:
+        # The cached cast is a fallback from a run that could not diarize
+        # (out of memory, offline Hub); the cause may be gone, so try again.
+        log.info("diarize: retrying after an earlier narrator fallback")
+        job.speakers = {}
+        job.metrics.pop("diarize", None)
 
     token = os.environ.get("HF_TOKEN")
     if method == "local" or (method == "auto" and not token):
@@ -253,7 +268,6 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
             diarization = pipe(str(audio))
             if hasattr(diarization, "speaker_diarization"):
                 diarization = diarization.speaker_diarization
-            del pipe
     except Exception as exc:  # noqa: BLE001 — gated model, bad token, download failure
         if method == "auto" and _local(job, audio, device, f"pyannote unavailable: {exc}",
                                          voices):
@@ -265,6 +279,9 @@ def run(job: DubJob, enabled: bool = True, dry_run: bool = False,
         )
         return None
 
+    if cancel is not None and cancel.is_set():
+        # pyannote cannot be interrupted mid-pass; stop as soon as it returns.
+        raise JobCancelled("cancelled during diarization")
     _assign_speakers(job, diarization)
     log.info("diarize -> %d speakers (%s)", len(job.speakers), ", ".join(job.speakers))
     return None

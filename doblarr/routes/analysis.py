@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import threading
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -50,12 +49,18 @@ from .. import (
     voice_models,
     voice_tags,
 )
+from ..ffmpeg import run_ffmpeg, run_ffmpeg_bytes
+from ..fileio import inside, read_json
 from ..studio import records
 
 MAX_CLIP = 30.0
 CLIP_CACHE = 400          # watched clips kept on disk, newest first
 VIDEO_HEIGHT = 540        # clips are for recognising who talks, not for archiving
 FRAME_CACHE = 5000        # stills of lines kept on disk (a few KB each)
+# Seconds a request may wait on ffmpeg before it answers with an error; a
+# stalled network share must not hold a server thread forever.
+CLIP_TIMEOUT = 120.0
+FRAME_TIMEOUT = 30.0
 
 
 class NamesIn(BaseModel):
@@ -257,15 +262,6 @@ def sidecar(script: Path, suffix: str) -> Path | None:
     return None
 
 
-def _read(path: Path | None) -> dict:
-    if path is None:
-        return {}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
-    except (OSError, ValueError):
-        return {}
-
 
 def build_router(config, store) -> APIRouter:
     api = APIRouter()
@@ -293,9 +289,9 @@ def build_router(config, store) -> APIRouter:
         return script
 
     def language_of(script: Path) -> str:
-        data = _read(script)
+        data = read_json(script)
         return str((data.get("identity") or {}).get("source_lang")
-                   or _read(sidecar(script, "analysis.json")).get("source_lang") or "")
+                   or read_json(sidecar(script, "analysis.json")).get("source_lang") or "")
 
     def target_of_script(script: Path, data: dict) -> str:
         """The language a script was translated (or is to be dubbed) into."""
@@ -416,7 +412,7 @@ def build_router(config, store) -> APIRouter:
         """Who is in each group changed: baselines, memory and snapshot follow."""
         refreshed = speaker_memory.refresh_baselines(script)
         language = language_of(script)
-        data = _read(script)
+        data = read_json(script)
         labels = [[(s.get("cue") or {}).get("cue_id"), s.get("speaker")]
                   for s in data.get("segments") or []]
         snapshots.record_stage(db, ident["revision_id"], language, "diarize", "done",
@@ -455,12 +451,12 @@ def build_router(config, store) -> APIRouter:
         if script is None:
             return {"analysed": False, "job": active and {k: active.get(k) for k in (
                 "id", "status", "stage", "progress")}}
-        data = _read(script)
-        extra = _read(sidecar(script, "analysis.json"))
-        feats = _read(sidecar(script, "features.json"))
-        felt = {row.get("cue"): row for row in _read(sidecar(script, "emotion.json")).get(
+        data = read_json(script)
+        extra = read_json(sidecar(script, "analysis.json"))
+        feats = read_json(sidecar(script, "features.json"))
+        felt = {row.get("cue"): row for row in read_json(sidecar(script, "emotion.json")).get(
             "lines") or []}
-        reading = _read(sidecar(script, "reader.json"))
+        reading = read_json(sidecar(script, "reader.json"))
         read_lines = {row.get("cue"): row for row in reading.get("lines") or []}
         by_cue = {row["cue"]: row for row in extra.get("lines") or []}
         feature_rows = {row.get("cue"): row for row in feats.get("lines") or []}
@@ -594,7 +590,7 @@ def build_router(config, store) -> APIRouter:
                                                               "cluster")}
         labels = set(clean) | set(current)
         if script is not None:
-            labels |= {str(s.get("speaker")) for s in _read(script).get("segments") or []}
+            labels |= {str(s.get("speaker")) for s in read_json(script).get("segments") or []}
         for label in sorted(labels):
             if not label.startswith("SPEAKER_"):
                 continue
@@ -632,7 +628,7 @@ def build_router(config, store) -> APIRouter:
             raise HTTPException(409, "This episode is being analysed; wait for it to finish")
         ident = who(path)
         script = locate(path, ident)
-        data = _read(script)
+        data = read_json(script)
         known_cues = {str((seg.get("cue") or {}).get("cue_id")) for seg in data.get("segments")
                       or []}
         missing = [c for c in cues if c not in known_cues]
@@ -694,7 +690,7 @@ def build_router(config, store) -> APIRouter:
         if not show:
             raise HTTPException(409, "This episode is not linked to a show yet")
         script = find(body.path, ident)[0]
-        locale = body.locale or (target_of_script(script, _read(script)) if script else "")
+        locale = body.locale or (target_of_script(script, read_json(script)) if script else "")
         if not locale:
             raise HTTPException(422, "Which language is this wording for?")
         source = body.source.strip()
@@ -706,7 +702,7 @@ def build_router(config, store) -> APIRouter:
                 knowledge_store.save_entry(db, replace(entry, status="retired", revision=1))
             return {"term": source, "rendering": None}
         # The wording the subtitles say, not the original audio's language.
-        said_in = (str(_read(script).get("script_lang") or "") or None) if script else None
+        said_in = (str(read_json(script).get("script_lang") or "") or None) if script else None
         if same:
             entry = knowledge_store.save_entry(db, replace(
                 same[0], phrase=rendering, status="reviewed", locale=locale,
@@ -746,7 +742,7 @@ def build_router(config, store) -> APIRouter:
         return {"unlocked": body.cue}
 
     def regroup_tracks(script: Path, vocals: Path, wanted, ident: dict | None):
-        identity_data = _read(script).get("identity") or {}
+        identity_data = read_json(script).get("identity") or {}
         source = Path(str(identity_data.get("input") or ""))
         try:
             found = speakers.other_tracks(
@@ -819,13 +815,13 @@ def build_router(config, store) -> APIRouter:
                     "names": names, "tracks": [stream for stream, _ in tracks],
                     "track_evidence": evidence, "identity": None}
         cues = [str((seg.get("cue") or {}).get("cue_id"))
-                for seg in _read(script).get("segments") or []]
+                for seg in read_json(script).get("segments") or []]
         speaker_memory.carry_identities(db, ident, before, after, seconds, cues)
         relocked = speaker_memory.reapply_line_locks(db, ident, script, grouped)
         speaker_memory.name_from_dialogue(db, ident, [
             {"speaker": seg.get("speaker"), "start": seg["start"], "end": seg["end"],
              "text": seg.get("text_src") or "", "cue": (seg.get("cue") or {}).get("cue_id")}
-            for seg in _read(script).get("segments") or []])
+            for seg in read_json(script).get("segments") or []])
         speaker_memory.name_from_memory(db, ident, grouped, language_of(script))
         changed = membership_changed(ident, script, "regrouped")
         names = load_names(db, body.path, ident)
@@ -879,9 +875,7 @@ def build_router(config, store) -> APIRouter:
 
         job = store.add(title=f"Analysis · {Path(body.path).name}", source="analysis",
                         **earlier, kind="analyze", overrides=overrides,
-                        show_ref=(f"series:{ident['series_id'].rsplit(':', 1)[-1]}"
-                                  if ident and str(ident.get("series_id", "")).startswith(
-                                      "show:tvdb:") else ""))
+                        show_ref=show_ref_of(ident))
         return {"job_id": job.id, "stages": body.stages}
 
     # ------------------------------------------------------------- visual
@@ -891,7 +885,7 @@ def build_router(config, store) -> APIRouter:
 
         from ..models import Segment
 
-        data = _read(script)
+        data = read_json(script)
         segments = []
         for seg in data.get("segments") or []:
             row = Segment(int(seg.get("index") or 0), float(seg["start"]), float(seg["end"]),
@@ -917,7 +911,7 @@ def build_router(config, store) -> APIRouter:
         status = vision_capability.status(config)
         if found is None:
             return {"analysed": False, "capability": status}
-        data = _read(found)
+        data = read_json(found)
         names = character_names(ident["series_id"]) if ident and ident.get("series_id") \
             else {}
         tracks_out = []
@@ -952,14 +946,12 @@ def build_router(config, store) -> APIRouter:
             raise HTTPException(422, "not a thumbnail name")
         script = locate(path)
         found = visual_file(script)
-        crops = Path(str((_read(found).get("faces") or {}).get("crops") or "")) if found \
+        crops = Path(str((read_json(found).get("faces") or {}).get("crops") or "")) if found \
             else None
         if crops is None or not (crops / name).is_file():
             raise HTTPException(404, "no such thumbnail")
-        try:
-            (crops / name).resolve().relative_to(Path(config.work_dir).resolve())
-        except ValueError as exc:
-            raise HTTPException(403, "outside the work folder") from exc
+        if not inside(crops / name, [config.work_dir]):
+            raise HTTPException(403, "outside the work folder")
         return FileResponse(crops / name, media_type="image/jpeg",
                             headers={"Cache-Control": "private, max-age=86400"})
 
@@ -976,7 +968,7 @@ def build_router(config, store) -> APIRouter:
         found = visual_file(script)
         if found is None:
             raise HTTPException(404, "this episode has no visual analysis yet")
-        data = _read(found)
+        data = read_json(found)
         current = {t["id"]: t for t in data.get("tracks") or []}
         unknown = [t for t in [*body.assign, *body.split, *[x for p in body.merge for x in p]]
                    if t not in current]
@@ -1099,18 +1091,16 @@ def build_router(config, store) -> APIRouter:
             temp = cache / f"{key}.{threading.get_ident()}.part"
             mapping = ["-map", "0:v:0"] + (["-map", f"0:{audio}"] if audio is not None
                                            else ["-map", "0:a:0?"])
-            result = subprocess.run(
-                ["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(source),
-                 "-t", f"{end - start:.3f}", *mapping, "-sn",
-                 "-vf", f"scale=-2:'min({VIDEO_HEIGHT},ih)'", "-c:v", "libx264",
-                 "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
-                 "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart",
-                 "-f", "mp4", str(temp)], capture_output=True, check=False)
-            if result.returncode or not temp.is_file():
+            try:
+                run_ffmpeg(["-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(source),
+                            "-t", f"{end - start:.3f}", *mapping, "-sn",
+                            "-vf", f"scale=-2:'min({VIDEO_HEIGHT},ih)'", "-c:v", "libx264",
+                            "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
+                            "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart",
+                            "-f", "mp4", str(temp)], timeout=CLIP_TIMEOUT)
+                temp.replace(clip)
+            finally:
                 temp.unlink(missing_ok=True)
-                raise HTTPException(500, "could not cut the clip: "
-                                    + result.stderr.decode(errors="replace")[-300:])
-            temp.replace(clip)
             with cutting:
                 kept = sorted(cache.glob("*.mp4"), key=lambda f: f.stat().st_mtime,
                               reverse=True)
@@ -1132,16 +1122,14 @@ def build_router(config, store) -> APIRouter:
         if not still.is_file():
             cache.mkdir(parents=True, exist_ok=True)
             temp = cache / f"{key}.{threading.get_ident()}.part"
-            result = subprocess.run(
-                ["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(source),
-                 "-frames:v", "1", "-an", "-sn", "-vf", f"scale=-2:{height}", "-q:v", "4",
-                 "-f", "image2", "-c:v", "mjpeg", str(temp)], capture_output=True,
-                check=False)
-            if result.returncode or not temp.is_file():
+            try:
+                run_ffmpeg(["-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(source),
+                            "-frames:v", "1", "-an", "-sn", "-vf", f"scale=-2:{height}",
+                            "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", str(temp)],
+                           timeout=FRAME_TIMEOUT)
+                temp.replace(still)
+            finally:
                 temp.unlink(missing_ok=True)
-                raise HTTPException(500, "could not read the frame: "
-                                    + result.stderr.decode(errors="replace")[-300:])
-            temp.replace(still)
             with cutting:
                 kept = sorted(cache.glob("*.jpg"), key=lambda f: f.stat().st_mtime,
                               reverse=True)
@@ -1161,14 +1149,12 @@ def build_router(config, store) -> APIRouter:
                   else sidecar(script, "source.wav"))
         if source is None:
             raise HTTPException(404, "the analysed audio is no longer on disk")
-        try:
-            source.resolve().relative_to(Path(config.work_dir).resolve())
-        except ValueError as exc:
-            raise HTTPException(403, "outside the work folder") from exc
-        audio = subprocess.run(
-            ["ffmpeg", "-v", "error", "-ss", f"{max(0.0, start - 0.15):.3f}",
+        if not inside(source, [config.work_dir]):
+            raise HTTPException(403, "outside the work folder")
+        audio = run_ffmpeg_bytes(
+            ["-v", "error", "-ss", f"{max(0.0, start - 0.15):.3f}",
              "-t", f"{end - start + 0.3:.3f}", "-i", str(source), "-ac", "1", "-ar", "24000",
-             "-f", "wav", "-"], capture_output=True, check=False).stdout
+             "-f", "wav", "-"], timeout=FRAME_TIMEOUT)
         if not audio:
             raise HTTPException(500, f"could not cut {stem}")
         return Response(content=audio, media_type="audio/wav")

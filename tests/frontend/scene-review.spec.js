@@ -45,7 +45,7 @@ const REVIEW = {
   },
   segments: [
     {
-      index: 0, start: 192.1, end: 194.7, speaker: 'Ginko', text_src: 'Someone is coming.',
+      index: 0, start: 192.1, end: 194.7, speaker: 'Sora', text_src: 'Someone is coming.',
       text_translated: 'Alguien viene hacia nosotros.', has_audio: true,
       issues: ['text_mismatch'],
       cue: {
@@ -69,7 +69,7 @@ const REVIEW = {
       },
     },
     {
-      index: 1, start: 197, end: 199.4, speaker: 'Shinra', text_src: 'I see.',
+      index: 1, start: 197, end: 199.4, speaker: 'Tomoe', text_src: 'I see.',
       text_translated: 'Entiendo.', has_audio: true, issues: [],
       cue: { cue_id: 'cue-bbb', source: { spans: [] }, preparation: { decision: 'kept' },
         intent: {}, level: {}, measurement: {}, verification: {},
@@ -369,7 +369,7 @@ test('the window can be widened and the repair history is visible',
   });
 
 
-// -- Plan 04: phrase timing and coverage -----------------------------------
+// -- phrase timing and coverage -----------------------------------
 
 test('the timing panel shows the phrases, the kept pause and the anchor that missed',
   async ({ page }) => {
@@ -495,7 +495,7 @@ test('whole-clip fitting says so instead of showing an empty phrase list',
   });
 
 
-// --- scene space and device treatments (Plan 05) ---------------------------
+// --- scene space and device treatments ---------------------------
 
 test('the space panel says which preset played, where the choice came from, and '
   + 'what it cost in level', async ({ page }) => {
@@ -601,7 +601,7 @@ test('a treatment finding is offered for listening rather than corrected away',
     await expect(page.locator('.scene-space')).toContainText('the earlier tail is kept');
   });
 
-// --- the exported file (Plan 05) -------------------------------------------
+// --- the exported file -------------------------------------------
 
 test('the export measurement is shown beside the review counts and never as approval',
   async ({ page }) => {

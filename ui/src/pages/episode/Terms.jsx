@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api.js';
+import { formatTime } from '../../lib/media.js';
 
 // The names and terms an episode keeps saying (doblarr/key_terms.py): how this
 // dub says each one, how the official dub in the same language says it when
@@ -7,7 +8,6 @@ import { api } from '../../lib/api.js';
 // the show's: every later translation uses it, and a line that says the term
 // another way is rewritten.
 
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function drifts(row) {
   const ours = row.ours;
@@ -76,7 +76,7 @@ export function Terms({ data, path, reload, say }) {
               </> : <button type="button" className="btn btn-ghost" data-term-save={n} onClick={() => { const v = valueOf(row, n).trim(); if (v) keep(row.term, v); }}>Keep</button>}
             </>}</span>
             <div className="terms-lines" data-term-detail={n} hidden={!open[n]}>{row.lines.map(l => (
-              <p key={l.cue}><span className="m">{clock(l.start || 0)}</span> {l.text}<br /><span className="terms-ours">{l.ours || '—'}</span>
+              <p key={l.cue}><span className="m">{formatTime(l.start || 0)}</span> {l.text}<br /><span className="terms-ours">{l.ours || '—'}</span>
                 {official && <><br /><span className="hint">{official}: {l.dub || '—'}</span></>}</p>
             ))}</div>
           </div>

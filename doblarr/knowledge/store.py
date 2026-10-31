@@ -178,27 +178,6 @@ def latest_realizations(db: Database, installed_pins: dict | None = None) -> lis
 # -- installed packs ---------------------------------------------------------
 
 
-def save_pack_release(
-    db: Database,
-    *,
-    pack_id: str,
-    release: str,
-    name: str,
-    manifest: dict,
-    content_hash: str,
-    source: str,
-    distribution: str,
-) -> None:
-    db.execute(
-        "INSERT INTO knowledge_packs (pack_id, release, name, manifest, content_hash,"
-        " source, distribution, active, installed_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        (
-            pack_id, release, name, json.dumps(manifest, ensure_ascii=False, sort_keys=True),
-            content_hash, source, distribution, 0, _now(),
-        ),
-    )
-
-
 def pack_releases(db: Database, pack_id: str | None = None) -> list[dict]:
     if pack_id:
         rows = db.query(

@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { SOURCES } from '../../lib/scene-player.js';
+import { formatTime } from '../../lib/media.js';
+import { initialForm, spaceShown } from './scene-collect.js';
 
 // The scene panel inside the review editor: hear the exchange, switch between
 // the original and the dub at the same position, inspect a finding, choose a
@@ -17,15 +19,14 @@ const MODES = [
 const DISPOSITIONS = ['open', 'accepted', 'fixed'];
 const DECISIONS = ['unresolved', 'retain', 'replace', 'omit', 'covered'];
 
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const seconds = s => (s == null ? '—' : `${Number(s).toFixed(2)}s`);
 
 function windowNote(scene) {
   if (!scene) return '';
   const cues = scene.cues?.length || 0;
   const span = scene.target;
-  const source = scene.source ? ` · original ${clock(scene.source.start)}–${clock(scene.source.end)}` : '';
-  return `${cues} line${cues === 1 ? '' : 's'} · ${clock(span.start)}–${clock(span.end)}`
+  const source = scene.source ? ` · original ${formatTime(scene.source.start)}–${formatTime(scene.source.end)}` : '';
+  return `${cues} line${cues === 1 ? '' : 's'} · ${formatTime(span.start)}–${formatTime(span.end)}`
     + `${source} · window grouped by silence, not a detected scene cut`;
 }
 
@@ -169,14 +170,15 @@ function evidence(finding) {
   return [JSON.stringify(data, null, 1), ...diff].join('\n');
 }
 
-function Takes({ scene, onPlay }) {
+function Takes({ scene, form, update, onPlay }) {
   const rows = scene?.takes || [];
   if (!rows.length) return null;
   return (
     <fieldset className="scene-takes"><legend>Takes</legend>
       {rows.map(t => (
         <label key={t.take_id} className={`scene-take ${t.available ? '' : 'is-missing'}`}>
-          <input type="radio" name="sceneTake" value={t.take_id} defaultChecked={t.selected} disabled={!t.available} />
+          <input type="radio" name="sceneTake" value={t.take_id} checked={form.take === t.take_id}
+            disabled={!t.available} onChange={() => update({ take: t.take_id })} />
           <span><strong>{t.origin === 'candidate' ? 'Alternative' : 'Original take'}</strong>{' '}
             <span className="m">{t.take_id}</span>{' '}
             <span className="hint">{takeNote(t)}</span></span>
@@ -189,29 +191,33 @@ function Takes({ scene, onPlay }) {
   );
 }
 
-function Direction({ cue, data }) {
+function Direction({ cue, data, form, update }) {
   const intent = cue.intent || {};
   const level = cue.level || {};
   const measurement = cue.measurement || {};
   return (
     <fieldset className="scene-direction"><legend>Performance</legend>
       <label className="review-field">Speech mode
-        <select id="sceneMode" className="input" defaultValue={intent.mode || 'unknown'}>
+        <select id="sceneMode" className="input" value={form.mode} onChange={e => update({ mode: e.target.value })}>
           {MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label>
       <label className="review-field">Delivery traits
-        <input id="sceneTraits" className="input" maxLength={200} defaultValue={(intent.traits || []).join(', ')}
+        <input id="sceneTraits" className="input" maxLength={200} value={form.traits}
+          onChange={e => update({ traits: e.target.value })}
           placeholder="urgent, restrained" /></label>
       <label className="review-field">Line direction
-        <input id="sceneDirection" className="input" maxLength={500} defaultValue={intent.direction || ''}
+        <input id="sceneDirection" className="input" maxLength={500} value={form.direction}
+          onChange={e => update({ direction: e.target.value })}
           placeholder="hold back, almost out of breath" /></label>
       <p className="hint">{intentNote(intent)}</p>
       <div className="review-timing">
         <label className="review-field">Gain (dB)
           <input id="sceneGain" className="input m" type="number" step="0.5" min="-24" max="24"
-            defaultValue={cue.review_gain ?? ''} placeholder={String(level.applied_db ?? 0)} /></label>
+            value={form.gain} onChange={e => update({ gain: e.target.value })}
+            placeholder={String(level.applied_db ?? 0)} /></label>
         <label className="review-field">Alternative takes
-          <input id="sceneCandidates" className="input m" type="number" min="0" max={data?.candidate_limit ?? 4} defaultValue="0" /></label>
+          <input id="sceneCandidates" className="input m" type="number" min="0" max={data?.candidate_limit ?? 4}
+            value={form.candidates} onChange={e => update({ candidates: e.target.value })} /></label>
       </div>
       <p className="hint">{levelNote(level, measurement)}</p>
     </fieldset>
@@ -220,7 +226,7 @@ function Direction({ cue, data }) {
 
 // A reviewer's unit of work here is a phrase and a pause, not a filter graph.
 // Every control re-renders the take that already exists; none generates speech.
-function Timing({ scene, row, state }) {
+function Timing({ scene, form, update }) {
   const plan = scene?.phrasing;
   if (!plan || plan.mode === 'unknown') return null;
   if (plan.mode === 'whole') {
@@ -231,12 +237,8 @@ function Timing({ scene, row, state }) {
       </fieldset>
     );
   }
-  const edit = state.pendingTiming.get(row.index) || scene?.timing_edit || {};
-  const anchors = new Map((edit.anchors || []).map(a => [a.phrase || '', a]));
-  const pauses = new Map(Object.entries(edit.pauses || {}));
   const inner = (plan.pauses || []).filter(p => p.origin !== 'boundary');
   const rows = scene?.collisions || [];
-  const accepted = edit.overlap != null ? !!edit.overlap : rows.some(r => r.accepted && !r.accepted.stale);
   return (
     <fieldset className="scene-timing"><legend>Timing</legend>
       <p className="hint">{timingNote(plan)}</p>
@@ -250,7 +252,8 @@ function Timing({ scene, row, state }) {
             <span>{p.text || `phrase ${p.order + 1}`}</span>{' '}
             <label className="m">Anchor at{' '}
               <input type="number" className="input m scene-anchor" step="0.05" min="0"
-                max={Number(plan.slot ?? 0).toFixed(2)} defaultValue={anchors.get(p.phrase_id)?.at ?? ''}
+                max={Number(plan.slot ?? 0).toFixed(2)} value={form.anchors[p.phrase_id] ?? ''}
+                onChange={e => update({ anchors: { ...form.anchors, [p.phrase_id]: e.target.value } })}
                 placeholder={p.at == null ? '' : Number(p.at).toFixed(2)}
                 aria-label="Anchor this phrase, seconds after the line starts" /></label>{' '}
             <AnchorNote plan={plan} phraseId={p.phrase_id} />
@@ -262,12 +265,14 @@ function Timing({ scene, row, state }) {
           {inner.map(p => (
             <label key={p.pause_id} className="scene-pause">
               <input type="checkbox" className="scene-protect" data-pause={p.pause_id}
-                defaultChecked={pauses.get(p.pause_id)?.protected ?? p.protected} /> {pauseNote(p)}
+                checked={!!form.protect[p.pause_id]}
+                onChange={e => update({ protect: { ...form.protect, [p.pause_id]: e.target.checked } })} /> {pauseNote(p)}
             </label>
           ))}
         </div>
       )}
-      <label><input type="checkbox" id="sceneBypass" defaultChecked={!!edit.bypass} /> Leave this line&apos;s timing exactly as generated</label>
+      <label><input type="checkbox" id="sceneBypass" checked={form.bypassTiming}
+        onChange={e => update({ bypassTiming: e.target.checked })} /> Leave this line&apos;s timing exactly as generated</label>
       {rows.length > 0 && (
         <div className="scene-collisions">
           {rows.map((r, i) => (
@@ -276,7 +281,8 @@ function Timing({ scene, row, state }) {
               <span className="hint">{r.note || ''}</span>
               {r.accepted?.stale && <span className="review-marker">earlier decision — the audio has changed</span>}</p>
           ))}
-          <label><input type="checkbox" id="sceneOverlap" defaultChecked={accepted} /> This overlap is deliberate</label>
+          <label><input type="checkbox" id="sceneOverlap" checked={form.overlap}
+            onChange={e => update({ overlap: e.target.checked })} /> This overlap is deliberate</label>
         </div>
       )}
       <p className="hint">Changing an anchor or a pause re-renders this line from the take it already has. No new speech is generated.</p>
@@ -287,11 +293,11 @@ function Timing({ scene, row, state }) {
 // "Where does this line sound like it is", not a filter graph. A preset this
 // FFmpeg build cannot render is shown as unavailable rather than offered and
 // then refused.
-function Space({ scene, row, data, state }) {
+function Space({ scene, data, form, update }) {
   const treatment = scene?.treatment;
   if (!treatment) return null;
   const policy = data?.treatments || {};
-  if (policy.mode !== 'on' && treatment.outcome !== 'applied') {
+  if (!spaceShown(scene, data)) {
     return (
       <fieldset className="scene-space"><legend>Space</legend>
         <p className="hint">Acoustic treatment is off for this run, so every line is placed dry. Turn it on in settings
@@ -300,17 +306,15 @@ function Space({ scene, row, data, state }) {
     );
   }
   const catalogue = policy.catalogue || [];
-  const edit = state.pendingSpace.get(row.index) || scene?.treatment_edit || {};
-  const chosen = edit.bypass ? 'dry' : (edit.preset || treatment.preset || 'dry');
-  const intensity = edit.intensity ?? treatment.intensity ?? policy.intensity ?? 1;
-  const options = catalogue.length ? catalogue : [{ preset: chosen, capability: 'unknown' }];
+  const options = catalogue.length ? catalogue : [{ preset: form.preset, capability: 'unknown' }];
   const findings = scene?.treatment_findings || [];
   return (
     <fieldset className="scene-space"><legend>Space</legend>
       <p className="hint">{spaceNote(treatment)}</p>
       <div className="review-options">
         <label className="review-field">Preset
-          <select id="sceneTreatment" className="input" defaultValue={chosen}>
+          <select id="sceneTreatment" className="input" value={form.preset}
+            onChange={e => update({ preset: e.target.value })}>
             {options.map(p => (
               <option key={p.preset} value={p.preset} disabled={p.capability === 'unsupported'}>
                 {p.preset}{p.capability === 'unsupported' ? ` — unavailable (needs ${(p.missing || []).join(', ')})` : ''}
@@ -319,9 +323,10 @@ function Space({ scene, row, data, state }) {
           </select></label>
         <label className="review-field">Intensity
           <input id="sceneIntensity" className="input m" type="number" step="0.1" min="0" max="1"
-            defaultValue={Number(intensity).toFixed(1)} /></label>
+            value={form.intensity} onChange={e => update({ intensity: e.target.value })} /></label>
       </div>
-      <label><input type="checkbox" id="sceneNoSpace" defaultChecked={!!edit.bypass} /> Leave this line dry whatever the scene says</label>
+      <label><input type="checkbox" id="sceneNoSpace" checked={form.dry}
+        onChange={e => update({ dry: e.target.checked })} /> Leave this line dry whatever the scene says</label>
       {findings.length > 0 && (
         <ul className="scene-conflicts">{findings.map((f, i) => <li key={i}>{f.code.replaceAll('_', ' ')}: {f.note || ''}</li>)}</ul>
       )}
@@ -338,11 +343,13 @@ function Space({ scene, row, data, state }) {
 
 // A note or a verdict about a reaction is new information about this run, so
 // it goes to the decisions sidecar exactly as a cue verdict does.
-function Coverage({ scene, jobId, data, onPlay, onDecision }) {
-  const box = useRef(null);
+function Coverage({ scene, jobId, data, form, update, onPlay, onDecision }) {
+  const rows = scene?.events || [];
+  const [note, setNote] = useState(rows[0]?.decision?.note || '');
+  const [verdicts, setVerdicts] = useState(() => Object.fromEntries(rows.flatMap(e =>
+    (e.findings || []).map(f => [`${e.event_id}/${f.finding_id}`, f.disposition]))));
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
-  const rows = scene?.events || [];
   const bed = scene?.available?.bed_note || '';
   if (!rows.length) {
     return (
@@ -352,16 +359,15 @@ function Coverage({ scene, jobId, data, onPlay, onDecision }) {
     );
   }
   async function save() {
-    const note = box.current.querySelector('#sceneCoverageNote').value;
     setBusy(true);
     setStatus('Saving…');
     try {
-      for (const node of box.current.querySelectorAll('.scene-event')) {
-        const dispositions = [...node.querySelectorAll('.scene-event-finding')]
-          .map(row => ({ finding: row.dataset.finding, disposition: row.querySelector('.scene-event-disposition').value }));
+      for (const e of rows) {
+        const dispositions = (e.findings || []).map(f => ({
+          finding: f.finding_id, disposition: verdicts[`${e.event_id}/${f.finding_id}`] }));
         if (!dispositions.length && !note) continue;
         await api(`jobs/${jobId}/decisions`, { method: 'POST', json: {
-          event: node.dataset.event, base_revision: data?.revision, dispositions, note } });
+          event: e.event_id, base_revision: data?.revision, dispositions, note } });
       }
       setStatus('Saved against this version of the audio.');
       onDecision?.();
@@ -372,7 +378,7 @@ function Coverage({ scene, jobId, data, onPlay, onDecision }) {
     }
   }
   return (
-    <fieldset className="scene-coverage" ref={box}><legend>Coverage</legend>
+    <fieldset className="scene-coverage"><legend>Coverage</legend>
       <p className="hint">{bed}</p>
       {rows.map(e => (
         <div key={e.event_id} className="scene-event" data-event={e.event_id}>
@@ -385,17 +391,22 @@ function Coverage({ scene, jobId, data, onPlay, onDecision }) {
               <p className="review-flags">{f.code.replaceAll('_', ' ')}: {f.evidence?.note || ''}
                 {f.review?.stale && <span className="review-marker">earlier verdict — the audio has changed</span>}</p>
               <label className="m">Verdict
-                <select className="input scene-event-disposition" defaultValue={f.disposition}>
+                <select className="input scene-event-disposition" value={verdicts[`${e.event_id}/${f.finding_id}`]}
+                  onChange={ev => setVerdicts(v => ({ ...v, [`${e.event_id}/${f.finding_id}`]: ev.target.value }))}>
                   {DISPOSITIONS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select></label>
             </div>
           ))}
           <div className="review-options">
             <label>Coverage
-              <select className="input scene-decision" defaultValue={e.decision}>
+              <select className="input scene-decision" value={form.events[e.event_id]?.decision ?? e.decision}
+                onChange={ev => update({ events: { ...form.events,
+                  [e.event_id]: { ...form.events[e.event_id], decision: ev.target.value } } })}>
                 {DECISIONS.map(d => <option key={d} value={d}>{d}</option>)}
               </select></label>
-            <input className="input scene-asset" maxLength={1000} placeholder="Replacement sound file" defaultValue={e.asset || ''} />
+            <input className="input scene-asset" maxLength={1000} placeholder="Replacement sound file"
+              value={form.events[e.event_id]?.asset ?? ''} onChange={ev => update({ events: { ...form.events,
+                [e.event_id]: { ...form.events[e.event_id], asset: ev.target.value } } })} />
             <button type="button" className="btn btn-ghost scene-hear-event" data-event={e.event_id} disabled={!e.playable}
               onClick={() => onPlay('event', { keepPosition: false, eventId: e.event_id })}>Hear it</button>
           </div>
@@ -404,7 +415,8 @@ function Coverage({ scene, jobId, data, onPlay, onDecision }) {
       <p className="hint">Nothing is inserted without a decision. A coverage change re-mixes; it never generates speech.</p>
       <div className="review-options">
         <input className="input" id="sceneCoverageNote" maxLength={2000}
-          placeholder="Note about the reactions or the bed in this scene" defaultValue={rows[0]?.decision?.note || ''} />
+          placeholder="Note about the reactions or the bed in this scene" value={note}
+          onChange={e => setNote(e.target.value)} />
         <button type="button" className="btn btn-secondary" id="sceneSaveCoverage" disabled={busy} onClick={save}>Save coverage notes</button>
       </div>
       <p className="hint" id="sceneCoverageStatus" role="status">{status}</p>
@@ -413,20 +425,18 @@ function Coverage({ scene, jobId, data, onPlay, onDecision }) {
 }
 
 function Findings({ cue, row, jobId, data, onDecision }) {
-  const box = useRef(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const rows = (cue.findings || []).filter(f => f.disposition !== 'obsolete');
+  const [verdicts, setVerdicts] = useState(() => Object.fromEntries(rows.map(f =>
+    [f.finding_id, { disposition: f.disposition, note: f.review?.note || '' }])));
+  const setVerdict = (id, patch) => setVerdicts(v => ({ ...v, [id]: { ...v[id], ...patch } }));
   const verification = cue.verification || {};
   const words = verification.state && verification.state !== 'unknown'
     ? <p className="hint">{verificationNote(verification)}</p> : null;
   if (!rows.length) return <div className="scene-findings">{words}</div>;
   async function save() {
-    const dispositions = [...box.current.querySelectorAll('.scene-finding')].map(node => ({
-      finding: node.dataset.finding,
-      disposition: node.querySelector('.scene-disposition').value,
-      note: node.querySelector('.scene-note').value,
-    }));
+    const dispositions = rows.map(f => ({ finding: f.finding_id, ...verdicts[f.finding_id] }));
     setBusy(true);
     setStatus('Saving…');
     try {
@@ -441,7 +451,7 @@ function Findings({ cue, row, jobId, data, onDecision }) {
     }
   }
   return (
-    <fieldset className="scene-findings" ref={box}><legend>Findings</legend>{words}
+    <fieldset className="scene-findings"><legend>Findings</legend>{words}
       {rows.map(f => (
         <div key={f.finding_id} className="scene-finding" data-finding={f.finding_id}>
           <p><strong>{f.code.replaceAll('_', ' ')}</strong>{' '}
@@ -450,10 +460,12 @@ function Findings({ cue, row, jobId, data, onDecision }) {
           <details><summary>Evidence</summary><pre className="m">{evidence(f)}</pre></details>
           <div className="review-options">
             <label>Verdict
-              <select className="input scene-disposition" defaultValue={f.disposition}>
+              <select className="input scene-disposition" value={verdicts[f.finding_id].disposition}
+                onChange={e => setVerdict(f.finding_id, { disposition: e.target.value })}>
                 {DISPOSITIONS.map(d => <option key={d} value={d}>{d}</option>)}
               </select></label>
-            <input className="input scene-note" maxLength={2000} placeholder="Why?" defaultValue={f.review?.note || ''} />
+            <input className="input scene-note" maxLength={2000} placeholder="Why?" value={verdicts[f.finding_id].note}
+              onChange={e => setVerdict(f.finding_id, { note: e.target.value })} />
           </div>
         </div>
       ))}
@@ -467,9 +479,17 @@ function Findings({ cue, row, jobId, data, onDecision }) {
 // Props: row, data (the review), jobId, scene (null while loading), status
 // (the player/loader line), kind (the selected source), audio + player (the
 // review's one audio element and its controller), state (scene-collect state),
-// onPlay(kind, options), onTab(kind), onContext(n), onDecision().
-export function ScenePanel({ row, data, jobId, scene, status, kind, audio, player, state, onPlay, onTab, onContext, onDecision, containerRef }) {
+// onPlay(kind, options), onTab(kind), onContext(n), onDecision(), and
+// onForm(form, edited): the panel's fields, on mount and on each edit.
+export function ScenePanel({ row, data, jobId, scene, status, kind, audio, player, state, onPlay, onTab, onContext, onDecision, onForm }) {
   const cue = row.cue || {};
+  const [form, setForm] = useState(() => initialForm({ scene, row, state, data }));
+  const update = patch => setForm(f => ({ ...f, ...patch }));
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    onForm(form, mounted.current);
+    mounted.current = true;
+  }, [form, onForm]);
   const available = scene?.available || {};
   const versions = state.versions;
   const contextRef = useRef(null);
@@ -489,7 +509,7 @@ export function ScenePanel({ row, data, jobId, scene, status, kind, audio, playe
   const playable = source => (source.kind === 'version' ? versions.length > 0 : available[source.kind] !== false);
 
   return (
-    <div id="reviewScene" ref={containerRef}>
+    <div id="reviewScene">
       <div className="scene" role="group" aria-label="Scene playback">
         <div className="scene-tabs" role="tablist" aria-label="What to play">
           {SOURCES.map(s => (
@@ -524,11 +544,12 @@ export function ScenePanel({ row, data, jobId, scene, status, kind, audio, playe
           <p className="hint">{scene?.available?.note || 'The original audio for this run is not on disk.'}</p>
         )}
       </div>
-      <Takes scene={scene} onPlay={onPlay} />
-      <Direction cue={cue} data={data} />
-      <Timing scene={scene} row={row} state={state} />
-      <Space scene={scene} row={row} data={data} state={state} />
-      <Coverage scene={scene} jobId={jobId} data={data} onPlay={onPlay} onDecision={onDecision} />
+      <Takes scene={scene} form={form} update={update} onPlay={onPlay} />
+      <Direction cue={cue} data={data} form={form} update={update} />
+      <Timing scene={scene} form={form} update={update} />
+      <Space scene={scene} data={data} form={form} update={update} />
+      <Coverage scene={scene} jobId={jobId} data={data} form={form} update={update} onPlay={onPlay}
+        onDecision={onDecision} />
       <Findings cue={cue} row={row} jobId={jobId} data={data} onDecision={onDecision} />
     </div>
   );

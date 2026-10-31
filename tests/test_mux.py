@@ -45,7 +45,7 @@ def test_mux_two_original_audio_tracks(tmp_path, attachment):
         assert all_streams["streams"][-1]["codec_type"] == "attachment"
     assert not list((tmp_path / "out").glob("*.partial.mkv"))
 
-    from scripts.finish_episode import export_mp4
+    from doblarr.recovery import export_mp4
     sub = tmp_path / "es.srt"
     sub.write_text("1\n00:00:00,000 --> 00:00:00,900\nHola.\n", encoding="utf-8")
     mp4 = export_mp4(job, tmp_path / "preview.mp4", sub)

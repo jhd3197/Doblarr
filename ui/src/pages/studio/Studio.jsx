@@ -1,8 +1,8 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useEffectEvent, useReducer, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
-import { clock, createStudioController, stamp, TRANSPORT_VIEWS, VIEWS } from './controller.js';
+import { createStudioController, stamp, TRANSPORT_VIEWS, VIEWS } from './controller.js';
 import { studioQuery } from './queries.js';
 import { StudioOverview } from './StudioOverview.jsx';
 import { StudioCast } from './StudioCast.jsx';
@@ -11,6 +11,7 @@ import { StudioExperiments } from './StudioExperiments.jsx';
 import { DialogueView } from './DialogueView.jsx';
 import { NotesPanel } from './NotesPanel.jsx';
 import './studio-page.css';
+import { formatTime } from '../../lib/media.js';
 
 const STYLES = [['automatic', 'Automatic'], ['guided', 'Guided'], ['manual', 'Manual']];
 const NEXT = { audition: 'audition the cast', render: 'render a draft', wait: 'wait for the render',
@@ -65,12 +66,22 @@ function StudioHead({ ctrl, view }) {
   );
 }
 
+// The playhead, read where it is shown: a time update re-renders these, not the page.
+function usePlayerTime(ctrl) {
+  return useSyncExternalStore(ctrl.subscribeTime, () => ctrl.player.time);
+}
+
+function Clock({ ctrl }) {
+  const t = usePlayerTime(ctrl);
+  return <div className="m" id="stNow">{ctrl.state.windowSpan ? stamp(t) : '0:00.0'}</div>;
+}
+
 function Wave({ ctrl }) {
   const { windowSpan: span, lines, notes } = ctrl.state;
   const player = ctrl.player;
+  const t = usePlayerTime(ctrl);
   if (!span) return <div className="studio-wave" id="stWave" role="slider" tabIndex={0} aria-label="Position in this window" aria-valuemin="0" aria-valuemax="100" />;
   const width = span.end - span.start;
-  const t = player.time;
   const pct = v => `${v * 100}%`;
   const peaks = player.source?.peaks || [];
   function onClick(e) {
@@ -139,8 +150,8 @@ function Transport({ ctrl, shown }) {
         <button type="button" className="studio-play" id="stPlay" aria-label="Play or pause (space)" onClick={() => player.toggle()}>
           <span id="stGlyph" aria-hidden="true">{player.paused ? '▶' : '❚❚'}</span></button>
         <div className="studio-clock">
-          <div className="m" id="stNow">{span ? stamp(player.time) : '0:00.0'}</div>
-          <div className="m hint" id="stTotal">{span ? `${clock(span.start)}–${clock(span.end)}` : ''}</div>
+          <Clock ctrl={ctrl} />
+          <div className="m hint" id="stTotal">{span ? `${formatTime(span.start)}–${formatTime(span.end)}` : ''}</div>
         </div>
         <Wave ctrl={ctrl} />
         <div className="studio-picture" id="stPicture" ref={el => { if (el && !el.contains(video)) el.append(video); }} />
@@ -242,12 +253,12 @@ function CompareView({ ctrl }) {
   const [start, setStart] = useState(() => String(saved.start ?? (windowSpan?.start ?? session.position ?? 0)));
   const [length, setLength] = useState(() => String(saved.length ?? 30));
   const hasJob = !!ctrl.jobId();
+  // The saved window loads once on entry; later loads come from the button.
+  const loadSaved = useEffectEvent(() => ctrl.loadCompareWindow(start, length));
   useEffect(() => {
     let live = true;
-    ctrl.loadNotes().then(() => { if (live) ctrl.loadCompareWindow(start, length); });
+    ctrl.loadNotes().then(() => { if (live) loadSaved(); });
     return () => { live = false; };
-    // Load the saved window once on entry; later loads come from the button.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctrl]);
   return (
     <div className="studio-compare">

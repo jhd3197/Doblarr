@@ -58,7 +58,7 @@ function ExportPlan({ ctrl, job }) {
             dismissing one is a decision you record in Dialogue.</p></section>
       )}
       <section className="panel studio-card"><h3>Line by line</h3>
-        <table className="table"><thead><tr><th>Line</th><th>Speaker</th><th>Dialogue</th><th>Take</th><th>State</th></tr></thead><tbody>
+        <div className="table-wrap"><table className="table"><thead><tr><th>Line</th><th>Speaker</th><th>Dialogue</th><th>Take</th><th>State</th></tr></thead><tbody>
           {plan.lines.map(l => (
             <tr key={l.index}><td className="m">{l.index + 1}</td><td>{l.speaker}</td><td>{l.text || ''}
               {l.spoken && l.spoken !== l.text && <div className="hint">spoken as: {l.spoken}</div>}</td>
@@ -66,7 +66,7 @@ function ExportPlan({ ctrl, job }) {
               <td>{l.stale ? <span className="review-marker">stale: the audio says older words</span>
                 : <span className="hint">{l.selection || 'auto'}</span>}</td></tr>
           ))}
-        </tbody></table></section>
+        </tbody></table></div></section>
     </>
   );
 }

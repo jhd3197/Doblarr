@@ -1,6 +1,6 @@
 """Bring earlier listening experiments into the studio without redoing any of them.
 
-The Mushishi comparison and voice audition were built by scripts before the
+The Harbor Lights comparison and voice audition were built by scripts before the
 studio existed. Their files stay exactly where they are; importing reads their
 manifests, shows what is there and what is missing, and asks a person to map
 each legacy identity (a speaker label, a source track) to a studio identity
@@ -24,6 +24,7 @@ from pathlib import Path
 
 from ..artifacts import digest, stamp
 from ..errors import DoblarrError, ForbiddenError
+from ..fileio import inside
 from . import records
 
 MAX_MANIFEST_BYTES = 20 * 1024 * 1024
@@ -33,14 +34,6 @@ KNOWN_COMPARISON_VERSIONS = (1, 2)
 
 class ImportError_(DoblarrError):
     http_status = 422
-
-
-def _inside(path: Path, roots: list[Path]) -> bool:
-    try:
-        resolved = path.resolve()
-    except OSError:
-        return False
-    return any(resolved.is_relative_to(root.resolve()) for root in roots)
 
 
 def _resolve(value: str | None, base: Path, repo: Path) -> Path | None:
@@ -58,7 +51,7 @@ def _resolve(value: str | None, base: Path, repo: Path) -> Path | None:
 
 
 def _read(path: Path, roots: list[Path]) -> dict:
-    if not _inside(path, roots):
+    if not inside(path, roots):
         raise ForbiddenError("imports are read only from inside the configured work or "
                              "output directories")
     if not path.is_file():
@@ -86,7 +79,7 @@ def preview(path: Path, roots: list[Path], repo: Path) -> dict:
         found = _resolve(value, base, repo)
         if found is None:
             return {"name": "", "exists": False}
-        ok = _inside(found, roots)
+        ok = inside(found, roots)
         exists = ok and found.is_file()
         if not ok:
             outside.append(found.name)
@@ -136,9 +129,9 @@ def preview(path: Path, roots: list[Path], repo: Path) -> dict:
             takes = _resolve(row.get("takes"), base, repo)
             lines = [k for k in row if k.isdigit()]
             present = 0
-            if takes is not None and _inside(takes, roots):
+            if takes is not None and inside(takes, roots):
                 present = sum(1 for k in lines if (takes / f"line_{int(k):04d}.wav").is_file())
-            if takes and not _inside(takes, roots):
+            if takes and not inside(takes, roots):
                 outside.append(takes.name)
             approaches.append({"name": name, "lines": len(lines), "present": present,
                                "missing": len(lines) - present,

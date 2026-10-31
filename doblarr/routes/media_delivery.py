@@ -9,11 +9,12 @@ works in audio and video elements).
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+
+from ..fileio import inside
 
 MEDIA_TYPES = {
     ".mkv": "video/x-matroska",
@@ -27,21 +28,9 @@ MEDIA_TYPES = {
 
 def allowed_path(config, path_str: str) -> Path | None:
     """`path_str` resolved, or None when it is outside the configured roots."""
-    try:
-        allowed_roots = [
-            Path(os.path.normcase(str(root.resolve())))
-            for root in (config.output_dir, config.work_dir)
-        ]
-        p = Path(os.path.normcase(str(Path(path_str).resolve())))
-    except OSError:
+    if not path_str or not inside(path_str, (config.output_dir, config.work_dir)):
         return None
-    for root in allowed_roots:
-        try:
-            p.relative_to(root)
-            return Path(path_str).resolve()
-        except ValueError:
-            continue
-    return None
+    return Path(path_str).resolve()
 
 
 def ranged_response(path: Path, range_header: str | None):

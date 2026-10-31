@@ -33,7 +33,6 @@ listener's, and the results sheet it writes is empty on purpose.
 from __future__ import annotations
 
 import array
-import hashlib
 import json
 import logging
 import shutil
@@ -58,7 +57,9 @@ from .cues import (
     now,
     script_ref,
 )
+from .errors import DoblarrError
 from .ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
+from .fileio import file_sha256, read_json, write_json
 from .languages import resolve_target_locale
 from .levels import analyze as analyze_levels
 from .models import DubJob, Segment, Speaker
@@ -66,7 +67,6 @@ from .pipeline import run_job
 from .services import Services
 from .stages import extract
 from .stages.common import save_script
-from .telemetry import write_json
 
 log = logging.getLogger("doblarr.comparison")
 
@@ -82,7 +82,7 @@ MAX_SCENE_SECONDS = 120.0
 MAX_REFERENCES = 4
 
 
-class ComparisonError(RuntimeError):
+class ComparisonError(DoblarrError):
     """A comparison could not be built, with the exact missing input named."""
 
 
@@ -301,7 +301,7 @@ def cut_media(source: Path, scene: Scene, dest: Path, cancel=None) -> Path:
     request = {"source": stamp(source), "start": round(scene.start, 3),
                "end": round(scene.end, 3), "version": 3}
     receipt = dest.with_suffix(".cut.json")
-    if dest.is_file() and _read(receipt) == request:
+    if dest.is_file() and read_json(receipt) == request:
         return dest
     temp = dest.with_name(dest.stem + ".partial" + dest.suffix)
     try:
@@ -401,10 +401,10 @@ def source_stream(media: Path, source_lang: str, cancel=None) -> dict:
     track and this file also carries an English dub" is exactly the sentence a
     listening test has to be able to say.
     """
-    from .stages.extract import _select_audio_stream
+    from .stages.extract import select_audio_stream
 
     probe = DubJob(input_file=Path(media), source_lang=source_lang, target_lang="und")
-    absolute = _select_audio_stream(probe, cancel)
+    absolute = select_audio_stream(probe, cancel)
     layout = json.loads(run_ffprobe(
         ["-v", "error", "-select_streams", "a", "-show_entries",
          "stream=index:stream_tags=language,title", "-of", "json", str(media)],
@@ -1252,20 +1252,8 @@ def page(manifest: dict, root: Path) -> str:
     return render(manifest, root)
 
 
-def _esc(value) -> str:
-    return (str(value).replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace('"', "&quot;"))
-
-
 def _sha(path: Path) -> str | None:
-    path = Path(path)
-    if not path.is_file():
-        return None
-    found = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            found.update(chunk)
-    return found.hexdigest()
+    return file_sha256(path) if Path(path).is_file() else None
 
 
 def _tree_bytes(root: Path) -> int:
@@ -1278,10 +1266,3 @@ def _tree_bytes(root: Path) -> int:
         except OSError:
             continue
     return total
-
-
-def _read(path: Path) -> dict:
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}

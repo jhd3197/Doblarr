@@ -1,8 +1,9 @@
-import { api } from '../../lib/api.js';
+import { api, withKey } from '../../lib/api.js';
 import { safeGet } from '../../lib/storage.js';
 import { queryClient } from '../../lib/queries.js';
 import { createStudioPlayer } from './player.js';
 import { studioQuery } from './queries.js';
+import { formatTime } from '../../lib/media.js';
 
 // The episode studio: one persistent workspace over one episode.
 //
@@ -20,8 +21,7 @@ export const VIEWS = [
 ];
 export const isView = v => VIEWS.some(([id]) => id === v);
 export const viewLabel = v => (VIEWS.find(([id]) => id === v) || VIEWS[0])[1];
-export const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-export const stamp = s => `${clock(s)}.${Math.floor((s % 1) * 10)}`;
+export const stamp = s => `${formatTime(s)}.${Math.floor((s % 1) * 10)}`;
 export const TRANSPORT_VIEWS = ['dialogue', 'compare'];
 
 function hash(text) {
@@ -56,6 +56,10 @@ export function createStudioController({ sid, overview, view, navigate, onChange
   let closed = false;
   let entered = '';
   const changed = () => { if (!closed) onChange(); };
+  // Playback time changes several times a second; only what shows it
+  // subscribes, so the rest of the studio does not re-render with it.
+  const timeListeners = new Set();
+  const subscribeTime = fn => { timeListeners.add(fn); return () => timeListeners.delete(fn); };
   const player = createStudioPlayer({ audio, video, onChange: onPlayer });
   // Set by the Dialogue view while the review editor is mounted.
   let review = null;
@@ -229,11 +233,15 @@ export function createStudioController({ sid, overview, view, navigate, onChange
   }
 
   function onPlayer(what, detail) {
+    if (what === 'time') {
+      timeListeners.forEach(fn => fn());
+      return;
+    }
     if (what === 'ready') {
       state.ready = detail.source.id;
       const m = detail.source.mapping;
       state.mapping = m?.note
-        ? `${blindLabel(detail.source)}: ${m.note}${m.mapped_start != null ? ` (its ${clock(m.mapped_start)})` : ''}`
+        ? `${blindLabel(detail.source)}: ${m.note}${m.mapped_start != null ? ` (its ${formatTime(m.mapped_start)})` : ''}`
         : '';
       state.status = '';
     }
@@ -332,7 +340,7 @@ export function createStudioController({ sid, overview, view, navigate, onChange
       } else {
         const saved = await api(`studio/sessions/${sid}/notes`, { method: 'POST', json: {
           job_id: jobId(), at: span.start, category: 'verdict',
-          note: `${clock(span.start)}–${clock(span.end)}${state.blind ? ' (blind)' : ''}`,
+          note: `${formatTime(span.start)}–${formatTime(span.end)}${state.blind ? ' (blind)' : ''}`,
           snapshot_revision: review?.data?.revision || '' } });
         const again = await api(`studio/notes/${saved.note.id}`, { method: 'PATCH',
           json: { base_revision: saved.note.revision, verdict: choice } });
@@ -368,8 +376,7 @@ export function createStudioController({ sid, overview, view, navigate, onChange
 
   async function playLegacy({ importId, scene, kind, name, label }) {
     const q = new URLSearchParams({ scene, kind, name });
-    const apiKey = safeGet('doblarr_api_key', '');
-    const url = `/api/studio/imports/${importId}/media?${q}${apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : ''}`;
+    const url = withKey(`/api/studio/imports/${importId}/media?${q}`);
     state.windowSpan = { start: 0, end: 240 };
     state.lines = [];
     const source = { id: `legacy:${kind}:${name}`, url, label, kind: 'legacy', available: true };
@@ -439,7 +446,7 @@ export function createStudioController({ sid, overview, view, navigate, onChange
   return {
     sid, state, player, video, jobId, reload, refresh, remember, savePatch, show, enterView, status,
     attachReview, get review() { return review; }, onLine, loadCompareWindow, setBlind, reveal, playWindow,
-    blindLabel, toggleLoop, sequenceLine, seekFraction, currentLine, loadNotes, mark, patchNote,
+    blindLabel, toggleLoop, sequenceLine, seekFraction, currentLine, loadNotes, mark, patchNote, subscribeTime,
     hearNote, hearOriginal, setNoteFilter, verdictNote, setVerdict, downloadResults, playLegacy,
     keydown, repairQueued, start, close,
   };

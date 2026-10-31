@@ -31,8 +31,9 @@ with contextlib.suppress(ImportError):
 # `dev.ps1 validate` skips them while watching; `check` and CI run everything.
 SLOW_FILES = {
     "test_adaptive_pipeline.py", "test_benchmarks.py", "test_comparison.py",
-    "test_generation_integration.py", "test_plan03_integration.py",
-    "test_plan04_integration.py", "test_plan05_integration.py", "test_review_workflow.py",
+    "test_generation_integration.py", "test_pipeline_budget_and_reuse.py",
+    "test_pipeline_timing_and_coverage.py", "test_pipeline_treatments_and_export.py",
+    "test_review_workflow.py",
 }
 
 
@@ -40,6 +41,29 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if item.path.name in SLOW_FILES:
             item.add_marker(pytest.mark.slow)
+
+
+@pytest.fixture(autouse=True)
+def restore_logging():
+    """Undo a test's logging setup: a handler left on the root logger keeps
+    writing to that test's captured stream after pytest closes it."""
+    import logging
+
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    yield
+    for handler in root.handlers:
+        if handler not in handlers:
+            handler.close()
+    root.handlers[:] = handlers         # setup_logging also removes the ones it found
+    root.setLevel(level)
+
+
+@pytest.fixture(autouse=True)
+def run_in_tmp_path(tmp_path, monkeypatch):
+    """Run each test from its own directory, so a config loaded from a relative
+    path (whose default work_dir is ./work) never writes into the repo."""
+    monkeypatch.chdir(tmp_path)
 
 
 def _refuse(self, method, url, *args, **kwargs):

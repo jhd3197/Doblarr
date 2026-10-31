@@ -21,13 +21,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import statistics
 from pathlib import Path
 from types import SimpleNamespace
 
 from . import identity, levels, voice_tags
 from .cues import SourceMeasurement, Span
+from .fileio import write_json
 from .studio import records
 
 log = logging.getLogger("doblarr.speaker_memory")
@@ -108,9 +107,7 @@ def refresh_baselines(script: Path) -> dict:
     for seg in segments:
         seg.raw.setdefault("cue", {})["measurement"] = seg.measurement.as_dict()
     data["dialogue_baseline"] = baseline
-    temp = Path(script).with_suffix(".json.tmp")
-    temp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(temp, script)
+    write_json(Path(script), data, indent=1)
     return {"changed": changed, "baseline": baseline, "overlaps": flips}
 
 
@@ -303,25 +300,6 @@ def characters_for_labels(db, revision_id: str, segments) -> dict[str, dict]:
         if seconds / (totals.get(label) or 1.0) >= 0.5:
             out[label] = found[best]
     return out
-
-
-def speaker_stats(data: dict) -> list[dict]:
-    """Per group: lines, seconds and how its lines were decided."""
-    rows: dict[str, dict] = {}
-    for seg in data.get("segments") or []:
-        label = str(seg.get("speaker") or "")
-        row = rows.setdefault(label, {"label": label, "lines": 0, "seconds": 0.0,
-                                      "uncertain": 0})
-        row["lines"] += 1
-        row["seconds"] += max(0.0, float(seg.get("end", 0)) - float(seg.get("start", 0)))
-        row["uncertain"] += "speaker_uncertain" in (seg.get("issues") or [])
-    for row in rows.values():
-        row["seconds"] = round(row["seconds"], 1)
-    return sorted(rows.values(), key=lambda r: -r["seconds"])
-
-
-def median_or_none(values: list[float]) -> float | None:
-    return round(statistics.median(values), 3) if values else None
 
 
 def name_from_dialogue(db, ident: dict, lines: list[dict]) -> list[dict]:

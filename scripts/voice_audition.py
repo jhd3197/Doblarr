@@ -4,13 +4,13 @@
     # generate every audition take (resumable; rerun to continue)
     python scripts/voice_audition.py generate \
         --from work/benchmarks/quality-final/<comparison>/manifest.json \
-        --id 2026-09-22-mushishi-voices \
+        --id 2026-09-22-harbor-lights-voices \
         --cast work/episode-es-latam-v1/cast.json \
         --vocals work/stems-ja/<episode>.ja.vocals.wav \
         --background work/stems-ja/<episode>.ja.background.wav
 
     # render the blind listening page once the takes exist
-    python scripts/voice_audition.py render --id 2026-09-22-mushishi-voices ...
+    python scripts/voice_audition.py render --id 2026-09-22-harbor-lights-voices ...
 
 A comparison (`quality_compare.py`) changes processing and keeps the takes.
 This changes the *performance*: each approach below generates its own takes
@@ -232,7 +232,7 @@ class Audition:
         self.cast = cast_payload.get("speakers", cast_payload)
         self.config = Config.load(args.config)
         self.pronunciations = dict(self.config["dub"].get("pronunciations", {}) or {})
-        self.vb = VoiceboxClient(args.voicebox, timeout=3600)
+        self.vb = VoiceboxClient(args.voicebox or self.config["voicebox"]["base_url"], timeout=3600)
         self.media = Path(self.manifest["source"]["media"])
         self.stream = int(self.manifest["source"]["stream"]["audio_index"])
         self.scratch = self.root / "scratch"
@@ -290,11 +290,10 @@ class Audition:
                       f"Actor original: {self.state['hints'][key]['hint']}.\n"
                       f"Línea doblada: {row['text_translated']}")
             started = time.time()
-            reply = self.vb._post("/llm/generate", json={
-                "system": DIRECTION_SYSTEM, "examples": DIRECTION_EXAMPLES,
-                "prompt": prompt, "model_size": "4B", "max_tokens": 80,
-                "temperature": 0.3})
-            text = str(reply.get("text") or "").strip().strip('"').strip()
+            reply = self.vb.llm_generate(prompt, system=DIRECTION_SYSTEM,
+                                         examples=DIRECTION_EXAMPLES, model_size="4B",
+                                         max_tokens=80, temperature=0.3)
+            text = reply.strip('"').strip()
             text = text.split("\n")[0][:240]
             saved[key] = {"direction": text, "prompt": prompt,
                           "seconds": round(time.time() - started, 1)}
@@ -320,7 +319,7 @@ class Audition:
         for profile in self.vb.voice_profiles():
             if profile.get("name") == name:
                 with contextlib.suppress(VoiceboxError):
-                    self.vb._request("DELETE", f"/profiles/{profile['id']}")
+                    self.vb.delete_profile(profile["id"])
 
     def character_reference(self, speaker: str) -> Path:
         """The cleanest single line of this character's original performance."""
@@ -618,7 +617,7 @@ def main(argv=None) -> int:
     gen = sub.choices["generate"]
     gen.add_argument("--from", dest="source_manifest", required=True, type=Path)
     gen.add_argument("--cast", required=True, type=Path)
-    gen.add_argument("--voicebox", default="http://127.0.0.1:17493")
+    gen.add_argument("--voicebox", default=None, help="default: voicebox.base_url")
     gen.add_argument("--approach", action="append", choices=APPROACHES,
                      help="repeatable; default all")
     gen.add_argument("--retakes", type=int, default=2)
@@ -629,7 +628,7 @@ def main(argv=None) -> int:
                                        help="comma-separated scene indexes; default all")
     gen.add_argument("--recast", metavar="BASE:SPEAKER:MODE", action="append",
                      help="redo one character's lines in BASE with a `low` or "
-                          "`blend` reference, e.g. clone:SHINRA:low; repeatable")
+                          "`blend` reference, e.g. clone:TOMOE:low; repeatable")
     args = parser.parse_args(argv)
     if args.command == "render":
         return render(args)

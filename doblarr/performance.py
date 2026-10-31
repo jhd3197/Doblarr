@@ -54,10 +54,6 @@ TRAITS = (
 )
 
 
-def known_trait(trait: str) -> bool:
-    return str(trait).strip().lower() in TRAITS
-
-
 def clean_traits(traits) -> list[str]:
     """Normalize a trait list without discarding an unfamiliar one."""
     seen: list[str] = []
@@ -84,8 +80,14 @@ def capability(engine: str, client=None) -> str:
 
     if not engine:
         return "unknown"
-    for holder in (client, VoiceboxClient):
-        check = getattr(holder, "supports_direction", None)
+    return ask_adapter((client, VoiceboxClient), "supports_direction", engine)
+
+
+def ask_adapter(holders, method: str, engine: str) -> str:
+    """`supported`/`unsupported` from the first holder whose `method` answers,
+    else `unknown`: an adapter that cannot say is never taken as able."""
+    for holder in holders:
+        check = getattr(holder, method, None)
         if callable(check):
             try:
                 return "supported" if check(engine) else "unsupported"

@@ -238,7 +238,7 @@ def legacy(tmp_path):
                        {"audio_index": 0, "language": "eng"},
                        {"audio_index": 1, "language": "jpn"}]}},
         "scenes": [{"scene": {"index": 0, "title": "Talk", "window": {"start": 1, "end": 20},
-                              "duration": 19, "speakers": ["GINKO", "SHINRA"], "text": []},
+                              "duration": 19, "speakers": ["SORA", "TOMOE"], "text": []},
                     "source_excerpt": str(scene / "source.wav"),
                     "references": [{"path": str(scene / "reference-eng-0.wav"),
                                     "language": "eng", "role": "reference dub"}],
@@ -256,14 +256,14 @@ def test_import_preview_maps_identities_and_names_missing_files(db, tmp_path):
     roots = [tmp_path / "work"]
     found = importer.preview(path, roots, tmp_path)
     assert found["kind"] == "comparison" and found["media"]["state"] == "missing"
-    assert found["speakers"] == ["GINKO", "SHINRA"]
+    assert found["speakers"] == ["SORA", "TOMOE"]
     assert {t["legacy_role"] for t in found["tracks"]} == {"original", "reference dub"}
     assert "improved.wav" in " ".join(found["missing"])
     assert "no speech" in found["generates"]
     assert "local storage" in found["judgments"]
     with pytest.raises(importer.ImportError_, match="map every legacy speaker"):
-        importer.apply(db, "s1", found, {"speakers": {"GINKO": "GINKO"}})
-    mapping = {"speakers": {"GINKO": "SPEAKER_00", "SHINRA": "SPEAKER_01"},
+        importer.apply(db, "s1", found, {"speakers": {"SORA": "SORA"}})
+    mapping = {"speakers": {"SORA": "SPEAKER_00", "TOMOE": "SPEAKER_01"},
                "tracks": {"stream-0": "adaptation", "stream-1": "meaning"}}
     saved = importer.apply(db, "s1", found, mapping)
     assert saved["experimental_settings"]["improved"] == {"timing.mode": "phrase"}
@@ -278,7 +278,7 @@ def test_import_preview_maps_identities_and_names_missing_files(db, tmp_path):
 def test_exported_results_import_with_limits(db, tmp_path):
     path = legacy(tmp_path)
     found = importer.preview(path, [tmp_path / "work"], tmp_path)
-    saved = importer.apply(db, "s1", found, {"speakers": {"GINKO": "a", "SHINRA": "b"},
+    saved = importer.apply(db, "s1", found, {"speakers": {"SORA": "a", "TOMOE": "b"},
                                              "tracks": {"stream-0": "x", "stream-1": "y"}})
     text = "\n".join([
         "# Listening results — cmp-1", "", "## Scene 1 — Talk (episode 0:01–0:20)", "",

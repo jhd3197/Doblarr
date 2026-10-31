@@ -16,9 +16,9 @@ def client_factory(client_factory):
 
     return make
 
-EP1 = "/shows/Mushi-Shi/ep1.mkv"
-EP2 = "/shows/Mushi-Shi/ep2.mkv"
-MEDIA = {"kind": "episode", "title": "Mushi-Shi", "tvdb_id": 79214, "season": 1, "episode": 1}
+EP1 = "/shows/Harbor Lights/ep1.mkv"
+EP2 = "/shows/Harbor Lights/ep2.mkv"
+MEDIA = {"kind": "episode", "title": "Harbor Lights", "tvdb_id": 81234, "season": 1, "episode": 1}
 
 
 def make_correction(
@@ -26,8 +26,8 @@ def make_correction(
     *,
     scope,
     scope_ref="",
-    phrase="Ginko",
-    replacement="Guin-ko",
+    phrase="Sora",
+    replacement="Zo-ra",
     locale="es-MX",
     status="reviewed",
 ):
@@ -63,18 +63,18 @@ def test_correction_reuses_across_episodes_without_locale_contamination(client_f
     db = client.app.state.jobs.db
     make_correction(client, scope="episode", scope_ref=cast_key(path=EP1))
     make_correction(
-        client, scope="show", scope_ref="series:79214", phrase="Mushi", replacement="Mu-shi"
+        client, scope="show", scope_ref="series:81234", phrase="Tidekin", replacement="Mu-shi"
     )
 
-    first = resolve(db, "es-MX", title_ref=cast_key(path=EP1), show_refs=("series:79214",))
-    assert first.spoken("Ginko y Mushi", engine="chatterbox")[0] == "Guin-ko y Mu-shi"
+    first = resolve(db, "es-MX", title_ref=cast_key(path=EP1), show_refs=("series:81234",))
+    assert first.spoken("Sora y Tidekin", engine="chatterbox")[0] == "Zo-ra y Mu-shi"
     # another episode of the same show inherits the show rule, not the episode rule
-    second = resolve(db, "es-MX", title_ref=cast_key(path=EP2), show_refs=("series:79214",))
-    assert second.spoken("Ginko y Mushi", engine="chatterbox")[0] == "Ginko y Mu-shi"
+    second = resolve(db, "es-MX", title_ref=cast_key(path=EP2), show_refs=("series:81234",))
+    assert second.spoken("Sora y Tidekin", engine="chatterbox")[0] == "Sora y Mu-shi"
     # never into another locale
     for locale in ("es-VE", "es-ES"):
-        other = resolve(db, locale, title_ref=cast_key(path=EP1), show_refs=("series:79214",))
-        assert other.spoken("Ginko y Mushi", engine="chatterbox")[0] == "Ginko y Mushi"
+        other = resolve(db, locale, title_ref=cast_key(path=EP1), show_refs=("series:81234",))
+        assert other.spoken("Sora y Tidekin", engine="chatterbox")[0] == "Sora y Tidekin"
 
 
 def export_v2(client, **overrides):
@@ -94,19 +94,19 @@ def test_v2_export_carries_overlay_locale_and_show(client_factory):
     client = client_factory()
     episode_rule = make_correction(client, scope="episode", scope_ref=cast_key(path=EP1))
     make_correction(
-        client, scope="show", scope_ref="series:79214", phrase="Mushi", replacement="Mu-shi"
+        client, scope="show", scope_ref="series:81234", phrase="Tidekin", replacement="Mu-shi"
     )
     personal = make_correction(client, scope="personal", phrase="Personal", replacement="Per-sonal")
     data = export_v2(client)
     recipe = data["recipe"]
     assert recipe["schema_version"] == 2
     assert recipe["target_language"] == "es" and recipe["target_locale"] == "es-MX"
-    assert recipe["show"]["series_id"] == "series:79214"
+    assert recipe["show"]["series_id"] == "series:81234"
     overlay = {e["phrase"]: e for e in recipe["knowledge"]["entries"]}
-    assert set(overlay) == {"Ginko", "Mushi"}  # personal rules are never exported by default
-    assert overlay["Ginko"]["id"] == episode_rule["id"]
-    assert overlay["Ginko"]["realizations"][0]["replacement"] == "Guin-ko"
-    assert "scope_ref" not in overlay["Ginko"]  # local identity is not portable
+    assert set(overlay) == {"Sora", "Tidekin"}  # personal rules are never exported by default
+    assert overlay["Sora"]["id"] == episode_rule["id"]
+    assert overlay["Sora"]["realizations"][0]["replacement"] == "Zo-ra"
+    assert "scope_ref" not in overlay["Sora"]  # local identity is not portable
     deps = {d["id"]: d for d in data["personal_dependencies"]}
     assert deps[personal["id"]]["included"] is False
     DubRecipe.model_validate(recipe)
@@ -133,7 +133,7 @@ def test_v2_import_reproduces_the_pinned_selection(client_factory):
     source = client_factory()
     make_correction(source, scope="episode", scope_ref=cast_key(path=EP1))
     make_correction(
-        source, scope="show", scope_ref="series:79214", phrase="Mushi", replacement="Mu-shi"
+        source, scope="show", scope_ref="series:81234", phrase="Tidekin", replacement="Mu-shi"
     )
     recipe = export_v2(source)["recipe"]
 
@@ -154,9 +154,9 @@ def test_v2_import_reproduces_the_pinned_selection(client_factory):
 
     db = fresh.app.state.jobs.db
     first = resolve(
-        db, "es-MX", title_ref=cast_key(path="/other/ep1.mkv"), show_refs=("series:79214",)
+        db, "es-MX", title_ref=cast_key(path="/other/ep1.mkv"), show_refs=("series:81234",)
     )
-    assert first.spoken("Ginko y Mushi", engine="chatterbox")[0] == "Guin-ko y Mu-shi"
+    assert first.spoken("Sora y Tidekin", engine="chatterbox")[0] == "Zo-ra y Mu-shi"
     # the importing machine's pins match the exported pins exactly
     pinned = recipe["knowledge"]["entries"]
     assert first.snapshot["entries"] == {e["id"]: e["revision"] for e in pinned}
@@ -165,9 +165,9 @@ def test_v2_import_reproduces_the_pinned_selection(client_factory):
     assert again.json()["knowledge_applied"] == 2 and again.json()["knowledge_skipped"] == []
     # and the overlay never leaks into another locale on the importing machine
     other = resolve(
-        db, "es-VE", title_ref=cast_key(path="/other/ep1.mkv"), show_refs=("series:79214",)
+        db, "es-VE", title_ref=cast_key(path="/other/ep1.mkv"), show_refs=("series:81234",)
     )
-    assert other.spoken("Ginko y Mushi", engine="chatterbox")[0] == "Ginko y Mushi"
+    assert other.spoken("Sora y Tidekin", engine="chatterbox")[0] == "Sora y Tidekin"
 
 
 def test_v2_import_rejects_a_different_target_locale(client_factory):

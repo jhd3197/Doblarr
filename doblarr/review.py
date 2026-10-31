@@ -3,6 +3,7 @@
 import math
 import os
 import shutil
+import threading
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,8 +18,10 @@ from .cues import (
     register_unknown_clip,
     resolve_cue,
 )
+from .fileio import write_json
 from .performance import from_edit
-from .telemetry import write_json
+from .treatments import catalogue as treatment_catalogue
+from .treatments import settings as treatment_settings
 
 
 def snapshot_revision(job) -> str:
@@ -298,6 +301,43 @@ def load_decisions(root, job_id: str) -> dict:
     return data
 
 
+# Two quick verdicts on one job would each read the file, change their own cue
+# and write it back, so the slower one would drop the other's change.
+_DECISIONS_LOCK = threading.Lock()
+
+
+def _pick(section: dict, keys: tuple[str, ...]) -> dict:
+    return {k: section.get(k) for k in keys}
+
+
+def policy_settings(config) -> dict:
+    """The configured policies a review records as what produced the run.
+
+    Frozen into the review when the run finishes, so an old review shows the
+    settings that made it rather than today's. A review written before this
+    existed is shown with the current settings from this same function.
+    """
+    return {
+        "levels": _pick(config["levels"], ("mode", "target_db", "strength", "max_boost_db",
+                                           "max_cut_db")),
+        "verification_policy": config["quality"].get("asr", "off"),
+        "candidate_limit": int(config["dub"].get("candidate_limit", 4)),
+        "clone_cleanup": bool(config["dub"].get("clone_cleanup", False)),
+        "timing": _pick(config["timing"], ("mode", "pacing", "max_stretch", "min_stretch",
+                                           "stretcher", "protect_pause", "anchor_tolerance",
+                                           "repair")),
+        "coverage": _pick(config["coverage"], ("mode", "gain_db", "handle_ms", "fade_ms",
+                                               "max_seconds", "leakage_check", "generate")),
+        "treatments": {
+            **_pick(config["treatments"], ("mode", "default", "intensity")),
+            "scenes": treatment_settings(dict(config["treatments"]))["scenes"],
+            "catalogue": treatment_catalogue(),
+        },
+        "adaptive": _pick(config["adaptive"], ("mode", "judge", "background_policy",
+                                               "envelope_strength", "max_envelope_db")),
+    }
+
+
 def record_decision(root, job_id: str, revision: str, cue_id: str, patch: dict,
                     actor: str = "", scope: str = "cue") -> dict:
     """Store one cue's or one event's reviewer decision, keeping its history.
@@ -314,6 +354,11 @@ def record_decision(root, job_id: str, revision: str, cue_id: str, patch: dict,
         raise ValueError("a review decision needs the cue or event it is about")
     if scope not in ("cue", "event"):
         raise ValueError("a review decision is about a cue or an event")
+    with _DECISIONS_LOCK:
+        return _record(root, job_id, revision, cue_id, patch, actor, scope)
+
+
+def _record(root, job_id, revision, cue_id, patch, actor, scope) -> dict:
     data = load_decisions(root, job_id)
     where = data["cues"] if scope == "cue" else data["events"]
     entry = dict(where.get(cue_id) or {})

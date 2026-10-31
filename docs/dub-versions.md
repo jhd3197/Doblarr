@@ -12,7 +12,7 @@ for a title or episode and travel with exported recipes:
 - **Dialogue direction:** a short editorial brief, such as “restrained anime
   dialogue; preserve the mystery; avoid added catchphrases.”
 - **Character dialogue notes:** register and personality keyed by speaker ID.
-  For example, `{"GINKO": "Calm, concise, quietly curious"}`. These affect writing;
+  For example, `{"SORA": "Calm, concise, quietly curious"}`. These affect writing;
   character voice delivery is configured separately in the cast.
 - **Names and terminology:** keep names and recurring concepts consistent.
 

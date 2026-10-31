@@ -12,6 +12,7 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
+from ..hardware import resolve_device
 from .base import ApiError, Ctx, default_target, find_job, pairs, wait
 from .jobs import queue_job
 
@@ -168,7 +169,8 @@ def cmd_dubref(ctx: Ctx) -> int:
         ctx.say(f"transcribing track {stream} ({track.get('title', '?')}) with {a.model} ...")
         ref = dub_reference.build(script, audio, stream, language,
                                   float(track.get("offset") or 0.0),
-                                  float(track.get("rate") or 1.0), a.model, a.device)
+                                  float(track.get("rate") or 1.0), a.model,
+                                  resolve_device("transcribe", {"device": a.device}))
     lines = ref["lines"]
     heard = [ln for ln in lines if ln["text"]]
     target = dub_reference.reference_file(script, stream)
@@ -234,7 +236,7 @@ def add_parsers(sub, common) -> None:
     d.add_argument("--locale", default="es-419")
     d.add_argument("--track", type=int, default=None, help="stream index (default: Latino)")
     d.add_argument("--model", default="large-v3")
-    d.add_argument("--device", default="cuda")
+    d.add_argument("--device", default="auto", help="auto, cpu, cuda or cuda:N")
     d.add_argument("--refresh", action="store_true", help="transcribe again")
     d.add_argument("--compare", default=None, metavar="JOB_ID",
                    help="put a finished dub's lines next to the published ones")

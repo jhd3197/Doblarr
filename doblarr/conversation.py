@@ -26,9 +26,8 @@ import wave
 from pathlib import Path
 
 from . import treatments
-from .cues import TARGET, Span
+from .cues import TARGET, Span, apply_findings
 from .stages import boundaries
-from .stages.quality import apply_findings
 
 log = logging.getLogger("doblarr.conversation")
 

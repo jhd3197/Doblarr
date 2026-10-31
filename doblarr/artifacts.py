@@ -6,19 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 
-from .telemetry import write_json
+from .fileio import read_json, write_json
 
 
 def digest(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
-
-
-def read_json(path: Path) -> dict:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
-    except (OSError, ValueError):
-        return {}
 
 
 def stamp(path: Path | None) -> dict | None:

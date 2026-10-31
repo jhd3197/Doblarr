@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from pathlib import Path
 
+from .fileio import write_json
 from .languages import base_language, parse
 
 log = logging.getLogger("doblarr.dub_text")
@@ -75,17 +75,13 @@ def path_for(folder: Path, stem: str, stream: int) -> Path:
 
 def transcribe(wav: Path, language: str, model: str = "large-v3", device=None) -> list[dict]:
     """The words of a track with their times: [{start, end, text}]."""
-    from faster_whisper import WhisperModel
+    from . import whisper
 
-    from . import hardware
-
-    device = device or hardware.Device()
-    whisper = WhisperModel(model, device=device.kind, device_index=device.device_index,
-                           compute_type="float16" if device.kind == "cuda" else "int8")
-    segments, _info = whisper.transcribe(str(wav), language=language, vad_filter=True,
-                                         word_timestamps=True)
-    return [{"start": round(w.start, 2), "end": round(w.end, 2), "text": w.word.strip()}
-            for s in segments for w in (s.words or []) if w.word.strip()]
+    with whisper.loaded(model, device) as recognizer:
+        segments, _info = recognizer.transcribe(str(wav), language=language, vad_filter=True,
+                                                word_timestamps=True)
+        return [{"start": round(w.start, 2), "end": round(w.end, 2), "text": w.word.strip()}
+                for s in segments for w in (s.words or []) if w.word.strip()]
 
 
 def ensure(folder: Path, stem: str, track: dict, wav: Path, *, offset: float = 0.0,
@@ -95,12 +91,10 @@ def ensure(folder: Path, stem: str, track: dict, wav: Path, *, offset: float = 0
     if path.is_file():
         return path
     words = transcribe(wav, base_language(str(track.get("lang") or "")) or "", model, device)
-    temp = path.with_suffix(".part.json")
-    temp.write_text(json.dumps({
+    write_json(path, {
         "reader": READER, "stream": int(track["stream"]), "lang": track.get("lang", ""),
         "title": track.get("title", ""), "model": model, "offset": offset, "rate": rate,
-        "words": words}, ensure_ascii=False), encoding="utf-8")
-    os.replace(temp, path)
+        "words": words}, indent=None)
     log.info("dub text: %d words from audio %s (%s)", len(words), track["stream"],
              track.get("title") or track.get("lang"))
     return path

@@ -49,6 +49,7 @@ from .errors import JobCancelled
 from .ffmpeg import FFmpegError, run_ffmpeg
 from .fingerprints import processing as processing_fingerprint
 from .fingerprints import verification as screening_fingerprint
+from .performance import ask_adapter
 
 log = logging.getLogger("doblarr.reactions")
 
@@ -119,29 +120,10 @@ def enabled(options: dict | None) -> bool:
 def engine_capability(engine: str, client=None) -> str:
     """Whether this engine can actually be asked to produce a nonverbal sound.
 
-    Mirrors `performance.capability`: the adapter is asked, and an adapter that
-    cannot answer leaves `unknown`, which is different from `unsupported` and
-    very different from `supported`.
+    The adapter's `supports_nonverbal(engine)` is asked; an adapter without
+    one leaves `unknown`, which is different from `unsupported`.
     """
-    if client is None:
-        return "unknown"
-    for attribute in ("supports_nonverbal", "nonverbal_engines", "capabilities"):
-        value = getattr(client, attribute, None)
-        if value is None:
-            continue
-        try:
-            resolved = value(engine) if callable(value) else value
-        except Exception:  # noqa: BLE001 - a probe must never break a run
-            return "unknown"
-        if isinstance(resolved, bool):
-            return "supported" if resolved else "unsupported"
-        if isinstance(resolved, dict):
-            found = resolved.get("nonverbal")
-            if found is not None:
-                return "supported" if found else "unsupported"
-        if isinstance(resolved, list | tuple | set):
-            return "supported" if engine in resolved else "unsupported"
-    return "unknown"
+    return ask_adapter((client,), "supports_nonverbal", engine)
 
 
 # --------------------------------------------------------------------------

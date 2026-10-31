@@ -10,7 +10,10 @@ paths:
 web:
   host: 0.0.0.0
   port: 6363
-  # api_key: ""           # set to require X-Api-Key on /api/* (UI prompts for it)
+  # API key for /api/*. `doblarr serve` generates one here on first start and
+  # the web UI asks for it once. allow_unauthenticated: true leaves the API open.
+  # api_key: ""
+  # allowed_hosts: []      # domain names besides IPs and local names, e.g. dub.example.com
 
 connect:
   radarr_url: http://host.docker.internal:7878
@@ -192,3 +195,10 @@ delivery:
   placement_samples: 3           # head/middle/tail cue windows decoded and checked
   silence_db: -50.0              # below this a placed window counts as silent
   check_original_streams: true   # the dub is added; nothing it went in with is dropped
+
+# How much regenerable output the work folder keeps; older items are deleted
+# after each job. Saved dub versions are kept unless dub.versions_kept > 0.
+retention:
+  watch_copies: 10              # browser copies of finished dubs
+  edit_sets: 5                  # work folders per title for re-rendered edits (14+ days old)
+  reports: 500                  # run reports; one a listed job points to is never removed

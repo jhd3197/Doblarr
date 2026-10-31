@@ -7,6 +7,7 @@ import { configQuery, queryClient } from '../../lib/queries.js';
 import { isShow } from '../../lib/library.js';
 import { castQuery, identityBody, voicesQuery } from './queries.js';
 import { VoicePicker } from './VoicePicker.jsx';
+import { Loading, EmptyState } from '../../components/States.jsx';
 
 const ROLE_LABELS = { speaker: 'Unknown speaker', narrator: 'Narrator', child_f: 'Girl', child_m: 'Boy',
   young_f: 'Young woman', young_m: 'Young man', adult_f: 'Adult woman', adult_m: 'Adult man',
@@ -175,7 +176,7 @@ function CastEditor({ item, targets, plan }) {
   let rows;
   if (cast === null) rows = null;
   else if (!cast.length) {
-    rows = <p className="title-muted">No speakers discovered for this file yet. Assign a narrator above, or run an episode audition to discover its speakers.</p>;
+    rows = <EmptyState>No speakers discovered for this file yet. Assign a narrator above, or run an episode audition to discover its speakers.</EmptyState>;
   } else {
     rows = cast.map((e, i) => (
       <div key={e.speaker_id || i} className="cast-row">
@@ -245,7 +246,7 @@ export function VoicesTab({ item, targets, planState }) {
           {/* Controls shown before the plan arrives would let a choice be made
               and then silently replaced by the saved plan. */}
           {planState.plan ? <Narrator item={item} targets={targets} planState={planState} />
-            : <p className="hint">Loading this title’s plan…</p>}
+            : <Loading>Loading this title’s plan…</Loading>}
         </div>
         <p id="castScope" className="hint">{scope}</p>
         <CastEditor item={item} targets={targets} plan={planState.plan} />

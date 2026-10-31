@@ -299,3 +299,12 @@ def test_a_voice_the_show_already_knows_is_named_in_the_next_episode(db, tmp_pat
     changes = speaker_memory.name_from_memory(db, second, heard, "ja")
     assert [(c["label"], c["name"]) for c in changes] == [("V7", "Kaito")]
     assert speaker_memory.labels_to_characters(db, "rev-e2") == {"V7": kaito["id"]}
+
+
+def test_series_keys_for_rules_and_casting():
+    from doblarr import identity
+
+    assert identity.show_ref("show:tvdb:81234") == "series:81234"
+    assert identity.show_ref("") == ""
+    assert identity.casting_ref("show:tvdb:81234") == "series:81234"
+    assert identity.casting_ref("show:local:harbor-lights") == "show:local:harbor-lights"

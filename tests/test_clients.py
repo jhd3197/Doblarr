@@ -149,3 +149,30 @@ def test_voicebox_sends_chatterbox_sampling_and_refuses_it_elsewhere(monkeypatch
         raise AssertionError("expected VoiceboxError")
     except VoiceboxError as exc:
         assert "chatterbox" in str(exc)
+
+
+def test_a_retried_upload_resends_the_whole_clip(monkeypatch, tmp_path):
+    clip = tmp_path / "line.wav"
+    clip.write_bytes(b"RIFF-clip-bytes")
+    calls = mock_session(monkeypatch, [FakeResp(503), FakeResp(200, json_data={"text": "hola"})])
+    assert VoiceboxClient("http://vb").transcribe(clip, "es") == {"text": "hola"}
+    assert [c["files"]["file"][1] for c in calls] == [b"RIFF-clip-bytes", b"RIFF-clip-bytes"]
+
+
+def test_creating_a_profile_is_never_retried(monkeypatch, tmp_path):
+    calls = mock_session(monkeypatch, [FakeResp(503)])
+    try:
+        VoiceboxClient("http://vb").create_profile("Kaito", "es")
+        raise AssertionError("expected VoiceboxError")
+    except VoiceboxError as exc:
+        assert exc.status == 503
+    assert len(calls) == 1
+
+
+def test_retry_after_is_capped(monkeypatch):
+    slept: list[float] = []
+    monkeypatch.setattr("time.sleep", slept.append)
+    mock_session(monkeypatch, [FakeResp(429, headers={"Retry-After": "3600"}),
+                               FakeResp(200, json_data=[])], fast_sleep=False)
+    RadarrClient("http://r", "k").list_movies()
+    assert slept == [RadarrClient.max_wait]

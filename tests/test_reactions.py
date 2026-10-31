@@ -305,7 +305,8 @@ def test_engine_capability_is_asked_and_unknown_when_it_cannot_answer():
     assert reactions.engine_capability("qwen", Silent()) == "unknown"
 
     class Honest:
-        nonverbal_engines = ["special"]
+        def supports_nonverbal(self, engine):
+            return engine == "special"
 
     assert reactions.engine_capability("qwen", Honest()) == "unsupported"
     assert reactions.engine_capability("special", Honest()) == "supported"

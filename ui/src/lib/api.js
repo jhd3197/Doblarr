@@ -1,4 +1,12 @@
 import { safeGet, safeSet } from './storage.js';
+import { promptDialog } from './dialogs.js';
+
+// Browsers cannot send a header with an <audio>, <video> or EventSource
+// request, so those URLs carry the key as a query parameter instead.
+export function withKey(url) {
+  const key = safeGet('doblarr_api_key', '');
+  return key ? `${url}${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(key)}` : url;
+}
 
 export function apiUrl(path) {
   return '/api/' + path.replace(/^\/?api\//, '').replace(/^\//, '');
@@ -30,7 +38,7 @@ export async function api(path, options = {}) {
     // Another concurrent request may already have refreshed the key.
     let key = safeGet('doblarr_api_key', '');
     if (key === sentKey) {
-      key = window.prompt('Doblarr needs its API key (web.api_key in config.yaml):', '') || '';
+      key = await promptDialog({ title: 'API key', message: 'Doblarr needs its API key (web.api_key in config.yaml).', label: 'API key' }) || '';
       if (key) {
         safeSet('doblarr_api_key', key);
         window.dispatchEvent(new Event('doblarr-api-key'));

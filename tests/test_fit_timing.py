@@ -29,8 +29,8 @@ def _job(tmp_path: Path, slots: list[tuple[float, float]]) -> DubJob:
 def _spy(monkeypatch, lengths: dict[str, float]):
     """Fake ffprobe durations by clip stem; record ffmpeg calls."""
     calls = []
-    monkeypatch.setattr(fit_timing, "run_ffprobe",
-                        lambda args, **k: str(lengths[Path(args[-1]).stem]))
+    monkeypatch.setattr(fit_timing, "media_duration",
+                        lambda path, **k: lengths[Path(path).stem])
     def render(args, **kwargs):
         calls.append(args)
         Path(args[-1]).write_bytes(b"audio")
@@ -83,8 +83,7 @@ def test_overlong_clip_clamped_and_warned(tmp_path, monkeypatch, caplog):
 
 def test_fresh_fitted_clips_skip_but_repoint(tmp_path, monkeypatch):
     job = _job(tmp_path, [(0.0, 2.0)])
-    monkeypatch.setattr(fit_timing, "run_ffprobe",
-                        lambda args, **k: "2.4")
+    monkeypatch.setattr(fit_timing, "media_duration", lambda path, **k: 2.4)
     calls = []
 
     def fake_ffmpeg(args, **k):
@@ -235,7 +234,7 @@ def test_fit_fingerprint_follows_the_pacing_settings(tmp_path, monkeypatch):
 
 def test_a_rejected_rewrite_is_never_regenerated(tmp_path, monkeypatch):
     job = _job(tmp_path, [(0.0, 2.0)])
-    job.segments[0].text_translated = "Tell Ginko we leave at five tonight."
+    job.segments[0].text_translated = "Tell Sora we leave at five tonight."
     _spy(monkeypatch, {"line_0000": 3.0})
     regenerated, seen = [], []
 
@@ -247,4 +246,4 @@ def test_a_rejected_rewrite_is_never_regenerated(tmp_path, monkeypatch):
                    regenerate=lambda seg: regenerated.append(seg.index),
                    options={"pacing": "speaker"}, accept_rewrite=accept)
     assert seen and regenerated == []
-    assert job.segments[0].text_translated == "Tell Ginko we leave at five tonight."
+    assert job.segments[0].text_translated == "Tell Sora we leave at five tonight."

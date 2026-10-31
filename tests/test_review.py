@@ -90,12 +90,12 @@ def test_character_reuse_requires_explicit_mapping(client_factory, tmp_path):
     client = client_factory()
     db = client.app.state.jobs.db
     job = DubJob(tmp_path / "episode.mkv", "ja", "es")
-    job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00", voicebox_profile_id="ginko")}
-    save_characters(job, db, "Mushishi", {"SPEAKER_00": "Ginko"})
+    job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00", voicebox_profile_id="sora")}
+    save_characters(job, db, "Harbor Lights", {"SPEAKER_00": "Sora"})
     job.speakers = {"SPEAKER_03": Speaker("SPEAKER_03")}
-    assert not character_cast(job, db, "Mushishi", {})
-    cast = character_cast(job, db, "Mushishi", {"SPEAKER_03": "Ginko"})
-    assert cast[0]["speaker_id"] == "SPEAKER_03" and cast[0]["voice"] == "ginko"
+    assert not character_cast(job, db, "Harbor Lights", {})
+    cast = character_cast(job, db, "Harbor Lights", {"SPEAKER_03": "Sora"})
+    assert cast[0]["speaker_id"] == "SPEAKER_03" and cast[0]["voice"] == "sora"
 
 
 def test_stale_review_edits_are_rejected_and_fresh_ones_pin_the_cue(client_factory, tmp_path):
@@ -132,3 +132,21 @@ def test_review_response_keeps_provenance_without_local_paths(client_factory, tm
     assert rendered[0]["proven"] is False
     assert "path" not in rendered[0] and rendered[0]["available"] is True
     assert "audio_clip" not in row
+
+
+def test_concurrent_verdicts_on_one_job_are_all_kept(tmp_path):
+    import threading
+
+    from doblarr.review import load_decisions, record_decision
+
+    def verdict(n):
+        record_decision(tmp_path, "job-1", "rev-1", f"cue-{n}",
+                        {"dispositions": {"f1": {"disposition": "accepted"}}})
+
+    threads = [threading.Thread(target=verdict, args=(n,)) for n in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    saved = load_decisions(tmp_path, "job-1")["cues"]
+    assert sorted(saved) == sorted(f"cue-{n}" for n in range(12))

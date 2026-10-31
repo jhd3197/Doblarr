@@ -97,8 +97,8 @@ def test_translation_direction_survives_batch_and_timing_rewrite(setup_driver):
     driver, _ = setup_driver([reply("Hola"), reply("Hola")])
     translator = build_translator("prompture", "local/test", direction={
         "locale": "es-419", "adaptation": "faithful", "direction": "Quiet anime dialogue",
-        "character_notes": {"GINKO": "Calm and concise"}})
-    translator.translate_batch([{"text": "Hello", "speaker": "GINKO"}], "en", "es")
+        "character_notes": {"SORA": "Calm and concise"}})
+    translator.translate_batch([{"text": "Hello", "speaker": "SORA"}], "en", "es")
     translator.shorten("Hola", "es", 10)
     for prompt, _ in driver.calls:
         assert "Neutral Latin American Spanish" in prompt
@@ -194,7 +194,8 @@ def test_voicebox_receives_system_and_json_schema():
     translator = VoiceboxTranslator(SimpleNamespace(llm_generate=generate))
     assert translator.translate("hello", "en", "es", 40) == "hola"
     assert "translations" in calls[0][0]
-    assert "40" in calls[0][1] and "en" in calls[0][1] and "es" in calls[0][1]
+    assert "dialogue from en to es" in calls[0][1]
+    assert "under about 40 characters" in calls[0][1]
 
 
 def test_cancellation_is_not_retried_or_wrapped(setup_driver):

@@ -9,7 +9,7 @@ Three things it refuses to do, because each one manufactures evidence:
 
 - It never compares display wording. The comparison is against the *effective
   spoken text* the engine was actually given, so an approved pronunciation
-  spelling ("Ginko" spoken as "Guinko") is a match, not an error.
+  spelling ("Sora" spoken as "Zora") is a match, not an error.
 - It never lets a whole-line similarity score decide. A single flipped negation
   scores ~0.95 and changes the meaning of the line, so critical terms are
   compared term by term and reported on their own.
@@ -107,6 +107,17 @@ _WORD = re.compile(r"\w+", re.UNICODE)
 # Separators that carry no spoken content. Everything else — including letters
 # with diacritics and CJK — survives normalization.
 _STRIP = re.compile(r"[^\w\s]", re.UNICODE)
+
+
+def spoken_form(text: str, pronunciations: dict) -> str:
+    # Longest term first; substitutions occur once, so replacements cannot cascade.
+    if not pronunciations:
+        return text
+    terms = sorted((k for k in pronunciations if k), key=len, reverse=True)
+    if not terms:
+        return text
+    pattern = r"(?<!\w)(?:" + "|".join(re.escape(k) for k in terms) + r")(?!\w)"
+    return re.sub(pattern, lambda match: pronunciations[match.group()], text)
 
 
 def base_language(language: str) -> str:
@@ -456,8 +467,6 @@ def expected_for(seg, pronunciations=None) -> str:
     """
     if seg.tts_text:
         return seg.tts_text
-    from .stages.quality import spoken_form
-
     return spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
 
 

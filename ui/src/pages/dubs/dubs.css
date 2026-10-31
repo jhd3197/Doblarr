@@ -12,6 +12,5 @@
 .dubs-track { font-size: 13px; }
 .dubs-version { font-size: 11px; color: var(--muted); }
 .dubs-pct { font-size: 11px; color: var(--muted); margin-top: 3px; }
-.dubs-empty { padding: 22px 10px; color: var(--muted); }
 .bar > span.bar-dim { background: var(--color-neutral-600); }
 .review-knowledge { align-self: center; }

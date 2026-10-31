@@ -29,6 +29,7 @@ class ArrClient:
     error_cls: type[ArrClientError] = ArrClientError
     max_retries = 2                  # retries after the first attempt
     backoff = 0.5                    # seconds; doubles each retry
+    max_wait = 60.0                  # seconds; caps a server's Retry-After
 
     def __init__(self, base_url: str, timeout: int = 30,
                  headers: dict | None = None):
@@ -55,7 +56,8 @@ class ArrClient:
         if retry_after:
             with suppress(TypeError, ValueError):
                 delay = max(delay, float(retry_after))
-        return delay
+        # A server asking for an hour would otherwise hold the job worker that long.
+        return min(delay, self.max_wait)
 
     def _attempt(self, method: str, path: str, *,
                  timeout: int | None = None, **kwargs) -> requests.Response:
@@ -83,7 +85,7 @@ class ArrClient:
             stop=stop_after_attempt(self.max_retries + 1),
             wait=self._wait,
             retry=retry_if_exception(self._is_transient),
-            before_sleep=before_sleep_log(log, logging.DEBUG),
+            before_sleep=before_sleep_log(log, logging.WARNING),
             reraise=True,
         )
         return retryer(self._attempt, method, path, timeout=timeout, **kwargs)

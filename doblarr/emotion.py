@@ -20,13 +20,14 @@ other than the configured local model.
 
 from __future__ import annotations
 
-import json
 import logging
-import subprocess
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from .ffmpeg import FFmpegError, run_ffmpeg_bytes
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.emotion")
 
@@ -67,10 +68,14 @@ class Seen(BaseModel):
 
 def still(video: Path, t: float, height: int = 360) -> bytes:
     """One JPEG frame of the video at `t` seconds."""
-    return subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1", "-an",
-         "-sn", "-vf", f"scale=-2:{height}", "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", "-"],
-        capture_output=True, check=False, timeout=120).stdout
+    try:
+        return run_ffmpeg_bytes(
+            ["-v", "error", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1", "-an",
+             "-sn", "-vf", f"scale=-2:{height}", "-q:v", "4", "-f", "image2", "-c:v", "mjpeg",
+             "-"], timeout=120)
+    except FFmpegError as exc:
+        log.warning("emotion: no frame at %.1f s: %s", t, exc)
+        return b""
 
 
 def voice(vocals: Path, lines: list[dict], device: str = "cpu", cancel=None) -> list[dict | None]:
@@ -200,9 +205,7 @@ def run(job, work: Path, model: str, *, names: dict[str, str] | None = None,
             for ln, h, s in zip(lines, heard, seen, strict=True)]
     payload = {"request": key, "reader": READER, "model": model, "voice_model": VOICE_MODEL,
                "lines": rows}
-    temp = path.with_suffix(".partial.json")
-    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    temp.replace(path)
+    write_json(path, payload, indent=None)
     log.info("emotion: %d line(s) read, %d agreed", len(rows),
              sum(1 for r in rows if r.get("agree")))
     return path, False

@@ -24,7 +24,7 @@ from ..clients.speech import build_speech_client
 from ..config import Config
 from ..errors import NotFoundError
 from ..events import EventBus
-from ..jobs import JobStore, Worker
+from ..jobs import JobStore, Worker, queue_rerender
 from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language
 from ..review import load_decisions, snapshot_revision  # noqa: F401 - reused identity
@@ -375,7 +375,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                   for g in body.get("groups", []) if g.get("span")]
         path = (config.work_dir / "studio" / "references" / found["id"]
                 / f"aligned-{body['id']}-r{body['revision']}.json")
-        from ..telemetry import write_json
+        from ..fileio import write_json
 
         write_json(path, {"reference": ref["id"], "language": ref["language"],
                           "alignment": body["id"], "revision": body["revision"],
@@ -626,16 +626,9 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                              "delivery": row.get("delivery", ""),
                              "revision": row.get("revision", 0)})
                 count += 1
-        overrides = copy.deepcopy(original.overrides or {})
-        overrides["dub.line_edits"] = edits
-        overrides["dub.dry_run"] = False
-        job = store.add(title=f"{original.title} · {vid}", source="studio",
-                        source_lang=original.source_lang, target_lang=original.target_lang,
-                        target_locale=original.target_locale, input_file=original.input_file,
-                        knowledge_snapshot=original.knowledge_snapshot, kind=original.kind,
-                        overrides=overrides,
-                        version_name=f"experiment {variant['condition']}")
-        bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+        job = queue_rerender(store, bus, original, {"dub.line_edits": edits},
+                             title=f"{original.title} · {vid}", source="studio",
+                             version_name=f"experiment {variant['condition']}")
         return {"job": {"id": job.id}, "lines": count,
                 "note": "Same run, same cast and processing; only these lines get new speech. "
                         "A different script necessarily produces different takes."}
@@ -815,15 +808,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                 edit.setdefault(k, v)
             edit["cue"] = (row.get("cue") or {}).get("cue_id")
             edit["voice"] = profile
-        overrides = copy.deepcopy(original.overrides or {})
-        overrides["dub.line_edits"] = edits
-        overrides["dub.dry_run"] = False
-        job = store.add(title=original.title, source=original.source,
-                        source_lang=original.source_lang, target_lang=original.target_lang,
-                        target_locale=original.target_locale, input_file=original.input_file,
-                        knowledge_snapshot=original.knowledge_snapshot, kind=original.kind,
-                        overrides=overrides)
-        bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+        job = queue_rerender(store, bus, original, {"dub.line_edits": edits})
         return {"job": job.id, "generating": len(lines),
                 "note": f"Only {character}'s {len(lines)} line(s) get new speech; every "
                         "other line reuses its existing audio."}
@@ -1149,15 +1134,8 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             raise HTTPException(409, {"error": "this export would generate new speech for "
                                                f"{len(regenerating)} line(s); confirm to "
                                                "allow it", "lines": regenerating})
-        overrides = copy.deepcopy(original.overrides or {})
-        overrides["dub.line_edits"] = edits
-        overrides["dub.dry_run"] = False
-        job = store.add(title=original.title, source=original.source,
-                        source_lang=original.source_lang, target_lang=original.target_lang,
-                        target_locale=original.target_locale, input_file=original.input_file,
-                        knowledge_snapshot=original.knowledge_snapshot, kind=original.kind,
-                        overrides=overrides, version_name="studio export")
-        bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+        job = queue_rerender(store, bus, original, {"dub.line_edits": edits},
+                             version_name="studio export")
         return {"exported": "queued", "job": job.id, "generated": len(regenerating),
                 "note": "Chosen takes are re-mixed from audio that already exists. The "
                         "original media and earlier versions are not touched."}

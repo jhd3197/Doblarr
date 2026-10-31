@@ -317,7 +317,7 @@ def test_an_unknown_take_or_mode_is_refused_before_anything_is_queued(
         "edits": [{"index": 1, "gain_db": 90}]}).status_code == 422
 
 
-# -- Plan 04: phrase timing and coverage over the API ------------------------
+# -- phrase timing and coverage over the API ------------------------
 
 
 def planned(job, work, tmp_path):

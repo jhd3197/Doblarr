@@ -19,12 +19,15 @@ file's path and modification time: a remade dub gets a fresh copy.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import subprocess
 import threading
+import time
 from pathlib import Path
+
+from .ffmpeg import FFmpegError, probe_json, run_ffmpeg, run_ffmpeg_bytes
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.watch")
 
@@ -33,10 +36,16 @@ HEIGHT = 1080
 WINDOW = 0.25           # seconds per loudness value
 QUIETER_DB = 9.0        # ours this much below the original is worth a listen
 MIN_SPAN = 0.5          # seconds
+# A browser copy of a long film takes a while; a run with no result after this
+# is stuck (a stalled share), and the next request retries it.
+TRANSCODE_TIMEOUT = 3 * 3600.0
 
 _lock = threading.Lock()
 _building: dict[str, threading.Thread] = {}
-_failed: dict[str, str] = {}
+_failed: dict[str, tuple[str, float]] = {}
+# A failed watch copy is retried after this long, so a share that was briefly
+# offline does not leave the page failed until someone clicks retry.
+RETRY_AFTER = 600.0
 
 
 def folder(cache: Path, output: Path) -> Path:
@@ -49,13 +58,11 @@ def streams(output: Path) -> dict:
     """The output's audio and text subtitle tracks: {audio: [...], subtitles: [...]}."""
     from .discovery import ISO3_TO_ISO2
 
-    raw = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries",
-         "stream=index,codec_type,codec_name:stream_tags=language,title:disposition=default",
-         "-of", "json", str(output)], capture_output=True, text=True, encoding="utf-8",
-        errors="replace", check=False).stdout
+    found = probe_json(output, "-show_entries",
+                       "stream=index,codec_type,codec_name:stream_tags=language,title:"
+                       "disposition=default")
     audio, subs = [], []
-    for row in json.loads(raw or "{}").get("streams") or []:
+    for row in found.get("streams") or []:
         tags = row.get("tags") or {}
         code = str(tags.get("language") or "und").lower()
         item = {"stream": int(row["index"]), "lang": ISO3_TO_ISO2.get(code, code),
@@ -70,8 +77,11 @@ def streams(output: Path) -> dict:
 
 
 def _nvenc() -> bool:
-    out = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True,
-                         text=True, check=False).stdout
+    try:
+        out = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True,
+                             text=True, check=False, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
     return "h264_nvenc" in out
 
 
@@ -82,24 +92,24 @@ def _video(output: Path, dest: Path) -> None:
         + [["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]]
     error = ""
     for codec in encoders:
-        result = subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", "-i", str(output), "-map", "0:v:0", "-an", "-sn",
-             "-vf", scale, *codec, "-movflags", "+faststart", str(temp)],
-            capture_output=True, text=True, check=False)
-        if result.returncode == 0 and temp.is_file():
+        try:
+            run_ffmpeg(["-v", "error", "-y", "-i", str(output), "-map", "0:v:0", "-an", "-sn",
+                        "-vf", scale, *codec, "-movflags", "+faststart", str(temp)],
+                       timeout=TRANSCODE_TIMEOUT)
             os.replace(temp, dest)
             return
-        error = (result.stderr or "").strip()[-300:]
-        temp.unlink(missing_ok=True)
+        except FFmpegError as exc:
+            error = str(exc)
+        finally:
+            temp.unlink(missing_ok=True)
     raise RuntimeError(f"could not make the watch copy of the picture: {error}")
 
 
 def _envelope(output: Path, stream: int) -> list[float]:
     import numpy as np
 
-    raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(output), "-map", f"0:{stream}", "-ac", "1",
-         "-ar", "16000", "-f", "s16le", "-"], capture_output=True, check=False).stdout
+    raw = run_ffmpeg_bytes(["-v", "error", "-i", str(output), "-map", f"0:{stream}", "-ac", "1",
+                            "-ar", "16000", "-f", "s16le", "-"], timeout=TRANSCODE_TIMEOUT)
     x = np.frombuffer(raw, np.int16).astype(np.float32) / 32768
     size = int(16000 * WINDOW)
     count = len(x) // size
@@ -149,10 +159,10 @@ def _prepare(output: Path, where: Path, original: int | None, ours: int | None) 
     if original is not None and ours is not None and not loud.is_file():
         first, second = _envelope(output, original), _envelope(output, ours)
         found = quieter(first, second)
-        loud.write_text(json.dumps({"reader": READER, "window": WINDOW, "original": original,
-                                    "ours": ours, **found,
-                                    "curves": {"original": first, "ours": second}}),
-                        encoding="utf-8")
+        # Atomic: a half-written file would read as ready for good.
+        write_json(loud, {"reader": READER, "window": WINDOW, "original": original,
+                          "ours": ours, **found, "curves": {"original": first, "ours": second}},
+                   indent=None)
 
 
 def ensure(output: Path, where: Path, original: int | None, ours: int | None) -> str:
@@ -162,8 +172,10 @@ def ensure(output: Path, where: Path, original: int | None, ours: int | None) ->
             (where / "loudness.json").is_file() or original is None or ours is None):
         return "ready"
     with _lock:
-        if key in _failed:
-            return "failed: " + _failed[key]
+        failed = _failed.get(key)
+        if failed is not None and time.monotonic() - failed[1] < RETRY_AFTER:
+            return "failed: " + failed[0]
+        _failed.pop(key, None)
         thread = _building.get(key)
         if thread is None or not thread.is_alive():
             def work():
@@ -172,7 +184,7 @@ def ensure(output: Path, where: Path, original: int | None, ours: int | None) ->
                 except Exception as exc:  # noqa: BLE001 - reported to the page, retried on demand
                     log.warning("watch: %s", exc)
                     with _lock:
-                        _failed[key] = str(exc)
+                        _failed[key] = (str(exc), time.monotonic())
             thread = threading.Thread(target=work, name="watch-copy", daemon=True)
             _building[key] = thread
             thread.start()
@@ -191,15 +203,16 @@ def language(output: Path, where: Path, stream: int, codec: str | None) -> Path:
         return dest
     temp = dest.with_name(dest.stem + f".{threading.get_ident()}.part.mp4")
     audio = ["-c:a", "copy"] if codec == "aac" else ["-c:a", "aac", "-b:a", "192k"]
-    result = subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-i", str(where / "video.mp4"), "-i", str(output),
-         "-map", "0:v:0", "-map", f"1:{stream}", "-c:v", "copy", *audio, "-ac", "2",
-         "-shortest", "-movflags", "+faststart", str(temp)],
-        capture_output=True, text=True, check=False)
-    if result.returncode or not temp.is_file():
+    try:
+        run_ffmpeg(["-v", "error", "-y", "-i", str(where / "video.mp4"), "-i", str(output),
+                    "-map", "0:v:0", "-map", f"1:{stream}", "-c:v", "copy", *audio, "-ac", "2",
+                    "-shortest", "-movflags", "+faststart", str(temp)],
+                   timeout=TRANSCODE_TIMEOUT)
+        os.replace(temp, dest)
+    except FFmpegError as exc:
+        raise RuntimeError(f"could not add the audio track: {exc}") from exc
+    finally:
         temp.unlink(missing_ok=True)
-        raise RuntimeError("could not add the audio track: " + (result.stderr or "")[-300:])
-    os.replace(temp, dest)
     return dest
 
 
@@ -207,10 +220,14 @@ def subtitles(output: Path, where: Path, stream: int) -> Path:
     dest = where / f"subs-{stream}.vtt"
     if not dest.is_file():
         where.mkdir(parents=True, exist_ok=True)
-        temp = dest.with_name(dest.stem + ".part.vtt")
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(output), "-map", f"0:{stream}",
-                        "-f", "webvtt", str(temp)], capture_output=True, check=False)
-        if not temp.is_file():
-            raise RuntimeError("could not read the subtitle track")
-        os.replace(temp, dest)
+        temp = dest.with_name(dest.stem + f".{threading.get_ident()}.part.vtt")
+        try:
+            # ffmpeg creates the file before it fails; only a clean exit is kept.
+            run_ffmpeg(["-v", "error", "-y", "-i", str(output), "-map", f"0:{stream}",
+                        "-f", "webvtt", str(temp)], timeout=TRANSCODE_TIMEOUT)
+            os.replace(temp, dest)
+        except FFmpegError as exc:
+            raise RuntimeError(f"could not read the subtitle track: {exc}") from exc
+        finally:
+            temp.unlink(missing_ok=True)
     return dest

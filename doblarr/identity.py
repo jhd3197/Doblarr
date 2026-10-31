@@ -33,12 +33,13 @@ import json
 import logging
 import os
 import re
-import subprocess
 import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
+from .ffmpeg import FFmpegError, probe_json
+from .fileio import write_json
 from .studio import records
 
 log = logging.getLogger("doblarr.identity")
@@ -81,14 +82,11 @@ def _read_cache(path: Path | None) -> dict:
 def probe_streams(path: Path) -> tuple[float | None, list[dict]]:
     """Duration and stream layout from ffprobe; (None, []) when it cannot read it."""
     try:
-        out = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries",
-             "format=duration:stream=index,codec_type,codec_name,channels,sample_rate,"
-             "avg_frame_rate,width,height:stream_tags=language,title",
-             "-of", "json", str(path)],
-            capture_output=True, check=False, text=True, timeout=60).stdout
-        data = json.loads(out or "{}")
-    except (OSError, ValueError, subprocess.SubprocessError):
+        data = probe_json(path, "-show_entries",
+                          "format=duration:stream=index,codec_type,codec_name,channels,"
+                          "sample_rate,avg_frame_rate,width,height:stream_tags=language,title")
+    except (OSError, ValueError, FFmpegError) as exc:
+        log.warning("identity: could not probe %s: %s", Path(path).name, exc)
         return None, []
     streams = []
     for row in data.get("streams") or []:
@@ -144,10 +142,7 @@ def content_identity(path: str | Path, cache_dir: Path | None = None) -> dict:
             if len(table) > 5000:   # bounded: oldest insertions go first
                 for old in list(table)[:len(table) - 5000]:
                     table.pop(old, None)
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp = cache_path.with_suffix(".partial.json")
-            temp.write_text(json.dumps(table), encoding="utf-8")
-            temp.replace(cache_path)
+            write_json(cache_path, table, indent=None)
     return found
 
 
@@ -281,6 +276,14 @@ def show_ref(series_id: str | None) -> str:
     if series.startswith("show:tvdb:"):
         return f"series:{series.rsplit(':', 1)[-1]}"
     return f"series:{series}" if series.startswith("show:") else ""
+
+
+def casting_ref(series_id: str) -> str:
+    """The key a series' casting is kept under: "series:<tvdb id>" for a TVDB
+    show, otherwise the series id itself."""
+    if series_id.startswith("show:tvdb:"):
+        return f"series:{series_id.rsplit(':', 1)[-1]}"
+    return series_id
 
 
 def canonical_series(db, series_id: str) -> str:

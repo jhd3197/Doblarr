@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl } from '../../lib/api.js';
-import { safeGet } from '../../lib/storage.js';
+import { api, apiUrl, withKey } from '../../lib/api.js';
+import { Loading } from '../../components/States.jsx';
 
 // One line's voice envelope in review: what was chosen and why, what the
 // render actually did, the other candidates, and the same take heard four
@@ -21,9 +21,8 @@ const HEAR = [['dry', 'Take as generated'], ['shaped', 'With envelope'],
   ['source', 'Original'], ['mixed', 'In the mix']];
 
 function audioUrl(jobId, cue, kind, matched = false) {
-  const key = safeGet('doblarr_api_key', '');
-  return apiUrl(`adaptive/audio?job_id=${encodeURIComponent(jobId)}&cue=${encodeURIComponent(cue)}`
-    + `&kind=${kind}${matched ? '&level_matched=true' : ''}`) + (key ? `&api_key=${encodeURIComponent(key)}` : '');
+  return withKey(apiUrl(`adaptive/audio?job_id=${encodeURIComponent(jobId)}&cue=${encodeURIComponent(cue)}`
+    + `&kind=${kind}${matched ? '&level_matched=true' : ''}`));
 }
 
 export function forgetEnvelopes(jobId) { cache.delete(jobId); }
@@ -66,7 +65,7 @@ export function EnvelopePanel({ jobId, row }) {
   const [problem, setProblem] = useState(PROBLEMS[0][0]);
 
   if (!jobId || !cue) return <div id="reviewEnvelope" />;
-  if (state.loading) return <div id="reviewEnvelope"><p className="hint">Reading the envelope recommendations…</p></div>;
+  if (state.loading) return <div id="reviewEnvelope"><Loading>Reading the envelope recommendations…</Loading></div>;
   if (state.error) return <div id="reviewEnvelope"><p className="hint">{state.error}</p></div>;
   if (!line) return <div id="reviewEnvelope" />;
 
@@ -129,7 +128,7 @@ export function EnvelopePanel({ jobId, row }) {
           ))}
         </div>
         {line.candidates?.length ? (
-          <table className="table envelope-candidates">
+          <div className="table-wrap"><table className="table envelope-candidates">
             <thead><tr><th>Template</th><th>Score</th><th>Why</th></tr></thead>
             <tbody>
               {line.candidates.map(c => (
@@ -140,7 +139,7 @@ export function EnvelopePanel({ jobId, row }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         ) : <p className="hint">No recommendation was made for this line.</p>}
         <div className="envelope-choose">
           <label className="review-field">Template

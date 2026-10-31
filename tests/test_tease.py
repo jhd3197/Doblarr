@@ -33,16 +33,16 @@ def test_tease_artifacts_distinct_from_full(tmp_path, monkeypatch):
         calls.append(args)
         Path(args[-1]).write_bytes(b"audio")
     monkeypatch.setattr(extract, "run_ffmpeg", render)
-    monkeypatch.setattr(extract, "_select_audio_stream", lambda *a: 1)
+    monkeypatch.setattr(extract, "select_audio_stream", lambda *a: 1)
     job = _tease_job(tmp_path)
     extract.run(job, tmp_path / "work", duration=600)
     assert job.source_audio.name == "movie.tease.source.wav"
-    assert "-t" in calls[0] and "600" in calls[0]
+    assert calls[0][calls[0].index("-t") + 1] == "600"
 
     full = _tease_job(tmp_path, kind="full")
     extract.run(full, tmp_path / "work")
     assert full.source_audio.name == "movie.source.wav"
-    assert not any("-t" in c for c in calls[1])  # full extract is not cut
+    assert "-t" not in calls[1]                       # full extract is not cut
 
 
 def test_transcribe_max_seconds_window(tmp_path):

@@ -46,6 +46,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import identity
 from ..artifacts import digest
+from ..fileio import write_json
 from ..studio import records
 from . import title_drafts as drafts
 
@@ -284,9 +285,7 @@ def extract(db, ident: dict, script: Path, client, *, cancel=None, progress=None
             cache[checkpoint] = result
             # Atomic: an interrupted write never leaves a half cache that a
             # resume would trust.
-            temp = cache_path.with_suffix(".partial.json")
-            temp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-            temp.replace(cache_path)
+            write_json(cache_path, cache, indent=None)
         for raw in result.get("claims") or []:
             claim = ExtractedClaim.model_validate(raw)
             ordinals = {by_id[c] for c in claim.cue_ids if c in by_id}

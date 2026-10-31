@@ -456,7 +456,7 @@ def enforce(job, translator=None, glossary: dict[str, str] | None = None) -> dic
     rewrite says every rendering the line needs); what stays wrong becomes a
     finding on that cue. Returns {checked, held, revised, open} counts.
     """
-    from .stages.quality import apply_findings
+    from .cues import apply_findings
 
     texts = [s.text_src or "" for s in job.segments]
     renders = [s.text_translated or "" for s in job.segments]

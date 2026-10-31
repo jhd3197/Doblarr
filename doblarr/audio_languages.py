@@ -28,7 +28,6 @@ import shutil
 import subprocess
 import threading
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import plex_library
@@ -138,22 +137,7 @@ def read_tracks(client, cache: plex_library.AudioCache,
 
     missing = [leaf for _i, leaf, _m, _o in leaves
                if cache.tracks(leaf["ratingKey"], leaf.get("updatedAt")) is None]
-    if missing:
-        log.info("plex: reading audio tracks of %d file(s)", len(missing))
-
-        def probe(leaf):
-            try:
-                meta = client.metadata(leaf["ratingKey"])
-                return leaf, client.audio_languages(meta), plex_library.audio_tracks(meta)
-            except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
-                log.warning("plex: %s: %s", leaf.get("title"), exc)
-                return leaf, None, None
-
-        with ThreadPoolExecutor(max_workers=plex_library.WORKERS) as pool:
-            for leaf, langs, tracks in pool.map(probe, missing):
-                if tracks is not None:
-                    cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs, tracks)
-        cache.save()
+    plex_library.read_audio(client, cache, missing)
 
     rows = []
     for item, leaf, movie, original in leaves:
@@ -270,21 +254,32 @@ class AudioLanguages:
         return dict(by_file)
 
     def start(self, scanned_at: str, changes: list[dict]) -> dict:
-        if self.job.get("state") == "running":
-            raise RuntimeError("Tracks are already being rewritten.")
-        edits = self.plan(scanned_at, changes)
-        tracks = sum(len(e) for e in edits.values())
-        if self.dry_run_of():
-            self.job = {"state": "planned", "files": len(edits), "tracks": tracks, "done": 0,
-                        "failed": [], "message": "Dry run is on: nothing was written."}
-            return self.job
-        self.job = {"state": "running", "files": len(edits), "tracks": tracks, "done": 0,
-                    "failed": []}
+        # Checked and claimed under the lock: two quick clicks must not start
+        # two rewrites of the same library files.
+        with self.lock:
+            if self.job.get("state") == "running":
+                raise RuntimeError("Tracks are already being rewritten.")
+            edits = self.plan(scanned_at, changes)
+            tracks = sum(len(e) for e in edits.values())
+            if self.dry_run_of():
+                self.job = {"state": "planned", "files": len(edits), "tracks": tracks,
+                            "done": 0, "failed": [],
+                            "message": "Dry run is on: nothing was written."}
+                return self.job
+            self.job = {"state": "running", "files": len(edits), "tracks": tracks, "done": 0,
+                        "failed": []}
         threading.Thread(target=self._run, args=(edits,), daemon=True,
                          name="audio-languages").start()
         return self.job
 
     def _run(self, edits: dict[str, list[dict]]) -> None:
+        try:
+            self._rewrite_all(edits)
+        except Exception as exc:  # noqa: BLE001 - never leave the job "running" for good
+            log.exception("audio languages: the rewrite stopped")
+            self.job.update(state="done", message=f"The rewrite stopped: {exc}")
+
+    def _rewrite_all(self, edits: dict[str, list[dict]]) -> None:
         cache = self.cache_of()
         for file, file_edits in edits.items():
             try:
@@ -345,7 +340,7 @@ def rewrite(path: Path, edits: list[dict]) -> str:
             args += ["--edit", f"track:a{e['pos'] + 1}", "--set", f"language={e['tag']}"]
             args += ["--set", f"name={e['title']}"] if e["title"] else ["--delete", "name"]
         done = subprocess.run(args, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", check=False)
+                              errors="replace", check=False, timeout=300)
         if done.returncode not in (0, 1):   # 1 is mkvpropedit's "finished with warnings"
             tail = (done.stdout or done.stderr).strip().splitlines()
             raise RuntimeError(tail[-1] if tail else "mkvpropedit failed")

@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..artifacts import read_json
 from ..errors import JobCancelled
-from ..telemetry import write_json
+from ..fileio import write_json
 from .speech import GenerationFailed, SpeechClient, SpeechError
 
 __all__ = ["GenerationFailed", "VoiceboxClient", "VoiceboxError"]
@@ -90,15 +90,17 @@ class VoiceboxClient(SpeechClient):
 
     # -- transcription ----------------------------------------------------
     def transcribe(self, audio: Path, language: str | None = None) -> dict:
-        with open(audio, "rb") as fh:
-            files = {"file": (audio.name, fh)}
-            data = {"language": language} if language else {}
-            return self._post("/transcribe", files=files, data=data)
+        # Bytes, not an open file: a retry must resend the whole clip, and a
+        # file handle is already at its end after the first attempt.
+        files = {"file": (audio.name, audio.read_bytes())}
+        data = {"language": language} if language else {}
+        return self._post("/transcribe", files=files, data=data)
 
     # -- voice profiles (cloning) -----------------------------------------
     def create_profile(self, name: str, language: str, description: str = "") -> str:
         payload = {"name": name, "language": language, "description": description}
-        data = self._post("/profiles", json=payload)
+        # Creation is not idempotent: a retry after a lost response would make a twin.
+        data = self._attempt("POST", "/profiles", json=payload).json()
         profile_id = data.get("id") or data.get("profile_id")
         if not profile_id:
             raise VoiceboxError(f"no profile id in response: {data}")
@@ -118,8 +120,8 @@ class VoiceboxClient(SpeechClient):
                 and profile.get("preset_voice_id") == voice["voice_id"]
             ):
                 return profile["id"]
-        data = self._post(
-            "/profiles",
+        data = self._attempt(
+            "POST", "/profiles",
             json={
                 "name": voice["name"],
                 "language": voice["language"],
@@ -128,14 +130,15 @@ class VoiceboxClient(SpeechClient):
                 "preset_voice_id": voice["voice_id"],
                 "default_engine": engine,
             },
-        )
+        ).json()
         return data["id"]
 
     def add_sample(self, profile_id: str, sample: Path, reference_text: str) -> dict:
-        with open(sample, "rb") as fh:
-            files = {"file": (sample.name, fh)}
-            data = {"reference_text": reference_text}
-            return self._post(f"/profiles/{profile_id}/samples", files=files, data=data)
+        files = {"file": (sample.name, sample.read_bytes())}
+        data = {"reference_text": reference_text}
+        # Not retried: each POST adds another sample to the profile.
+        return self._attempt("POST", f"/profiles/{profile_id}/samples",
+                             files=files, data=data).json()
 
     def clone_voice(self, name: str, language: str, sample: Path, reference_text: str,
                     description: str = "") -> str:

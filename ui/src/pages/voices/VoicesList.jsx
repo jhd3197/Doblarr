@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery } from '../../lib/queries.js';
 import { characterFor, seriesOfShow, showOfSeries, voiceFor } from '../../lib/voices.js';
 import { catalogQuery, charactersQuery } from './queries.js';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { dotStyle, voiceTitle, VoiceTags } from './VoiceParts.jsx';
 
 // The voice catalogue as a cast. A show's characters are the cast: each one
@@ -86,12 +87,11 @@ export function VoicesList() {
 
   return (
     <div className="page" id="voicesRoot">
-      <div className="voices-head">
-        <div><h2>Voices</h2>
-          <p className="hint">Every show’s characters and the voice each one speaks with. Open one to hear it, see where it talks and describe it.</p></div>
+      <PageHeader title="Voices"
+        hint="Every show’s characters and the voice each one speaks with. Open one to hear it, see where it talks and describe it.">
         <input className="input voices-search" type="search" placeholder="Search characters and voices" aria-label="Search voices"
           value={query} onChange={e => setQuery(e.target.value)} />
-      </div>
+      </PageHeader>
       <div className="opts voices-filter" role="group" aria-label="Which voices">
         {FILTERS.map(([id, label]) => (
           <button key={id} type="button" className="opt" data-filter={id} aria-pressed={filter === id ? 'true' : 'false'}
@@ -111,15 +111,22 @@ export function VoicesList() {
         </section>
       ))}
       {loose.length > 0 && (
-        <div className="panel voices-table"><table className="table">
+        <div className="panel voices-table"><div className="table-wrap"><table className="table">
           <thead><tr><th>Voice</th><th>Engine</th><th>Kind</th><th>Language</th></tr></thead>
           <tbody>{loose.map(v => (
             <tr key={v.key} data-voice={v.key} tabIndex={0} onClick={() => navigate(voiceHref(v.key))}
-              onKeyDown={e => { if (e.key === 'Enter') navigate(voiceHref(v.key)); }}>
-              <td><span className="voice-dot" style={dotStyle(v)} />{voiceTitle(v)}</td>
+              onKeyDown={e => {
+                // The inner link handles its own Enter; the row answers to Enter and Space.
+                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  navigate(voiceHref(v.key));
+                }
+              }}>
+              <td><span className="voice-dot" style={dotStyle(v)} />
+                <Link to={voiceHref(v.key)} onClick={e => e.stopPropagation()}>{voiceTitle(v)}</Link></td>
               <td className="m">{v.engine || ''}</td><td>{v.kind || ''}</td><td className="m">{v.language || '—'}</td></tr>
           ))}</tbody>
-        </table></div>
+        </table></div></div>
       )}
     </div>
   );

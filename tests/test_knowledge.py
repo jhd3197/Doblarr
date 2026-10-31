@@ -29,7 +29,7 @@ def make_db(tmp_path):
 
 def add_rule(
     db,
-    phrase="Ginko",
+    phrase="Sora",
     kind="pronunciation",
     locale="es",
     scope="personal",
@@ -64,7 +64,7 @@ def add_rule(
 def add_realization(
     db,
     entry,
-    replacement="Guin-ko",
+    replacement="Zo-ra",
     engine="engA",
     status="reviewed",
     model=None,
@@ -114,9 +114,9 @@ def test_matching_normalizes_unicode_and_preserves_diacritics():
 
 
 def test_matching_is_case_sensitive_by_policy():
-    matcher = PhraseMatcher({"Ginko": "X"}, "word")
-    assert matcher.apply("ginko") == ("ginko", [])
-    assert matcher.apply("Ginko") == ("X", ["Ginko"])
+    matcher = PhraseMatcher({"Sora": "X"}, "word")
+    assert matcher.apply("sora") == ("sora", [])
+    assert matcher.apply("Sora") == ("X", ["Sora"])
 
 
 def test_matching_respects_word_boundaries():
@@ -151,12 +151,12 @@ def test_scope_precedence_line_episode_show_personal_pack(tmp_path):
         entry = add_rule(db, scope=scope, scope_ref=ref)
         add_realization(db, entry, replacement=repl)
     sel = selection(db, title_ref="title-1", show_ref="grp")
-    assert sel.spoken("Ginko", engine="engA", line=line_ref("title-1", 3))[0] == "LINE"
-    assert sel.spoken("Ginko", engine="engA", line=line_ref("title-1", 4))[0] == "EPISODE"
+    assert sel.spoken("Sora", engine="engA", line=line_ref("title-1", 3))[0] == "LINE"
+    assert sel.spoken("Sora", engine="engA", line=line_ref("title-1", 4))[0] == "EPISODE"
     without_episode = selection(db, title_ref="other", show_ref="grp")
-    assert without_episode.spoken("Ginko", engine="engA")[0] == "SHOW"
+    assert without_episode.spoken("Sora", engine="engA")[0] == "SHOW"
     without_show = selection(db, title_ref="other", show_ref="")
-    assert without_show.spoken("Ginko", engine="engA")[0] == "PERSONAL"
+    assert without_show.spoken("Sora", engine="engA")[0] == "PERSONAL"
     db.close()
 
 
@@ -166,9 +166,9 @@ def test_suppression_disables_an_inherited_rule(tmp_path):
     add_realization(db, entry)
     add_rule(db, phrase="", scope="show", scope_ref="grp", suppresses=entry.id)
     suppressed = selection(db, show_ref="grp")
-    assert suppressed.spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert suppressed.spoken("Sora", engine="engA") == ("Sora", [])
     unaffected = selection(db, show_ref="other")
-    assert unaffected.spoken("Ginko", engine="engA")[0] == "Guin-ko"
+    assert unaffected.spoken("Sora", engine="engA")[0] == "Zo-ra"
     db.close()
 
 
@@ -178,9 +178,9 @@ def test_exact_regional_rule_beats_base_language_rule(tmp_path):
     add_realization(db, base, replacement="BASE")
     regional = add_rule(db, locale="es-MX")
     add_realization(db, regional, replacement="MX")
-    assert selection(db, locale="es-MX").spoken("Ginko", engine="engA")[0] == "MX"
-    assert selection(db, locale="es").spoken("Ginko", engine="engA")[0] == "BASE"
-    assert selection(db, locale="es-VE").spoken("Ginko", engine="engA")[0] == "BASE"
+    assert selection(db, locale="es-MX").spoken("Sora", engine="engA")[0] == "MX"
+    assert selection(db, locale="es").spoken("Sora", engine="engA")[0] == "BASE"
+    assert selection(db, locale="es-VE").spoken("Sora", engine="engA")[0] == "BASE"
     db.close()
 
 
@@ -188,12 +188,12 @@ def test_es419_applies_to_es_ve_only_with_declared_coverage(tmp_path):
     db = make_db(tmp_path)
     entry = add_rule(db, locale="es-419")
     add_realization(db, entry)
-    assert selection(db, locale="es-VE").spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert selection(db, locale="es-VE").spoken("Sora", engine="engA") == ("Sora", [])
     db.execute("DELETE FROM knowledge_entries")
     covered = add_rule(db, locale="es-419", coverage=("es-VE",))
     add_realization(db, covered)
-    assert selection(db, locale="es-VE").spoken("Ginko", engine="engA")[0] == "Guin-ko"
-    assert selection(db, locale="es-MX").spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert selection(db, locale="es-VE").spoken("Sora", engine="engA")[0] == "Zo-ra"
+    assert selection(db, locale="es-MX").spoken("Sora", engine="engA") == ("Sora", [])
     db.close()
 
 
@@ -201,7 +201,7 @@ def test_mexican_rules_never_leak_into_venezuelan(tmp_path):
     db = make_db(tmp_path)
     entry = add_rule(db, locale="es-MX")
     add_realization(db, entry)
-    assert selection(db, locale="es-VE").spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert selection(db, locale="es-VE").spoken("Sora", engine="engA") == ("Sora", [])
     db.close()
 
 
@@ -233,8 +233,8 @@ def test_activation_status_by_scope(tmp_path, status, scope, applies):
         sel = KnowledgeSelection(entries=[entry], realizations=[realization], locale="es")
     else:
         sel = selection(db)
-    spoken, _ = sel.spoken("Ginko", engine="engA")
-    assert (spoken == "Guin-ko") is applies
+    spoken, _ = sel.spoken("Sora", engine="engA")
+    assert (spoken == "Zo-ra") is applies
     db.close()
 
 
@@ -245,7 +245,7 @@ def test_equally_applicable_conflicts_are_surfaced_and_skipped(tmp_path):
     second = add_rule(db)  # same phrase, same scope: never decided by load order
     add_realization(db, second, replacement="TWO")
     sel = selection(db)
-    assert sel.spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert sel.spoken("Sora", engine="engA") == ("Sora", [])
     assert len(sel.conflicts) == 1
     assert sel.conflicts[0]["entries"] == sorted([first.id, second.id])
     db.close()
@@ -257,7 +257,7 @@ def test_ambiguous_senses_stay_suggestions(tmp_path):
         entry = add_rule(db, sense=sense)
         add_realization(db, entry, replacement=repl)
     sel = selection(db)
-    assert sel.spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert sel.spoken("Sora", engine="engA") == ("Sora", [])
     assert sel.conflicts
     db.close()
 
@@ -271,9 +271,9 @@ def test_mixed_engine_cast_gets_per_engine_realizations(tmp_path):
     add_realization(db, entry, replacement="FOR-A", engine="engA")
     add_realization(db, entry, replacement="FOR-B", engine="engB")
     sel = selection(db)
-    assert sel.spoken("Ginko", engine="engA")[0] == "FOR-A"
-    assert sel.spoken("Ginko", engine="engB")[0] == "FOR-B"
-    assert sel.spoken("Ginko", engine="engC") == ("Ginko", [])  # untested engine: unknown
+    assert sel.spoken("Sora", engine="engA")[0] == "FOR-A"
+    assert sel.spoken("Sora", engine="engB")[0] == "FOR-B"
+    assert sel.spoken("Sora", engine="engC") == ("Sora", [])  # untested engine: unknown
     db.close()
 
 
@@ -282,9 +282,9 @@ def test_unknown_model_version_stays_unknown(tmp_path):
     entry = add_rule(db)
     add_realization(db, entry, replacement="V2", model="model-v2")
     sel = selection(db)
-    assert sel.spoken("Ginko", engine="engA", model=None) == ("Ginko", [])
-    assert sel.spoken("Ginko", engine="engA", model="model-v2")[0] == "V2"
-    assert sel.spoken("Ginko", engine="engA", model="model-v1") == ("Ginko", [])
+    assert sel.spoken("Sora", engine="engA", model=None) == ("Sora", [])
+    assert sel.spoken("Sora", engine="engA", model="model-v2")[0] == "V2"
+    assert sel.spoken("Sora", engine="engA", model="model-v1") == ("Sora", [])
     db.close()
 
 
@@ -295,9 +295,9 @@ def test_specific_realization_beats_deliberately_broad(tmp_path):
     add_realization(db, entry, replacement="V2-SPECIFIC", model="model-v2")
     add_realization(db, entry, replacement="VOICE-SPECIFIC", voice="voice-1")
     sel = selection(db)
-    assert sel.spoken("Ginko", engine="engA", model="model-v2")[0] == "V2-SPECIFIC"
-    assert sel.spoken("Ginko", engine="engA", model="model-v1")[0] == "BROAD"
-    assert sel.spoken("Ginko", engine="engA", voice="voice-1")[0] == "VOICE-SPECIFIC"
+    assert sel.spoken("Sora", engine="engA", model="model-v2")[0] == "V2-SPECIFIC"
+    assert sel.spoken("Sora", engine="engA", model="model-v1")[0] == "BROAD"
+    assert sel.spoken("Sora", engine="engA", voice="voice-1")[0] == "VOICE-SPECIFIC"
     db.close()
 
 
@@ -307,7 +307,7 @@ def test_conflicting_realizations_contribute_nothing(tmp_path):
     add_realization(db, entry, replacement="ONE")
     add_realization(db, entry, replacement="TWO")  # equally broad, different spelling
     sel = selection(db)
-    assert sel.spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert sel.spoken("Sora", engine="engA") == ("Sora", [])
     assert any("realizations" in c["reason"] for c in sel.conflicts)
     db.close()
 
@@ -317,17 +317,17 @@ def test_conflicting_realizations_contribute_nothing(tmp_path):
 
 def test_legacy_pronunciations_layer_below_scoped_entries(tmp_path):
     db = make_db(tmp_path)
-    entry = add_rule(db, phrase="Ginko", scope="episode", scope_ref="title-1")
+    entry = add_rule(db, phrase="Sora", scope="episode", scope_ref="title-1")
     add_realization(db, entry, replacement="SCOPED")
-    sel = selection(db, title_ref="title-1", legacy={"Ginko": "LEGACY", "Mushi": "Moo-shi"})
-    spoken, applied = sel.spoken("Ginko y Mushi", engine="engA")
-    assert spoken == "SCOPED y Moo-shi"
+    sel = selection(db, title_ref="title-1", legacy={"Sora": "LEGACY", "Tidekin": "Tai-doh"})
+    spoken, applied = sel.spoken("Sora y Tidekin", engine="engA")
+    assert spoken == "SCOPED y Tai-doh"
     assert {tuple(a)[0] for a in applied} == {"entry", "legacy"}
     # the legacy map still ranks above installed pack content
-    pack = add_rule(db, phrase="Mushi", scope="pack", origin="installed")
+    pack = add_rule(db, phrase="Tidekin", scope="pack", origin="installed")
     add_realization(db, pack, replacement="PACK", origin="installed")
-    sel = selection(db, legacy={"Mushi": "Moo-shi"})
-    assert sel.spoken("Mushi", engine="engA")[0] == "Moo-shi"
+    sel = selection(db, legacy={"Tidekin": "Tai-doh"})
+    assert sel.spoken("Tidekin", engine="engA")[0] == "Tai-doh"
     db.close()
 
 
@@ -336,10 +336,10 @@ def test_legacy_pronunciations_layer_below_scoped_entries(tmp_path):
 
 def test_terminology_is_bounded_to_relevant_segments(tmp_path):
     db = make_db(tmp_path)
-    add_rule(db, phrase="Ginko", kind="term", source_form="ギンコ", status="reviewed")
-    add_rule(db, phrase="mushi", kind="term", source_form="蟲", status="reviewed")
+    add_rule(db, phrase="Sora", kind="term", source_form="ギンコ", status="reviewed")
+    add_rule(db, phrase="tidekin", kind="term", source_form="潮", status="reviewed")
     sel = selection(db)
-    assert sel.glossary_terms(["ギンコが歩く"]) == {"ギンコ": "Ginko"}
+    assert sel.glossary_terms(["ギンコが歩く"]) == {"ギンコ": "Sora"}
     assert sel.glossary_terms(["unrelated text"]) == {}
     db.close()
 
@@ -385,11 +385,11 @@ def test_glossary_terms_carry_a_declared_register(tmp_path):
     db = make_db(tmp_path)
     add_rule(db, phrase="pana", kind="term", source_form="buddy", locale="es-VE",
              status="reviewed", register="colloquial")
-    add_rule(db, phrase="Ginko", kind="term", source_form="ギンコ", status="reviewed")
+    add_rule(db, phrase="Sora", kind="term", source_form="ギンコ", status="reviewed")
     sel = selection(db, locale="es-VE")
     assert sel.glossary_terms(["buddy and ギンコ walk out"]) == {
         "buddy": {"term": "pana", "register": "colloquial"},
-        "ギンコ": "Ginko",
+        "ギンコ": "Sora",
     }
     db.close()
 
@@ -414,12 +414,12 @@ def test_frozen_snapshot_is_immune_to_later_edits(tmp_path):
     entry = add_rule(db)
     realization = add_realization(db, entry, replacement="BEFORE")
     pinned = snapshot(db)
-    save_entry(db, Entry(**{**entry.__dict__, "phrase": "Ginko"}))
+    save_entry(db, Entry(**{**entry.__dict__, "phrase": "Sora"}))
     save_realization(db, Realization(**{**realization.__dict__, "replacement": "AFTER"}))
     frozen = selection(db, pinned=pinned)
-    assert frozen.spoken("Ginko", engine="engA")[0] == "BEFORE"
+    assert frozen.spoken("Sora", engine="engA")[0] == "BEFORE"
     current = selection(db)
-    assert current.spoken("Ginko", engine="engA")[0] == "AFTER"
+    assert current.spoken("Sora", engine="engA")[0] == "AFTER"
     db.close()
 
 
@@ -434,7 +434,7 @@ def test_missing_frozen_revision_is_surfaced_and_skipped(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="doblarr.knowledge"):
         sel = selection(db, pinned=pinned)
     assert entry.id in caplog.text
-    assert sel.spoken("Ginko", engine="engA") == ("Ginko", [])
+    assert sel.spoken("Sora", engine="engA") == ("Sora", [])
     db.close()
 
 
@@ -504,15 +504,15 @@ def synth_job(tmp_path, texts):
 def test_synthesis_resolves_knowledge_and_records_applied_rules(tmp_path):
     db = make_db(tmp_path)
     entry = add_rule(db, locale="es-MX")
-    add_realization(db, entry, replacement="Guin-ko")
+    add_realization(db, entry, replacement="Zo-ra")
     sel = selection(db, locale="es-MX")
-    job = synth_job(tmp_path, [("x", "Ginko habla"), ("y", "otra línea")])
+    job = synth_job(tmp_path, [("x", "Sora habla"), ("y", "otra línea")])
     from doblarr.stages import synthesize
 
     vb = FakeVoicebox()
     synthesize.run(job, vb, tmp_path / "work", knowledge=sel, engine="engA")
-    assert vb.calls == ["Guin-ko habla", "otra línea"]
-    assert job.segments[0].tts_text == "Guin-ko habla"
+    assert vb.calls == ["Zo-ra habla", "otra línea"]
+    assert job.segments[0].tts_text == "Zo-ra habla"
     assert job.segments[0].applied_rules[0]["entry"] == entry.id
     assert job.segments[1].applied_rules == []
     receipt = json.loads(job.segments[0].audio_clip.with_suffix(".json").read_text())
@@ -523,15 +523,15 @@ def test_synthesis_resolves_knowledge_and_records_applied_rules(tmp_path):
 
     quality.check_clip(job.segments[0], "es")
     receipt = json.loads(job.segments[0].audio_clip.with_suffix(".quality.json").read_text())
-    assert receipt["request"]["text"] == "Guin-ko habla"
+    assert receipt["request"]["text"] == "Zo-ra habla"
     db.close()
 
 
 def test_unrelated_rule_edits_never_regenerate_clips(tmp_path):
     db = make_db(tmp_path)
     entry = add_rule(db, locale="es")
-    realization = add_realization(db, entry, replacement="Guin-ko")
-    job = synth_job(tmp_path, [("x", "Ginko habla"), ("y", "otra línea")])
+    realization = add_realization(db, entry, replacement="Zo-ra")
+    job = synth_job(tmp_path, [("x", "Sora habla"), ("y", "otra línea")])
     from doblarr.stages import synthesize
 
     vb = FakeVoicebox()
@@ -559,7 +559,7 @@ def test_mixed_engine_cast_synthesizes_per_speaker_engine(tmp_path):
     add_realization(db, entry, replacement="FOR-B", engine="engB")
     from doblarr.models import Speaker
 
-    job = synth_job(tmp_path, [("x", "Ginko"), ("y", "Ginko otra vez")])
+    job = synth_job(tmp_path, [("x", "Sora"), ("y", "Sora otra vez")])
     job.speakers["S1"] = Speaker("S1", voicebox_profile_id="voice-1")
     job.segments[1].speaker = "S1"
     cast = {

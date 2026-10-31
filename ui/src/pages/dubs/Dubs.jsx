@@ -6,8 +6,10 @@ import { configQuery, ensure, jobsQuery, queryClient } from '../../lib/queries.j
 import { jobStatusClass, useJobs } from '../../lib/jobs.js';
 import { useOpenStudio } from '../../lib/studio.js';
 import { useSearch } from '../../shell/Shell.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { ReviewDialog } from './Review.jsx';
 import './dubs.css';
+import { notify } from '../../lib/notice.js';
 
 export async function dubsLoader() {
   // The dry-run tag reads the config; a config failure only hides the tag.
@@ -32,7 +34,7 @@ function JobRow({ job: j, onReview, onStudio, onWatch }) {
 
   async function remove() {
     setBusy(true);
-    try { await api('api/jobs/' + j.id, { method: 'DELETE' }); } catch (err) { setBusy(false); window.alert(err.message); }
+    try { await api('api/jobs/' + j.id, { method: 'DELETE' }); } catch (err) { notify(err.message); } finally { setBusy(false); }
     refreshJobs();
   }
 
@@ -79,17 +81,19 @@ export function Dubs() {
   const paused = !!data?.paused;
 
   async function toggleQueue() {
-    try { await api(paused ? 'api/queue/resume' : 'api/queue/pause', { method: 'POST' }); } catch (e) { window.alert(e.message); }
+    try { await api(paused ? 'api/queue/resume' : 'api/queue/pause', { method: 'POST' }); } catch (e) { notify(e.message); }
     refreshJobs();
   }
   async function clearFinished() {
-    try { await api('api/jobs/clear-finished', { method: 'POST' }); } catch (e) { window.alert(e.message); }
+    try { await api('api/jobs/clear-finished', { method: 'POST' }); } catch (e) { notify(e.message); }
     refreshJobs();
   }
 
   let body;
-  if (isError && !data) body = <tr><td colSpan="6" className="dubs-empty">Jobs unavailable — is Doblarr running (doblarr serve)?</td></tr>;
-  else if (!jobs.length) body = <tr><td colSpan="6" className="dubs-empty">No jobs yet — queue one from the Library.</td></tr>;
+  if (isError && !data) body = <tr><td colSpan="6" className="empty">Jobs unavailable — is Doblarr running (doblarr serve)?</td></tr>;
+  else if (!jobs.length) {
+    body = <tr><td colSpan="6" className="empty">{data?.jobs?.length ? 'No jobs match.' : 'No jobs yet — queue one from the Library.'}</td></tr>;
+  }
   else body = jobs.map(j => (
     <JobRow key={j.id} job={j} onReview={job => setReviewing(job.id)}
       onWatch={job => navigate('/watch/' + encodeURIComponent(job.id))}
@@ -98,6 +102,7 @@ export function Dubs() {
 
   return (
     <div className="page">
+      <PageHeader title="Dubs" hint="The job queue: what is running, waiting and finished." />
       <div className="dubs-toolbar">
         <button type="button" className="btn btn-secondary" id="pauseQueue" onClick={toggleQueue}>{paused ? 'Resume queue' : 'Pause queue'}</button>
         <button type="button" className="btn btn-secondary" id="clearFinished" onClick={clearFinished}>Clear finished</button>
@@ -106,13 +111,13 @@ export function Dubs() {
         <span className="tag tag-accent dubs-worker" id="workerTag">{counts.running ? `processing ${counts.running}` : 'worker idle'}</span>
       </div>
       <div className="panel dubs-panel">
-        <table className="table">
+        <div className="table-wrap"><table className="table">
           <thead>
             <tr><th>Item</th><th className="dubs-col-track">Track</th><th>Stage</th><th className="dubs-col-progress">Progress</th>
               <th className="dubs-col-status">Status</th><th className="dubs-col-actions" /></tr>
           </thead>
           <tbody id="dubsBody">{body}</tbody>
-        </table>
+        </table></div>
       </div>
       {reviewing && <ReviewDialog jobId={reviewing} onClose={() => setReviewing(null)} onQueued={refreshJobs} />}
     </div>

@@ -50,7 +50,10 @@ def test_release_empties_every_cuda_device_and_mps(monkeypatch):
 
 def test_release_without_torch_imports_nothing(monkeypatch):
     monkeypatch.setitem(sys.modules, "torch", None)
-    model_pool.release_models()  # no error, nothing to free
+    monkeypatch.setitem(model_pool._MODELS, "kept", object())
+    model_pool.release_models()
+    assert not model_pool._MODELS            # the pooled models are dropped
+    assert sys.modules["torch"] is None      # and torch was never imported to do it
 
 
 def test_stage_releases_and_records_memory(monkeypatch, job):

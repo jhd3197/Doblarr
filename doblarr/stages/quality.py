@@ -18,17 +18,17 @@ from ..cues import (
     RAW,
     TRIMMED,
     Artifact,
-    Finding,
     Selection,
     Verification,
-    finding_id,
+    apply_findings,
     now,
 )
 from ..errors import JobCancelled
 from ..ffmpeg import run_ffmpeg
+from ..fileio import write_json
 from ..fingerprints import processing as processing_fingerprint
 from ..fingerprints import verification as verification_fingerprint
-from ..telemetry import write_json
+from ..verify import spoken_form
 from . import boundaries
 
 ACOUSTIC_ISSUES = {"silence", "clipping", "unexpected_duration", "text_mismatch", "repetition",
@@ -55,43 +55,6 @@ ISSUE_KINDS = {
 }
 
 
-def apply_findings(seg, detector: str, inputs: str, observed: list[tuple]) -> None:
-    """Merge this detector's observations into the cue's structured findings.
-
-    A finding is never silently resolved by new audio: when the inputs change,
-    an accepted finding reopens with its history intact, and a code that is no
-    longer reported becomes `obsolete` rather than disappearing.
-    """
-    codes = {code for code, *_ in observed}
-    latest = {code: row for code, *row in observed}
-    for found in seg.findings:
-        if found.detector != detector:
-            continue
-        if found.code in codes:
-            if found.inputs != inputs and found.disposition != "open":
-                found.history.append({"at": now(), "from": found.disposition,
-                                      "to": "open", "reason": "inputs changed"})
-                found.disposition = "open"
-            if found.inputs != inputs:
-                # The same problem measured on different audio: the evidence
-                # must describe the audio that is there now.
-                _kind, found.severity, found.confidence, found.evidence = latest[found.code]
-            found.inputs = inputs
-        elif found.disposition != "obsolete":
-            found.history.append({"at": now(), "from": found.disposition,
-                                  "to": "obsolete", "reason": "no longer detected"})
-            found.disposition = "obsolete"
-    known = {f.code for f in seg.findings if f.detector == detector}
-    for code, kind, severity, confidence, evidence in observed:
-        if code in known:
-            continue
-        seg.findings.append(Finding(
-            finding_id=finding_id(seg.cue_id, code, detector),
-            code=code, kind=kind, severity=severity, confidence=confidence,
-            scope="render", target=RAW, detector=detector, inputs=inputs,
-            evidence=evidence))
-
-
 def inspect_pcm(path: Path) -> dict:
     with wave.open(str(path), "rb") as audio:
         if audio.getsampwidth() != 2:
@@ -112,17 +75,6 @@ def inspect_pcm(path: Path) -> dict:
             "peak": peak / 32768,
             "clipped_fraction": clipped / max(1, count),
         }
-
-
-def spoken_form(text: str, pronunciations: dict) -> str:
-    # Longest term first; substitutions occur once, so replacements cannot cascade.
-    if not pronunciations:
-        return text
-    terms = sorted((k for k in pronunciations if k), key=len, reverse=True)
-    if not terms:
-        return text
-    pattern = r"(?<!\w)(?:" + "|".join(re.escape(k) for k in terms) + r")(?!\w)"
-    return re.sub(pattern, lambda match: pronunciations[match.group()], text)
 
 
 # Chatterbox's GPU kernel fails ("device-side assert") on a very short line
@@ -231,7 +183,7 @@ def _confidence(heard: dict) -> float | None:
 LEGACY_ISSUE = {"mismatch": "text_mismatch"}
 # Issues the content check owns. They are recomputed from the verification on
 # every pass, so a stale one from a cached acoustic receipt is dropped first.
-_VERIFY_ISSUES = ("text_mismatch", "repetition")
+VERIFY_ISSUES = ("text_mismatch", "repetition")
 
 
 def legacy_issues(result: Verification) -> list[str]:
@@ -267,7 +219,7 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
         # reports verification instead of quietly leaving the line unchecked.
         issues, stats = list(saved["issues"]), dict(saved["stats"])
         if verify:
-            issues = [i for i in issues if i not in _VERIFY_ISSUES]
+            issues = [i for i in issues if i not in VERIFY_ISSUES]
             issues += _verify_here(seg, source, language, vb, asr, text, issues,
                                    budget, reason, stats, sample)
         return issues, stats, True, verification_fingerprint(request)
@@ -488,7 +440,7 @@ def run(
     issue. When a line was generated more than once, the best attempt is kept
     rather than the last one: fewest retryable issues, then closest voice.
 
-    `own_levels` hands loudness to the post-fit level owner (Plan 03): the
+    `own_levels` hands loudness to the post-fit level owner: the
     pre-fit normalization below is the legacy path and the two never both run,
     because a second loudness pass after a performance gain would erase it.
     """

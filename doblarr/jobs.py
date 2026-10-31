@@ -6,28 +6,31 @@ dry-run mode: jobs still flow queued -> running -> done and record the plan, so
 the queue, the Dubs page, and the Overview counts are genuinely live. Flip
 `dry_run=False` once the dependencies are in place and nothing else changes.
 
-Jobs left in "running" when the process died are re-queued at startup (the
+Jobs left in "running" when the process stopped are re-queued at startup (the
 pipeline's stage checkpointing skips already-produced artifacts on the rerun).
 """
 
 from __future__ import annotations
 
+import copy
 import datetime as _dt
 import json
 import logging
 import threading
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
 from .clients.plex import PlexError
+from .config import check_overrides
 from .errors import ConfigError, JobCancelled
 from .knowledge import snapshot as knowledge_snapshot
 from .languages import resolve_target_locale
 from .models import DubJob
 from .pipeline import run_job
 from .plex_labels import find_item
+from .stages.diarize import narrator_fallback
 from .store import Database
 
 log = logging.getLogger("doblarr.jobs")
@@ -78,6 +81,10 @@ class Job:
 _COLS = ("id", "title", "source", "source_lang", "target_lang", "target_locale",
          "input_file", "status", "stage", "progress", "message", "kind",
          "created_at", "updated_at")
+_FIELDS = frozenset(f.name for f in fields(Job))
+
+# Seconds the worker waits after an unexpected error before polling again.
+WORKER_BACKOFF = 5.0
 
 
 class JobStore:
@@ -86,15 +93,24 @@ class JobStore:
     def __init__(self, db: Database | str | Path):
         self.db = db if isinstance(db, Database) else Database(db)
         self.path = self.db.path
-        self.reset_running()  # crashed mid-run jobs resume (checkpointed stages)
 
     def _to_job(self, row) -> Job:
-        fields = {c: row[c] for c in _COLS}
-        fields.update(json.loads(row["payload"] or "{}"))
-        return Job(**fields)
+        values = {c: row[c] for c in _COLS}
+        payload = json.loads(row["payload"] or "{}")
+        unknown = sorted(set(payload) - _FIELDS)
+        if unknown:
+            # Written by another version; dropping them keeps one row from
+            # stopping the whole queue.
+            log.warning("job %s: ignoring unknown fields %s", row["id"], ", ".join(unknown))
+        values.update({k: v for k, v in payload.items() if k in _FIELDS})
+        return Job(**values)
 
     def reset_running(self) -> int:
-        """Re-queue jobs stuck in 'running' from a previous process."""
+        """Re-queue jobs stuck in 'running' from a previous process.
+
+        Call once at startup, before the worker starts: a later call would also
+        re-queue the job the live worker is running.
+        """
         rows = self.db.query("SELECT id FROM jobs WHERE status = 'running'")
         for row in rows:
             self.db.execute(
@@ -107,6 +123,7 @@ class JobStore:
     def add(self, **kwargs) -> Job:
         from .knowledge.store import with_pack_releases
 
+        check_overrides(kwargs.get("overrides") or {})
         releases = (kwargs.get("overrides") or {}).get("knowledge.pack_releases", {})
         if releases:
             kwargs["knowledge_snapshot"] = with_pack_releases(
@@ -156,6 +173,29 @@ class JobStore:
             "SELECT * FROM jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1")
         return self._to_job(row) if row else None
 
+    def claim_next(self) -> Job | None:
+        """Mark the oldest queued job running and return it, or None.
+
+        The status check in the UPDATE makes the claim atomic, so when two
+        processes share a database only one of them gets each job.
+        """
+        while True:
+            row = self.db.query_one(
+                "SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1")
+            if row is None:
+                return None
+            claimed = self.db.execute(
+                "UPDATE jobs SET status = 'running', stage = 'probe', progress = 0, "
+                "updated_at = ? WHERE id = ? AND status = 'queued'", (_now(), row["id"]))
+            if not claimed:
+                continue
+            try:
+                return self.get(row["id"])
+            except (TypeError, ValueError) as exc:
+                log.error("job %s cannot be read: %s", row["id"], exc)
+                self.update(row["id"], status="failed",
+                            message=f"this job's saved data cannot be read: {exc}")
+
     def get(self, job_id: str) -> Job | None:
         row = self.db.query_one("SELECT * FROM jobs WHERE id = ?", (job_id,))
         return self._to_job(row) if row else None
@@ -172,6 +212,29 @@ class JobStore:
 
     def close(self) -> None:
         self.db.close()
+
+
+def queue_rerender(store: JobStore, events, original: Job, overrides: dict, *,
+                   title: str = "", source: str = "", version_name: str = "",
+                   knowledge: dict | None = None) -> Job:
+    """Queue a new real run of `original` with `overrides` added to its own.
+
+    The new run reads the knowledge and narrative revisions `original` froze,
+    so a re-render changes only what the reviewer asked for. `knowledge`
+    replaces the frozen rules when the reviewer asked for updated ones.
+    """
+    job = store.add(
+        title=title or original.title, source=source or original.source,
+        source_lang=original.source_lang, target_lang=original.target_lang,
+        target_locale=original.target_locale, input_file=original.input_file,
+        kind=original.kind, version_name=version_name,
+        knowledge_snapshot=original.knowledge_snapshot if knowledge is None else knowledge,
+        narrative_snapshot=original.narrative_snapshot,
+        overrides={**copy.deepcopy(original.overrides or {}), **overrides, "dub.dry_run": False},
+    )
+    if events is not None:
+        events.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+    return job
 
 
 def import_legacy_json(store: JobStore, json_path: str | Path) -> int:
@@ -209,11 +272,14 @@ class Worker(threading.Thread):
         self.events = events
         self.services = services
         self._stop_evt = threading.Event()
+        self._shutdown = False
         self._pause = threading.Event()
         self._current_id: str | None = None
         self._cancel_evt: threading.Event | None = None
 
     def stop(self) -> None:
+        """Stop for a shutdown; the running job is re-queued, not cancelled."""
+        self._shutdown = True
         self._stop_evt.set()
         if self._cancel_evt is not None:
             self._cancel_evt.set()  # unblock a running job so shutdown joins quickly
@@ -256,6 +322,8 @@ class Worker(threading.Thread):
                      job.title, found["ratingKey"])
         except (ConfigError, PlexError) as exc:
             log.warning("plex auto-refresh failed for '%s': %s", job.title, exc)
+        except Exception:  # noqa: BLE001 - the dub is already done; Plex is best effort
+            log.exception("plex auto-refresh failed for '%s'", job.title)
 
     def pause(self) -> None:
         self._pause.set()
@@ -273,11 +341,29 @@ class Worker(threading.Thread):
             if self._pause.is_set():
                 self._stop_evt.wait(0.5)
                 continue
-            job = self.store.next_queued()
-            if job is None:
-                self._stop_evt.wait(1.0)
-                continue
-            self._process(job)
+            try:
+                job = self.store.claim_next()
+                if job is None:
+                    self._stop_evt.wait(1.0)
+                    continue
+                self._process(job)
+            except Exception:  # noqa: BLE001 - the queue must outlive any one failure
+                log.exception("worker error; retrying in %.0fs", WORKER_BACKOFF)
+                self._current_id = None
+                self._cancel_evt = None
+                self._stop_evt.wait(WORKER_BACKOFF)
+        log.info("worker stopped")
+
+    def _interrupted(self, job: Job, exc: JobCancelled) -> None:
+        """Record a stopped job: re-queued on shutdown, cancelled otherwise."""
+        if self._shutdown:
+            log.info("job %s interrupted by shutdown; it resumes at the next start", job.id)
+            self.store.update(job.id, status="queued",
+                              message="interrupted by a restart; resumes from its last stage")
+            return
+        log.info("job %s cancelled", job.id)
+        self.store.update(job.id, status="cancelled", message=str(exc))
+        self._publish(job, "cancelled", message=str(exc))
 
     def _studio(self, job: Job, config, cancel_evt, on_progress) -> None:
         """A studio task: same queue, cancellation and events; a different runner."""
@@ -290,8 +376,7 @@ class Worker(threading.Thread):
                               message=message)
             self._publish(job, "done", progress=100, message=message)
         except JobCancelled as exc:
-            self.store.update(job.id, status="cancelled", message=str(exc))
-            self._publish(job, "cancelled", message=str(exc))
+            self._interrupted(job, exc)
         except Exception as exc:  # noqa: BLE001 - surface any studio failure to the UI
             log.exception("studio job %s failed", job.id)
             self.store.update(job.id, status="failed", message=str(exc))
@@ -317,18 +402,16 @@ class Worker(threading.Thread):
             self._publish(job, "progress", stage=stage_name, progress=pct,
                           message=message)
 
-        # Read live so toggling dub.dry_run in Settings applies without a restart.
-        # A job carrying per-title overrides runs against a merged copy of the
-        # config — the global config object is never mutated.
-        config = self.config
-        if job.overrides:
-            config = self.config.with_overrides(job.overrides)
+        # A private copy taken when the job starts: Settings saved while it runs
+        # apply to the next job, never to the stages this one has left. Taken
+        # per job, so toggling dub.dry_run still needs no restart.
+        config = self.config.with_overrides(job.overrides or {})
         dry_run = config.get("dub", {}).get("dry_run", self.dry_run)
         cancel_evt = threading.Event()
         self._current_id = job.id
         self._cancel_evt = cancel_evt
-        self.store.update(job.id, status="running", stage="probe", progress=0)
         self._publish(job, "started")
+        refresh_plex = False
         if job.kind.startswith("studio_"):
             self._studio(job, config, cancel_evt, on_progress)
             return
@@ -370,6 +453,9 @@ class Worker(threading.Thread):
             message = (f"analysed {len(dj.segments)} lines · {len(dj.speakers)} voices"
                        if dj.kind == "analyze" else
                        f"{'planned' if dry_run else 'dubbed'} -> {out}")
+            one_voice = narrator_fallback(dj)
+            if one_voice and not dry_run:
+                message += f" · every line in one voice: {one_voice}"
             self.store.update(job.id, status="done", stage="mux", progress=100,
                               message=message,
                               report_file=str(dj.report_file) if dj.report_file else None,
@@ -380,12 +466,9 @@ class Worker(threading.Thread):
                               version_file=str(dj.version_file) if dj.version_file else None,
                               output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
-            if not dry_run and dj.kind != "analyze":
-                self._plex_refresh(job)
+            refresh_plex = not dry_run and dj.kind != "analyze"
         except JobCancelled as exc:
-            log.info("job %s cancelled", job.id)
-            self.store.update(job.id, status="cancelled", message=str(exc))
-            self._publish(job, "cancelled", message=str(exc))
+            self._interrupted(job, exc)
         except Exception as exc:  # noqa: BLE001 - surface any stage failure to the UI
             log.exception("job %s failed", job.id)
             self.store.update(job.id, status="failed", message=str(exc))
@@ -398,3 +481,17 @@ class Worker(threading.Thread):
                 self._publish(job, "review_ready")
             self._current_id = None
             self._cancel_evt = None
+        if refresh_plex:
+            self._plex_refresh(job)
+        self._tidy()
+
+    def _tidy(self) -> None:
+        """Trim regenerable work output; never a reason for a job to fail."""
+        from . import retention
+
+        try:
+            referenced = {Path(j["report_file"]) for j in self.store.list()
+                          if j.get("report_file")}
+            retention.tidy(self.config, referenced)
+        except Exception:  # noqa: BLE001 - housekeeping only
+            log.exception("could not tidy the work folder")

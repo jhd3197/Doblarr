@@ -51,9 +51,9 @@ def test_punctuation_accents_and_case_are_not_word_errors():
 
 
 def test_an_approved_pronunciation_spelling_is_what_gets_compared(tmp_path):
-    seg = line(tmp_path, "pron", "Ginko llega", expected="Guinko llega")
-    assert verify.expected_for(seg) == "Guinko llega"
-    assert verify.compare(verify.expected_for(seg), "Guinko llega", "es")["state"] == "match"
+    seg = line(tmp_path, "pron", "Sora llega", expected="Zora llega")
+    assert verify.expected_for(seg) == "Zora llega"
+    assert verify.compare(verify.expected_for(seg), "Zora llega", "es")["state"] == "match"
 
 
 def test_an_omitted_word_is_reported_in_order_with_its_position():
@@ -73,7 +73,7 @@ def test_a_changed_number_is_hard_evidence_and_a_spelled_one_is_not():
 
 
 def test_a_mangled_name_is_surfaced_without_becoming_a_hard_failure():
-    result = verify.compare("Vino Ginko a la casa", "Vino Guinco a la casa", "es")
+    result = verify.compare("Vino Sora a la casa", "Vino Sorra a la casa", "es")
     assert result["state"] == "uncertain"
     assert [c["kind"] for c in result["critical"]] == ["name"]
 

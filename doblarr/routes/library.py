@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from .. import discovery, plex_labels
+from .. import __version__, discovery, plex_labels
 from ..clients.plex import PlexError
 from ..config import Config
 from ..errors import ConfigError, NotFoundError
@@ -50,6 +50,8 @@ def build_router(config: Config, library: LibraryService, services: Services,
             "auto_label": bool(config.get("filtering", {}).get("auto_label")),
             "rescan_interval": config.get("discovery", {}).get("rescan_interval", "6h"),
             "queue_paused": worker.paused,
+            "worker_alive": worker.is_alive(),
+            "version": __version__,
         }
 
     @api.get("/api/plex/thumb")

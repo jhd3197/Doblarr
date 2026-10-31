@@ -131,7 +131,7 @@ def from_translator(job, flags: dict, detected_by: str = "translator") -> int:
                     job.metrics.get("reaction_flags_kept_as_speech", 0) + 1)
             kept.append(seg)
             continue
-        event = _event(seg, text, 0, "whole", text, detected_by=detected_by)
+        event = nonverbal_event(seg, text, 0, "whole", text, detected_by=detected_by)
         kind = REACTION_KINDS.get(str(flag.get("reaction_kind") or ""))
         if event.type == "unknown" or (kind and event.type == "interjection"):
             event.type = kind or "interjection"
@@ -235,7 +235,7 @@ def _split_mixed(text: str) -> tuple[str, str, str] | None:
     return tag, rest.strip(), "leading" if match.group("lead") else "trailing"
 
 
-def _event(seg, text: str, ordinal: int, position: str, original: str,
+def nonverbal_event(seg, text: str, ordinal: int, position: str, original: str,
            detected_by: str = "rules") -> NonverbalEvent:
     """One timed piece of evidence, with the original wording kept verbatim."""
     kind, category = classify(text)
@@ -274,7 +274,7 @@ def run(job, enabled=True, merge_gap=0.2, max_duration=12, split_mixed=True,
         if seg.duration <= 0 or _nonspoken(text) or bare:
             removed += 1
             if seg.cue_id and seg.end > seg.start >= 0:
-                event = _event(seg, text, 0, "whole", text)
+                event = nonverbal_event(seg, text, 0, "whole", text)
                 if event.event_id not in known:
                     job.nonverbal.append(event)
                     known.add(event.event_id)
@@ -284,7 +284,7 @@ def run(job, enabled=True, merge_gap=0.2, max_duration=12, split_mixed=True,
             if parts is not None:
                 tag, spoken, position = parts
                 mixed += 1
-                event = _event(seg, tag, 1, position, text)
+                event = nonverbal_event(seg, tag, 1, position, text)
                 if event.event_id not in known:
                     job.nonverbal.append(event)
                     known.add(event.event_id)

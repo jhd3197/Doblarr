@@ -22,10 +22,14 @@ never held in memory at once, and a chunk is decoded once for all the lines in i
 
 from __future__ import annotations
 
+import logging
 import math
-import subprocess
 from collections import OrderedDict
 from pathlib import Path
+
+from .ffmpeg import FFmpegError, run_ffmpeg_bytes
+
+log = logging.getLogger("doblarr.features")
 
 FEATURES = "line-features/1"
 UNITS = "dBFS-rms-sample"
@@ -63,15 +67,16 @@ def decode(path: Path, start: float = 0.0, duration: float | None = None, cancel
     """16 kHz mono float32 samples of one stretch of a file."""
     import numpy as np
 
-    args = ["ffmpeg", "-v", "error", "-ss", f"{max(0.0, start):.3f}", "-i", str(path)]
+    args = ["-v", "error", "-ss", f"{max(0.0, start):.3f}", "-i", str(path)]
     if duration is not None:
         args += ["-t", f"{max(0.01, duration):.3f}"]
     args += ["-vn", "-ac", "1", "-ar", str(RATE), "-f", "s16le", "-"]
-    if cancel is not None and cancel.is_set():
-        from .errors import JobCancelled
-
-        raise JobCancelled("cancelled while decoding audio")
-    raw = subprocess.run(args, capture_output=True, check=False).stdout
+    try:
+        raw = run_ffmpeg_bytes(args, cancel=cancel)
+    except FFmpegError as exc:
+        # No samples measure as "missing" (see measure), never as silence.
+        log.warning("features: could not decode %s: %s", Path(path).name, exc)
+        raw = b""
     return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
 

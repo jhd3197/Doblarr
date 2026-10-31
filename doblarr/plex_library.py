@@ -29,6 +29,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .discovery import LibraryItem, _audio_iso2
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.plex_library")
 
@@ -36,12 +37,14 @@ WORKERS = 8
 CACHE_FILE = "plex-audio.json"
 
 
-def _norm(path: str | None) -> str:
+def library_path_key(path: str | None) -> str:
+    """A library path as a comparable string. Case is always folded: Plex and
+    the *arr apps may report the same file from machines that disagree on case."""
     return str(path or "").replace("\\", "/").rstrip("/").casefold()
 
 
 def _inside(path: str, roots: set[str]) -> bool:
-    p = _norm(path)
+    p = library_path_key(path)
     return any(p == r or p.startswith(r + "/") for r in roots)
 
 
@@ -99,10 +102,32 @@ class AudioCache:
     def save(self) -> None:
         if not self.path:
             return
-        tmp = self.path.with_suffix(".partial")
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(self.data), encoding="utf-8")
-        tmp.replace(self.path)
+        write_json(self.path, self.data, indent=None)
+
+
+def read_audio(client, cache: AudioCache, leaves: list[dict]) -> None:
+    """Ask Plex for the audio streams of `leaves` and store them in `cache`.
+
+    Files are read in parallel; one Plex cannot read never ends the scan, it is
+    simply asked again next time.
+    """
+    if not leaves:
+        return
+    log.info("plex: reading audio streams of %d new or changed file(s)", len(leaves))
+
+    def probe(leaf):
+        try:
+            meta = client.metadata(leaf["ratingKey"])
+            return leaf, client.audio_languages(meta), audio_tracks(meta)
+        except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
+            log.warning("plex: %s: %s", leaf.get("title"), exc)
+            return leaf, None, None
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for leaf, langs, tracks in pool.map(probe, leaves):
+            if langs is not None:
+                cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs, tracks)
+    cache.save()
 
 
 def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: set[int],
@@ -110,7 +135,7 @@ def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: s
               treat_undefined_as: str = "original") -> list[LibraryItem]:
     """Plex movies and shows the *arr sources do not already list."""
     target_set = {t.strip().lower() for t in targets}
-    roots = {_norm(p) for p in known_paths if p}
+    roots = {library_path_key(p) for p in known_paths if p}
     titles: list[tuple[dict, dict, dict, list[dict]]] = []   # (item, ids, section, leaves)
     for section in client.sections():
         if section["type"] not in ("movie", "show"):
@@ -129,22 +154,7 @@ def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: s
 
     missing = [leaf for _i, _d, _s, leaves in titles for leaf in leaves
                if cache.get(leaf["ratingKey"], leaf.get("updatedAt")) is None]
-    if missing:
-        log.info("plex: reading audio streams of %d new or changed file(s)", len(missing))
-
-        def probe(leaf):
-            try:
-                meta = client.metadata(leaf["ratingKey"])
-                return leaf, client.audio_languages(meta), audio_tracks(meta)
-            except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
-                log.warning("plex: %s: %s", leaf.get("title"), exc)
-                return leaf, None, None
-
-        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            for leaf, langs, tracks in pool.map(probe, missing):
-                if langs is not None:
-                    cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs, tracks)
-        cache.save()
+    read_audio(client, cache, missing)
 
     items = []
     for item, ids, section, leaves in titles:

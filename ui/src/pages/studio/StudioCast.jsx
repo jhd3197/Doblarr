@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, apiUrl } from '../../lib/api.js';
-import { safeGet } from '../../lib/storage.js';
+import { api, apiUrl, withKey } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { castingQuery, studioVoicesQuery } from './queries.js';
+import { Loading } from '../../components/States.jsx';
 
 // Cast: who speaks with which voice, where that choice came from, and
 // auditions that compare voices on the same fixed lines.
@@ -127,7 +127,7 @@ function Audition({ ctrl, id, character }) {
   const { data, error } = useQuery(query);
   const [note, setNote] = useState('');
   if (error) return <section className="panel studio-card studio-audition" data-audition={id}>{error.message}</section>;
-  if (!data) return <section className="panel studio-card studio-audition" data-audition={id}><p className="hint">Loading audition {character}…</p></section>;
+  if (!data) return <section className="panel studio-card studio-audition" data-audition={id}><Loading>Loading audition {character}…</Loading></section>;
   const a = data.audition;
   const plan = a.plan || { excerpts: [], missing: [], notes: [] };
   const runnable = !['running'].includes(a.status);
@@ -139,8 +139,7 @@ function Audition({ ctrl, id, character }) {
     } catch (err) { setNote(err.message); }
   }
   function play(name, cue) {
-    const key = safeGet('doblarr_api_key', '');
-    playTake(`${apiUrl(`studio/auditions/${id}/takes/${name}/${cue}`)}${key ? `?api_key=${encodeURIComponent(key)}` : ''}`,
+    playTake(withKey(apiUrl(`studio/auditions/${id}/takes/${name}/${cue}`)),
       err => setNote(err.message));
   }
   async function pick(candidate, scope, apply) {
@@ -216,7 +215,7 @@ export function StudioCast({ ctrl }) {
   const [affected, setAffected] = useState(null);
   useEffect(() => stopTake, []);
   if (error) return <p>{error.message}</p>;
-  if (!cast || !voices) return <p className="hint">Loading the cast…</p>;
+  if (!cast || !voices) return <Loading>Loading the cast…</Loading>;
   const auditions = ctrl.state.overview.auditions || [];
 
   async function whoFollows(character) {
@@ -230,7 +229,7 @@ export function StudioCast({ ctrl }) {
       <section className="panel studio-card" aria-labelledby="castNow">
         <h3 id="castNow">Who speaks with which voice</h3>
         {cast.speakers.length ? (
-          <table className="table"><thead><tr><th>Speaker</th><th>Voice</th><th>Decided at</th><th /></tr></thead><tbody>
+          <div className="table-wrap"><table className="table"><thead><tr><th>Speaker</th><th>Voice</th><th>Decided at</th><th /></tr></thead><tbody>
             {cast.speakers.map(r => (
               <tr key={r.speaker}>
                 <td><strong>{r.speaker}</strong>{r.character !== r.speaker && <span className="hint"> ({r.character})</span>}</td>
@@ -243,7 +242,7 @@ export function StudioCast({ ctrl }) {
                   onClick={() => whoFollows(r.character)}>Who follows this</button>}</td>
               </tr>
             ))}
-          </tbody></table>
+          </tbody></table></div>
         ) : <p className="hint">{job ? 'This run has no speakers yet.' : 'Render a draft to discover the speakers.'}</p>}
         {cast.line_exceptions.length > 0 && <p className="hint">Line exceptions: {cast.line_exceptions.map(l => `${l.cue_id} → ${l.voice}`).join(', ')}</p>}
         <div id="castAffected">{affected && (

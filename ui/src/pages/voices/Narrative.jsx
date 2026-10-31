@@ -76,14 +76,14 @@ function Series({ series }) {
     <>
       <h4>Episodes</h4>
       {data.coverage.length ? (
-        <table className="table"><thead><tr><th>Episode</th><th>Draft</th><th>Proposals</th><th>To review</th><th>Conflicts</th><th>Active</th><th></th></tr></thead><tbody>
+        <div className="table-wrap"><table className="table"><thead><tr><th>Episode</th><th>Draft</th><th>Proposals</th><th>To review</th><th>Conflicts</th><th>Active</th><th></th></tr></thead><tbody>
           {data.coverage.map(r => (
             <tr key={r.draft_id}><td className="m">{r.order ? order(r.order) : r.media_id}</td>
               <td>{r.state}<span className="hint"> · {r.model}</span></td><td className="m">{r.candidates}</td>
               <td className="m">{r.needs_review}{r.stale ? <> <span className="hint">({r.stale} changed)</span></> : ''}</td>
               <td className="m">{r.conflicts}</td><td className="m">{r.active_claims}</td>
               <td><button type="button" className="btn btn-ghost" data-draft={r.draft_id} onClick={() => setDraft(r.draft_id)}>Review</button></td></tr>
-          ))}</tbody></table>
+          ))}</tbody></table></div>
       ) : <p className="hint">No episode of this series has proposals yet. Analyse an episode, then use Extract knowledge on its Analysis tab.</p>}
       <div data-draft-box>{draft && <Draft key={draft} draftId={draft} subject={subject} onChange={refresh} />}</div>
       <h4>Active knowledge <span className="hint">revision {data.revision}</span></h4>
@@ -91,14 +91,14 @@ function Series({ series }) {
         <span className="hint">Creates revision {data.revision + 1}. New dubs use it; queued and finished dubs keep theirs.</span></div>
       <p className="hint" role="status" data-status>{status}</p>
       {data.claims.length ? (
-        <table className="table"><thead><tr><th>Kind</th><th>Statement</th><th>About</th><th>From</th><th></th></tr></thead><tbody>
+        <div className="table-wrap"><table className="table"><thead><tr><th>Kind</th><th>Statement</th><th>About</th><th>From</th><th></th></tr></thead><tbody>
           {data.claims.map(c => (
             <tr key={c.id}><td>{KIND[c.kind] || c.kind}{c.conflicted && <> <span className="tag tag-outline" title="Another accepted claim contradicts this one; neither is used until you retire one">conflict</span></>}</td>
               <td>{c.statement}{c.corrected && <> <span className="hint">(your correction)</span></>}</td>
               <td>{(c.subjects || []).map(subject).join(', ') || '—'}</td>
               <td className="m">{c.available_from ? `S${c.available_from[0]}E${c.available_from[1]}` : 'this film'}{c.revealed_from ? ` · known from S${c.revealed_from[0]}E${c.revealed_from[1]}` : ''}</td>
               <td><button type="button" className="btn btn-ghost" data-retire={c.id} onClick={() => activate(c.id)}>Retire</button></td></tr>
-          ))}</tbody></table>
+          ))}</tbody></table></div>
       ) : <p className="hint">Nothing is active yet.</p>}
       {data.external.length > 0 && <><h4>From library metadata and title research</h4>
         {data.external.map((e, n) => (

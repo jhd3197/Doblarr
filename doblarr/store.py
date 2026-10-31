@@ -227,7 +227,9 @@ class Database:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        # A CLI run or research command can hold the write lock for a while;
+        # wait for it rather than failing the worker with "database is locked".
+        self._conn = sqlite3.connect(str(self.path), check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
         self._conn.create_function("casefold", 1, lambda s: s.casefold(), deterministic=True)
         self._lock = threading.RLock()
@@ -243,10 +245,12 @@ class Database:
                 self._conn.commit()
                 log.info("applied db migration %d -> %s", i, self.path.name)
 
-    def execute(self, sql: str, params: tuple = ()) -> None:
+    def execute(self, sql: str, params: tuple = ()) -> int:
+        """Run one statement and commit; returns the number of rows it changed."""
         with self._lock:
-            self._conn.execute(sql, params)
+            changed = self._conn.execute(sql, params).rowcount
             self._conn.commit()
+            return changed
 
     def query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         with self._lock:

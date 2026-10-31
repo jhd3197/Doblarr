@@ -16,6 +16,11 @@ general:
 web:
   host: 127.0.0.1
   port: 6363
+  # API key for /api/*. `doblarr serve` generates one here on first start and
+  # the web UI asks for it once. allow_unauthenticated: true leaves the API open.
+  # api_key: ""
+  # allowed_hosts: []      # domain names besides IPs and local names, e.g. dub.example.com
+  # allow_unauthenticated: false   # true leaves the API open without a key
 
 # Services Doblarr reads from (keys can also come from env, e.g. DOBLARR_RADARR_API_KEY)
 connect:
@@ -34,6 +39,8 @@ discovery:
   webhook_debounce: 30          # coalesce *arr webhook bursts into one rescan
   plex: true                    # also list what Plex has that Sonarr/Radarr do not
   plex_unmatched: false         # include titles Plex could not match (home videos, YouTube)
+  auto_scan: false              # rescan the library on a schedule
+  rescan_interval: 6h           # how often, when auto_scan is on (30m, 6h, 1d)
 
 # Plex labeling + hide (Doblarr labels; Kometa/a smart collection hides)
 filtering:
@@ -41,6 +48,7 @@ filtering:
   hidden_collection_name: Not in your language
   kometa_handoff: true          # write a Kometa fragment that hides the labelled titles
   kometa_file: null             # defaults to <output_dir>/doblarr-kometa.yml
+  auto_label: false             # sync the Plex label after every scan
 
 # Plex behaviour after a dub is muxed
 plex:
@@ -62,6 +70,10 @@ voicebox:
   model_size: null
   seed: null
   preview_engine: kokoro
+  # Chatterbox sampling, sent only when set:
+  # exaggeration: 0.5            # 0.25-2.0, how expressive
+  # cfg_weight: 0.5              # 0-1, how closely it follows the reference voice
+  # temperature: 0.8             # 0.05-5.0, how varied each take is
 
 # VoiceStudio service (speech.backend: voicestudio). Engine ids: omnivoice,
 # voxcpm2, cosyvoice, indextts2, ... (GET /engines/tts on the service).
@@ -92,6 +104,13 @@ translate:
   # claude: api_key is read from the ANTHROPIC_API_KEY env var, not stored here.
   # prompture: local servers need no key (OLLAMA_ENDPOINT / LMSTUDIO_ENDPOINT env
   # vars work too); hosted providers use their usual env vars.
+  adaptation: natural           # natural | faithful | localized
+  adapt_region: false           # also adapt subtitles already in the target language
+  slang: false                  # regional slang; off keeps wording clear across the region
+  reuse_memory: false           # reuse reviewed lines (exact matches only)
+  direction: ""                  # e.g. "restrained dialogue; keep cultural terms"
+  character_notes: {}           # by speaker id: {SPEAKER_00: "calm, concise"}
+  reference_policy: original_only  # original_only | reference_suggestions | follow_edition
 
 # Transcription / alignment
 transcribe:
@@ -107,6 +126,7 @@ transcribe:
   compute_type: auto
   keep_models_loaded: false     # opt in only with enough RAM / VRAM
   # hf_token read from HF_TOKEN env var (pyannote needs it)
+  diarizer: auto                # auto | pyannote (needs HF_TOKEN) | local (no account)
 
 # Telling speakers apart without an account (transcribe.diarizer: local/auto).
 # Built in: wespeaker-resnet34, 3dspeaker-campplus, 3dspeaker-eres2netv2,
@@ -169,6 +189,13 @@ dub:
   output_codec: aac             # aac | flac | copy
   output_bitrate: 192k
   track_name_template: "{language_name} AI"   # track title; {language}=code, {language_name}=name
+  preserve_versions: true       # keep every rendered dub as a saved version
+  versions_kept: 0              # saved versions kept per output; 0 keeps all
+  borrow_voice: true            # a voice with no clean sample borrows the closest clone
+  locale_direction: ""           # accent guidance; blank derives it from the locale
+  candidate_limit: 4            # most alternative takes a reviewer may ask for per line
+  clone_cleanup: false          # light cleanup of the clone reference sample
+  # segment_limit: 20            # dub only the first N lines (testing)
 
 # Generated speech validation (bounded retries, followed by review flags)
 quality:
@@ -264,6 +291,7 @@ timing:
   pace_scene_gap: 8.0            # seconds of silence that start a new pace group
   phrases: {}                    # per-cue anchors and protected pauses, set in review
   overlaps: {}                   # per-cue accepted intentional overlaps, set in review
+  snap_onsets: false            # move each cue start to the speech onset
 
 # Reaction and background coverage (Plan 04). Laughs, gasps and doors that the
 # subtitle cleanup removes stay in an explicit ledger with a retain / replace /
@@ -381,6 +409,8 @@ analysis:
   emotion_model: ollama/qwen3-vl:8b   # a model that sees; local
   reader_model: ""              # who speaks each line, read by a strong model; a cloud one
                                 # (claude/...) sends the subtitle text out of this machine
+  dub_text: true                # transcribe the file's own target-language dub, if any
+  # knowledge_endpoint: null     # URL for a local knowledge_model
 
 vision:                         # needs: pip install "doblarr[vision]" and the model files
   backend: auto                 # auto | opencv | off
@@ -389,6 +419,7 @@ vision:                         # needs: pip install "doblarr[vision]" and the m
   max_frames: 4000              # bound on frames sampled from one title
   asd_fps: 8                    # frames per second read inside a line for mouth movement
   match_threshold: 0.55         # face-to-reference similarity to propose a name
+  models_dir: ""                 # blank: <work_dir>/models/vision
 
 # ---- Title research from public sources (docs/title-research.md) ---------
 # Off by default. Only a title or a question leaves this machine, and only
@@ -405,7 +436,7 @@ research:
 
 # ---- Voice envelopes and background policies (docs/adaptive-audio.md) ------
 adaptive:
-  mode: off                     # off | suggest (record only) | apply (render)
+  mode: "off"                   # off | suggest (record only) | apply (render)
   judge: retrieval              # retrieval | kev/<model> | laya/<model> | llm:<prompture model>
   judge_budget: 400             # model calls per run, then the retrieval fallback
   candidates: 4
@@ -413,3 +444,16 @@ adaptive:
   max_envelope_db: 6.0          # no envelope moves a line further than this
   background_policy: ""         # e.g. background/strong-ducking; "" keeps sidechain ducking
   max_bed_attenuation_db: 18.0
+  # judge_endpoint: null         # URL for a model judge
+
+# How much regenerable output the work folder keeps; older items are deleted
+# after each job. Saved dub versions are kept unless dub.versions_kept > 0.
+retention:
+  watch_copies: 10              # browser copies of finished dubs
+  edit_sets: 5                  # work folders per title for re-rendered edits (14+ days old)
+  reports: 500                  # run reports; one a listed job points to is never removed
+
+# Language knowledge packs (doblarr.knowledge).
+knowledge:
+  auto_install_starter: true    # install the bundled starter pack on first run
+  # pack_distribution_url: ""    # where official knowledge packs are downloaded from

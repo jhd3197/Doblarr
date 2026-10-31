@@ -315,9 +315,9 @@ def test_an_unknown_event_on_the_ledger_gets_its_type():
 # -- 6. timing rewrites --------------------------------------------------------
 
 @pytest.mark.parametrize("original, shorter, rejected", [
-    ("Tell Ginko we leave at 5.", "Tell Ginko at 5.", False),
-    ("Tell Ginko we leave at 5.", "We leave at 5.", True),        # a name dropped
-    ("Tell Ginko we leave at 5.", "Tell Ginko soon.", True),      # a number dropped
+    ("Tell Sora we leave at 5.", "Tell Sora at 5.", False),
+    ("Tell Sora we leave at 5.", "We leave at 5.", True),        # a name dropped
+    ("Tell Sora we leave at 5.", "Tell Sora soon.", True),      # a number dropped
     ("Espera. Mañana vamos a Madrid con Ana.", "Mañana, Madrid con Ana.", False),
     ("Well, I'm sure. OK then.", "Sure.", False),                 # grammar capitals
     ("¿Quieres venir?", "¿Vienes?", False),                       # opener, not a name
@@ -339,7 +339,7 @@ def test_the_checker_rejects_by_rule_or_a_confident_model():
     oracle, driver = oracle_with(lambda s, qs: {"same": replies[s["shorter"]]})
     accept = decisions.rewrite_checker(job, oracle, decisions.settings(None))
     a, b, c = job.segments
-    assert accept(a, "Tell Ginko now.", "Tell him now.") is False     # rule
+    assert accept(a, "Tell Sora now.", "Tell him now.") is False     # rule
     assert accept(b, "A long first line.", "Short one.") is False     # model sure: changed
     assert accept(c, "A long second line.", "Short two.") is True     # model unsure: suggest
     assert len(driver.calls) == 2
@@ -380,7 +380,7 @@ def test_treatments_are_only_ever_suggested():
 # -- 8. review order -----------------------------------------------------------
 
 def test_review_order_weighs_open_findings_and_unsure_decisions():
-    from doblarr.stages.quality import apply_findings
+    from doblarr.cues import apply_findings
 
     job = job_of("clean", "overflows", "unsure", "accepted")
     clean, over, unsure, accepted = job.segments

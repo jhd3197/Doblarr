@@ -11,7 +11,8 @@ a.navitem { text-decoration: none; }
 .sidefoot { margin-top: auto; padding: 12px 14px; }
 .sidefoot-row { display: flex; align-items: center; gap: 8px; }
 .sidefoot-row .m { font-size: 12px; }
-.sidefoot-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent); display: block; }
+.sidefoot-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-neutral-600); display: block; }
+.sidefoot-dot[data-state="down"] { background: var(--color-accent); }
 .sidefoot-version { align-items: baseline; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--muted); }
 
 .main { min-width: 0; display: flex; flex-direction: column; position: relative; }
@@ -33,13 +34,18 @@ a.navitem { text-decoration: none; }
 
 .page { padding: 30px 26px 44px; }
 .app > .page { min-height: 100vh; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); }
+.page-head { display: flex; align-items: flex-end; gap: 20px; justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head h1 { margin: 0 0 4px; font-family: var(--font-heading); font-size: 22px; }
+.page-head .hint { margin: 0; max-width: 62ch; }
 .route-error { padding: 22px 24px; }
 .route-error-title { margin: 0; font-weight: 600; }
 .route-error-back { margin-top: 12px; }
-.muted-note { padding: 22px 10px; color: var(--muted); }
+/* One empty/unavailable state for lists and tables; .note is quiet inline text. */
+.empty { padding: 22px 10px; color: var(--muted); }
+.note { color: var(--muted); font-size: 13px; }
 
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center;
-  justify-content: center; z-index: 100; }
+.modal-dialog { border: 0; padding: 0; background: transparent; color: inherit; }
+.modal-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .modal-card { width: min(440px, 92vw); padding: 22px 24px; }
 .modal-title { margin: 0 0 4px; font-size: 18px; }
 .modal-sub { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
@@ -49,3 +55,7 @@ a.navitem { text-decoration: none; }
 .modal-pair > div { flex: 1; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 .modal-status { color: var(--muted); margin-right: auto; }
+
+.app-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 26px 0;
+  padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--panel);
+  font-size: 13px; }

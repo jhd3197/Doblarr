@@ -45,11 +45,11 @@ def test_clone_uploads_reference_with_profile(monkeypatch, tmp_path):
     sample = tmp_path / "ref.wav"
     sample.write_bytes(b"RIFF")
     calls = mock_session(monkeypatch, [FakeResp(200, json_data={"id": "p-1"})])
-    pid = VoiceStudioClient("http://vs").clone_voice("Shinra", "es", sample, "hola")
+    pid = VoiceStudioClient("http://vs").clone_voice("Tomoe", "es", sample, "hola")
     assert pid == "p-1"
     call = calls[0]
     assert (call["method"], call["url"]) == ("POST", "http://vs/profiles")
-    assert call["data"] == {"name": "Shinra", "ref_text": "hola", "language": "es",
+    assert call["data"] == {"name": "Tomoe", "ref_text": "hola", "language": "es",
                             "kind": "clone"}
     assert "ref_audio" in call["files"]
 

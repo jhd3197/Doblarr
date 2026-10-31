@@ -35,7 +35,9 @@ class GeneralModel(_Section):
 class WebModel(_Section):
     host: str = "127.0.0.1"
     port: int = 6363
-    api_key: str = ""
+    api_key: str = ""                     # `doblarr serve` generates one when empty
+    allow_unauthenticated: bool = False   # true leaves the API open without a key
+    allowed_hosts: list[str] = []         # extra domain names, e.g. a reverse proxy's
 
 
 class ConnectModel(_Section):
@@ -49,7 +51,7 @@ class ConnectModel(_Section):
 
 class DiscoveryModel(_Section):
     only_original_foreign: bool = True
-    treat_undefined_as: str = "original"
+    treat_undefined_as: Literal["original", "target", "ignore", "unknown"] = "original"
     rescan_interval: str = "6h"
     auto_scan: bool = False
     cache_ttl: int = 300
@@ -103,7 +105,7 @@ class VoiceboxModel(_Section):
 
 
 class TranslateModel(_Section):
-    provider: str = "claude"
+    provider: Literal["claude", "prompture", "voicebox", "passthrough"] = "claude"
     model: str = "claude-sonnet-5"
     endpoint: str | None = None  # prompture driver URL override (local LLMs)
     batch_size: int = 12
@@ -137,7 +139,7 @@ class TranslateModel(_Section):
 
 
 class TranscribeModel(_Section):
-    source: str = "subtitles"
+    source: Literal["subtitles", "whisper"] = "subtitles"
     whisper_model: str = "large-v3"
     diarize: bool = True
     # auto: pyannote when HF_TOKEN is set, else local voice grouping (no account)
@@ -202,11 +204,12 @@ class SeparateModel(_Section):
 class DubModel(_Section):
     version_name: str = ""
     preserve_versions: bool = True
+    versions_kept: int = 0           # saved versions kept per output; 0 keeps all
     narrator_voice: str = ""
     narrator_delivery: str = ""
-    preset: str = "custom"
+    preset: Literal["custom", "preview", "final"] = "custom"
     target_locale: str = ""  # canonical regional target (es-MX); "" derives from the language
-    voice_mode: str = "clone"
+    voice_mode: Literal["clone", "preset"] = "clone"
     dry_run: bool = True
     duration_match: bool = True
     max_fit_attempts: int = 2
@@ -222,7 +225,7 @@ class DubModel(_Section):
     duck_threshold: float = 0.05
     duck_attack_ms: float = 100     # the bed eases down under a new line instead of snapping
     duck_release_ms: float = 350
-    output_codec: str = "aac"
+    output_codec: Literal["aac", "flac", "copy"] = "aac"
     output_bitrate: str = "192k"
     pronunciations: dict[str, str] = {}
     # Japanese source, Spanish target: respell the glossary's names for the
@@ -232,7 +235,7 @@ class DubModel(_Section):
     cast_group: str = ""
     character_map: dict[str, str] = {}
     audition_lines: int = 8
-    # Acting direction and alternate takes (Plan 03). `candidates` maps a cue
+    # Acting direction and alternate takes. `candidates` maps a cue
     # id to how many extra takes to generate for it; a reviewer sets it and it
     # is spent once, under the shared request budget.
     locale_direction: str = ""       # "" derives accent guidance from the target locale
@@ -258,7 +261,7 @@ class QualityModel(_Section):
     enabled: bool = True
     normalize: bool = True
     dialogue_lufs: float = -18
-    asr: str = "off"
+    asr: Literal["off", "suspicious", "all"] = "off"
     # Fraction of otherwise-unsuspicious lines to verify anyway under the
     # `suspicious` policy. Deterministic per cue, so a rerun checks the same
     # lines; 0 keeps the historical behavior of checking none of them.
@@ -276,7 +279,7 @@ class QualityModel(_Section):
 
 
 class BoundariesModel(_Section):
-    """Speech-boundary preparation and protected clip edges (Plan 02).
+    """Speech-boundary preparation and protected clip edges.
 
     Defaults are off. Both operations change audio, and the roadmap only allows
     a new DSP default once audio and regression evidence back the rollout.
@@ -298,7 +301,7 @@ class BoundariesModel(_Section):
 
 
 class LevelsModel(_Section):
-    """Source-relative dynamics and the one post-fit level owner (Plan 03).
+    """Source-relative dynamics and the one post-fit level owner.
 
     `mode` defaults to `legacy`, which keeps the pre-fit `quality.normalize`
     loudness pass exactly as it was. The other modes move loudness ownership
@@ -318,7 +321,7 @@ class LevelsModel(_Section):
 
 
 class TimingModel(_Section):
-    """Phrase timing and conversation checks (Plan 04).
+    """Phrase timing and conversation checks.
 
     `mode` defaults to `whole`, which is whole-clip fitting exactly as earlier
     releases ran it. `phrase` hands timing to the phrase owner; only one of the
@@ -359,7 +362,7 @@ class TimingModel(_Section):
 
 
 class CoverageModel(_Section):
-    """Reaction and background coverage (Plan 04).
+    """Reaction and background coverage.
 
     `off` keeps the event ledger and changes no audio. Nothing is ever inserted
     without an explicit decision, and an unsupported engine capability is
@@ -384,7 +387,7 @@ class CoverageModel(_Section):
 
 
 class TreatmentsModel(_Section):
-    """Scene space and device voice treatments (Plan 05).
+    """Scene space and device voice treatments.
 
     `mode` defaults to `off`, which renders dry dialogue exactly as earlier
     releases did. A treatment is a place or a device, never a performance: it
@@ -401,7 +404,7 @@ class TreatmentsModel(_Section):
 
 
 class DeliveryModel(_Section):
-    """Checks run on the actual exported track (Plan 05).
+    """Checks run on the actual exported track.
 
     `measure` reports everything and blocks nothing. `enforce` lets a
     structural failure withhold the saved version and the library refresh.
@@ -491,7 +494,6 @@ class VisionModel(_Section):
     backend: Literal["auto", "opencv", "off"] = "auto"
     domain: Literal["auto", "anime", "live_action"] = "auto"
     frame_height: int = 360
-    frames_per_shot: int = 3
     max_frames: int = 4000            # bound on frames sampled from one title
     asd_fps: float = 8.0              # frames per second read inside a line for mouth motion
     models_dir: str = ""              # blank: <work_dir>/models/vision
@@ -517,6 +519,14 @@ class AdaptiveModel(_Section):
     background_policy: str = ""       # a background template id; "" keeps sidechain ducking
     max_bed_attenuation_db: float = 18.0
     lines: dict[str, dict] = {}       # per-cue manual selection {template, strength, locked}
+
+
+class RetentionModel(_Section):
+    """How much regenerable output the work folder keeps (doblarr.retention)."""
+
+    watch_copies: int = 10      # browser copies of finished dubs, newest kept
+    edit_sets: int = 5          # work folders per title for re-rendered edit sets
+    reports: int = 500          # run reports, never one a listed job points to
 
 
 class ResearchModel(_Section):
@@ -567,16 +577,25 @@ class ConfigModel(_Section):
     vision: VisionModel = VisionModel()
     adaptive: AdaptiveModel = AdaptiveModel()
     research: ResearchModel = ResearchModel()
+    retention: RetentionModel = RetentionModel()
 
 
-def validate_config(data: dict) -> None:
-    """Log a clear warning for every schema violation in the merged config."""
+def config_problems(data: dict) -> list[str]:
+    """Every schema violation in a merged config, one readable line each."""
+    problems = []
     try:
         ConfigModel.model_validate(data)
     except ValidationError as exc:
         for err in exc.errors():
             loc = ".".join(str(p) for p in err["loc"])
-            log.warning("config: invalid value at %s: %s", loc, err["msg"])
+            problems.append(f"invalid value at {loc}: {err['msg']}")
     locale = str((data.get("dub") or {}).get("target_locale") or "")
     if locale and not parse_language_tag(locale):
-        log.warning("config: dub.target_locale %r is not a valid language tag", locale)
+        problems.append(f"dub.target_locale {locale!r} is not a valid language tag")
+    return problems
+
+
+def validate_config(data: dict) -> None:
+    """Log a clear warning for every schema violation in the merged config."""
+    for problem in config_problems(data):
+        log.warning("config: %s", problem)

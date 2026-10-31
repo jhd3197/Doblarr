@@ -14,8 +14,8 @@
 
 <p align="center">
   <strong>AI dubbing for your media library.</strong><br/>
-  The missing link in your *arr stack — turn a foreign-language film into an added,
-  translated audio track, voiced by cloned speaker voices.
+  Adds a translated audio track to a film or episode, voiced by clones of the
+  original speakers, next to Radarr, Sonarr and Plex.
 </p>
 
 <p align="center">
@@ -33,50 +33,51 @@ original actors, and muxes it back in as **"AI - ES"** without touching the
 original. Plex/Jellyfin then just show it as another audio option.
 
 Doblarr owns the movie-specific pipeline. **[voicebox](https://github.com/jamiepine/voicebox)**
-(MIT) is the voice-cloning + TTS engine, called over HTTP — not vendored — so the
-two stay decoupled and voicebox upgrades come for free.
+(MIT) is the voice-cloning + TTS engine, a separate service Doblarr calls over HTTP.
 [VoiceStudio](https://github.com/debpalash/VoiceStudio) works the same way: set
 `speech.backend: voicestudio` and Doblarr clones and speaks through its local API
 instead (engines such as OmniVoice, VoxCPM2 and IndexTTS2; translation then needs a
 provider other than `voicebox`).
 
-## What's real today
+## Status
 
-The **app** is live — a real backend + web UI you can run and use:
+Every stage of a dub runs for real: extraction, dialogue separation, transcription
+from subtitles or Whisper, speaker grouping, translation, voice cloning and speech,
+timing, mixing and muxing. Around it are a web UI, a job queue, a review editor and
+an episode studio.
 
-- **Web UI + API** (`doblarr serve`) — serves the interface and a REST API.
-- **Library scan** — reads your **Radarr (movies) + Sonarr (shows)** and classifies
-  every title as **needs-dub / partial / available** by looking at its actual audio
-  tracks vs. your target languages. Shows in the Library page with live counts.
-- **Settings** — edit the config from the UI; saved to `config.yaml` (secrets redacted,
-  never clobbered).
-- **Job queue** — enqueue a dub from the Library; a background worker runs it and the
-  Dubs page + Overview update live.
-
-The worker defaults to **dry-run** (`dub.dry_run: true`), which plans stages without
-producing audio. Real extraction, separation, subtitle transcription, translation,
-speech generation, timing, mixing and muxing are implemented. Set dry-run to false
-when the required local services and dependencies are ready.
+A new install starts in **dry run** (`dub.dry_run: true`): jobs plan their stages and
+produce no audio, so you can check the library scan and settings first. Set it to
+`false` once the services below are running.
 
 For an interrupted first episode with existing audio stems, the explicit
 `scripts/finish_episode.py` runner saves translation batches and individual voice
 clips, then assembles a full-length video. See [episode recovery](docs/episode-recovery.md).
 
+## What you need
+
+- **FFmpeg and ffprobe** on the PATH (included in the Docker images).
+- **A speech service:** [voicebox](https://github.com/jamiepine/voicebox), running on
+  its default port 17493, or VoiceStudio (`speech.backend: voicestudio`).
+- **A translation model:** Claude by default (`translate.provider: claude`, which
+  needs `ANTHROPIC_API_KEY` and is billed per use), any Prompture model including
+  local Ollama ones (`translate.provider: prompture`), or voicebox's local LLM.
+- **For real dubs, the local models:** Demucs separation, WhisperX transcription and
+  speaker grouping (`pip install "doblarr[real]"`, or the GPU Docker image). They run
+  on a CPU, much faster on an NVIDIA GPU. Speaker grouping needs no account; only
+  `transcribe.diarizer: pyannote` needs a HuggingFace token.
+- **Disk space** for the work folder: separated stems and takes for each episode,
+  plus a copy of every saved dub version. `retention.*` and `dub.versions_kept`
+  limit what is kept.
+- Radarr, Sonarr and Plex are optional: they feed the library page; a file can
+  also be dubbed by path.
+
 ## Running it
 
-### Install from PyPI
+### Install
 
-```bash
-pip install doblarr
-python -c "from importlib.resources import files; from pathlib import Path; Path('config.yaml').write_bytes(files('doblarr').joinpath('config.example.yaml').read_bytes())"
-doblarr serve
-```
-
-Run the configuration-copy command in a new directory, then edit `config.yaml`
-before starting the server. The package includes the web UI. Real dubbing also
-requires FFmpeg/ffprobe on PATH, a running Voicebox service, and the optional
-ML dependencies (`pip install "doblarr[real]"`). Install a PyTorch build matching
-your platform/GPU before installing that extra. The default mode is dry-run.
+Use Docker (below) or run from source. The `doblarr` package on PyPI is an early
+0.1.0 build that lacks the web UI and much of what is described here.
 
 ### Run from source
 
@@ -111,11 +112,17 @@ available on the translator's `last_usage`; Voicebox does not report token usage
 
 ### API authentication
 
-Set `web.api_key` in `config.yaml` to lock the API: every `/api/*` route (except
-`/api/health` and `/api/health/ready`) then requires the `X-Api-Key: <key>` header
-(or `?api_key=<key>`). The web UI prompts for the key once and remembers it. With no
-key configured the API stays open (fine for a trusted home network) and a warning is
-logged at startup.
+Every `/api/*` route (except `/api/health` and `/api/health/ready`) requires the
+`X-Api-Key: <key>` header (or `?api_key=<key>`). On first start `doblarr serve`
+generates a key, saves it as `web.api_key` in `config.yaml` and prints it; the web UI
+asks for it once and remembers it. To run without a key, set
+`web.allow_unauthenticated: true`.
+
+Requests must also be addressed to a name Doblarr expects. IP addresses, `localhost`
+and local names (`nas`, `nas.local`, `.lan`, `.home.arpa`, `.internal`) always work.
+Any other domain, such as a reverse proxy's `dub.example.com`, must be listed in
+`web.allowed_hosts` (or the `DOBLARR_ALLOWED_HOSTS` environment variable, comma
+separated). This stops a web page from reaching the API through DNS rebinding.
 
 Security notes: `config.yaml` holds your *arr/Plex keys in plaintext — protect it with
 filesystem permissions (it's gitignored). Doblarr serves plain HTTP; put it behind a
@@ -131,8 +138,8 @@ is on, the rescan also syncs Plex labels.
 
 Setup in Radarr/Sonarr: **Settings → Connect → Add → Webhook** —
 URL `http://<doblarr-host>:6363/api/webhooks/radarr` (or `.../sonarr`), trigger
-**On Import/On Upgrade**. If you set `web.api_key`, add a header `X-Api-Key: <key>`
-in the webhook settings (no key configured → webhooks are open like the rest of the API).
+**On Import/On Upgrade**, and add a header `X-Api-Key: <key>` with the key from
+`web.api_key`.
 
 ### Persistence & resume
 
@@ -173,8 +180,7 @@ optional ASR mismatches. Loudness normalization and configurable ducking preserv
 background dynamics. Unresolved flags remain visible for human review.
 
 Each run writes stage timings and cache/retry counters to `work/reports`, available
-through `GET /api/jobs/{id}/report`. See [the generation guide](docs/generation-roadmap.md)
-for configuration, benchmark acceptance, and current limitations.
+through `GET /api/jobs/{id}/report`.
 
 ### Shows and narrator voices
 
@@ -216,8 +222,8 @@ movie. Explicit episode character assignments take precedence. Use **Voices** on
 an episode row to rename discovered speakers, choose their roles and voices, and
 set delivery direction. Use **Audition** on that episode to hear the result before
 queueing its full dub. Create/clone additional profiles in Voicebox and refresh the
-voice list. A missing diarization model can still yield a single-narrator fallback;
-voice settings do not recover undetected speakers.
+voice list. When no way of telling voices apart can run, every line gets one narrator
+voice; the job's message says so, and the next run tries again.
 
 ### Teasers & voice casting
 
@@ -232,8 +238,7 @@ archetype ("Narrator", "Adult M 1", "Adult F 2", …) and auto-assigned on the f
 tease. The cast persists (SQLite `voice_casts` table) and is reused by the full dub —
 edit it from a Library card's "Cast" button (`GET`/`PUT /api/cast`, voices from
 `GET /api/voices`, which proxies voicebox profiles or falls back to
-`dub.preset_voices`). Multi-speaker casting lands with diarization (pyannote); until
-then jobs fall back to a single narrator voice.
+`dub.preset_voices`).
 
 Open the UI, go to **Library** to see your real collection, and **Queue dub** on a
 needs-dub title to watch it flow through the queue. Or do it all from a terminal:
@@ -272,9 +277,9 @@ the package must be **Public** in its GitHub package settings for anonymous pull
 and the pull-count badge to work. The workflow checks anonymous access and reports
 an error if publication succeeded but the image cannot be read publicly.
 
-`config/` holds `config.yaml`; `data/` holds the job store + generated Kometa
-fragment. The image is the app only (no ML stack) — the worker runs dry-run until
-Demucs/voicebox are added.
+`config/` holds `config.yaml`; `data/` holds the job store, the work folder and the
+generated Kometa fragment. This image has no local models; real dubs need the GPU
+image below (or those models installed some other way) and a speech service.
 
 #### GPU
 
@@ -284,9 +289,11 @@ an NVIDIA driver and the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 ```bash
-export HF_TOKEN=hf_...   # pyannote's model is gated; accept its terms on HuggingFace
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
+
+Speaker grouping runs locally without an account. Only `transcribe.diarizer: pyannote`
+needs `HF_TOKEN` set, with the model's terms accepted on HuggingFace.
 
 Then open **Settings → Hardware**. It shows the GPU the container sees, its free
 memory and which libraries are installed, and lets you pick the device for each
@@ -295,33 +302,32 @@ service. The image is large (CUDA wheels) and is built locally, not published.
 
 ## Pipeline
 
-| # | Stage | Tool | Status |
-|---|-------|------|--------|
-| 1 | Extract audio | ffmpeg | ✅ real |
-| 2 | Separate dialogue vs music+FX | Demucs `htdemucs_ft` | ✅ real |
-| 3 | Timed transcript | subtitles (pysubs2) / WhisperX | ✅ real |
-| 4 | Speaker diarization | pyannote 3.1 | ✅ real |
-| 5 | Translate (dubbing-aware, length-budgeted) | Claude | ✅ real |
-| 6 | Clone voices + synthesize lines | **voicebox** | ✅ wiring |
-| 7 | Fit timing (isochrony) | ffmpeg `atempo` | ✅ real |
-| 8 | Mix dialogue over M&E + ducking | ffmpeg `sidechaincompress` | ✅ real |
-| 9 | Mux new track back | ffmpeg | ✅ real |
+| # | Stage | Tool |
+|---|-------|------|
+| 1 | Extract audio | ffmpeg |
+| 2 | Separate dialogue vs music+FX | Demucs `htdemucs_ft` |
+| 3 | Timed transcript | subtitles (pysubs2) / WhisperX |
+| 4 | Tell voices apart | local voice grouping, or pyannote |
+| 5 | Translate (dubbing-aware, length-budgeted) | Prompture: Claude, local models, voicebox |
+| 6 | Clone voices + synthesize lines | voicebox or VoiceStudio |
+| 7 | Fit timing | ffmpeg `atempo`, by line or by phrase |
+| 8 | Mix dialogue over M&E + ducking | ffmpeg `sidechaincompress` |
+| 9 | Mux the new track | ffmpeg |
 
-The whole thing runs end-to-end today in **`--dry-run`** (prints the plan, no heavy
-deps). Stubs marked 🚧 are the build-out work, each isolated in its own module
-under `doblarr/stages/`.
+Each stage is a module under `doblarr/stages/`; `doblarr/pipeline.py` runs them in
+order and resumes a stopped job from its last finished stage.
 
 ## Project layout
 
 ```
 doblarr/
-  cli.py            # CLI: serve / dub / check
+  cli.py            # the `doblarr` command; subcommands live in commands/
   server.py         # app assembly, lifespan, authentication, SSE and static UI
   routes/           # configuration, library, jobs and title API routers
   library_service.py # discovery cache, persisted scan state and webhook orchestration
   config.py         # YAML config + defaults, env overrides, secret redaction
-  config_schema.py  # pydantic validation of config.yaml (warnings, never fatal)
-  auth.py           # X-Api-Key dependency for /api/* (optional; web.api_key)
+  config_schema.py  # settings, defaults and validation (load warns, save refuses)
+  auth.py           # X-Api-Key and Host checks for /api/* (web.api_key, web.allowed_hosts)
   discovery.py      # library scan: needs-dub / partial / available
   jobs.py           # job queue (SQLite) + background worker (cancel-aware)
   store.py          # sqlite3 Database: WAL, migrations, jobs + scan_state
@@ -352,6 +358,9 @@ ui/                 # web UI (React + Vite), built into ui/dist
 ```
 
 ## API
+
+The main endpoints are below; every endpoint and its parameters are listed by the
+running server at `/docs`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -452,29 +461,7 @@ CI (eslint, unit tests, UI build, Playwright) and Docker CI. Pull requests run
 the ones whose paths they touch; every push to `dev`, `main` and `master` runs
 all three through `release.yml` before anything publishes.
 
-## Roadmap
-
-- [x] Web UI + REST API + job queue (a real *arr shell)
-- [x] Library discovery from Radarr + Sonarr
-- [x] Settings read/save from the UI
-- [x] Plex labeling + hide (Kometa handoff) + scheduled auto-sync
-- [x] Docker packaging
-- [ ] **The real dub** — flip the worker to `dry_run=False` once these land:
-  - [x] `separate` (Demucs two-stems), `diarize` (pyannote), `whisper` transcribe
-        (whisperx/faster-whisper), `fit_timing` (atempo stretch), `mix`
-        (sidechain ducking) — `pip install doblarr[real]`
-  - [x] wire `ClaudeTranslator` (Anthropic Messages API, numbered-lines protocol)
-  - [x] voicebox running locally on `17493`
-- [ ] Voices page from real diarization/cloning data
-- [ ] Radarr/Sonarr/Plex webhook trigger → auto-dub new foreign titles overnight
-- [ ] Borrow & re-implement the duration-matching + ducking approach proven by
-      [neutrinus/dubarr](https://github.com/neutrinus/dubarr) (GPL — study, don't copy)
-
-## License
-
-MIT — see [LICENSE](LICENSE). voicebox is MIT; neutrinus/dubarr is GPL-3.0 (used
-only as a reference to re-implement from, never copied in).
-
+## Recipes, the studio and media knowledge
 
 ### Share a dub recipe
 
@@ -512,3 +499,11 @@ emphasis inside itself) and background policies are data templates under
 **Knowledge → Audio templates**, recommended per line and chosen or changed in review;
 changing one reprocesses existing takes and never generates speech. See
 [voice envelopes and background policies](docs/adaptive-audio.md).
+
+A **voice study** learns each character's voice from one film and tests it, held out, on a
+second film (`doblarr voice-study run`, `/api/voice-studies`). See [voice study](docs/voice-study.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE). voicebox is MIT; neutrinus/dubarr is GPL-3.0 (used
+only as a reference to re-implement from, never copied in).

@@ -17,6 +17,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import envelopes, features, templates
+from ..fileio import inside
 from ..studio import records
 
 
@@ -174,11 +175,8 @@ def build_router(config, db) -> APIRouter:
         with tempfile.TemporaryDirectory() as tmp:
             if body.artifact:
                 source = Path(body.artifact)
-                try:
-                    source.resolve().relative_to(Path(config.work_dir).resolve())
-                except ValueError as exc:
-                    raise HTTPException(403, "previews read audio inside the work folder") \
-                        from exc
+                if not inside(source, [config.work_dir]):
+                    raise HTTPException(403, "previews read audio inside the work folder")
                 if not source.is_file() or source.suffix.lower() != ".wav":
                     raise HTTPException(404, "no such take")
             else:

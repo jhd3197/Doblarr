@@ -54,7 +54,7 @@ function Migration({ reload, say }) {
   return (
     <>
       <p className="hint">Nothing changes until you apply. Ambiguous items stay as they are.</p>
-      <table className="table"><thead><tr><th /><th>What</th><th>State</th><th>Why</th></tr></thead><tbody>
+      <div className="table-wrap"><table className="table"><thead><tr><th /><th>What</th><th>State</th><th>Why</th></tr></thead><tbody>
         {plan.actions.map(a => (
           <tr key={a.key}>
             <td>{['ready', 'confirm'].includes(a.state) && <input type="checkbox" data-key={a.key} checked={Boolean(checked[a.key])}
@@ -63,7 +63,7 @@ function Migration({ reload, say }) {
             <td>{a.state}</td><td className="hint">{a.reason || ''}</td>
           </tr>
         ))}
-      </tbody></table>
+      </tbody></table></div>
       <button type="button" className="btn btn-secondary" disabled={!actionable.length} onClick={apply}>Apply selected</button>
     </>
   );

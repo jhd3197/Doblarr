@@ -6,8 +6,8 @@ import { baseLanguage } from '../../ui/src/lib/languages.js';
 test('entriesQuery encodes filters and pagination', () => {
   assert.equal(entriesQuery({}), 'knowledge/entries?page=1&page_size=25');
   assert.equal(
-    entriesQuery({ locale: 'es-MX', kind: 'term', status: 'proposed', q: 'ginko', page: 3 }),
-    'knowledge/entries?locale=es-MX&kind=term&status=proposed&q=ginko&page=3&page_size=25',
+    entriesQuery({ locale: 'es-MX', kind: 'term', status: 'proposed', q: 'sora', page: 3 }),
+    'knowledge/entries?locale=es-MX&kind=term&status=proposed&q=sora&page=3&page_size=25',
   );
   assert.equal(
     entriesQuery({ scope: 'show', pageSize: 50 }),

@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl } from '../../lib/api.js';
-import { lighten, palette, SAMPLE, seedOf } from '../../lib/voices.js';
-import { safeGet } from '../../lib/storage.js';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { lighten, palette, previewSample, SAMPLE, seedOf } from '../../lib/voices.js';
 import { createOrb, primeAudio } from './orb.js';
 
 // What the voices pages share: a voice's colours and orb, hearing a voice,
@@ -19,21 +17,19 @@ export function dotStyle(v) {
 export function VoiceOrb({ voice, orbRef }) {
   const canvasRef = useRef(null);
   const key = voice.key;
+  // A new voice gets a new orb; colour changes go through setColors.
+  const build = useEffectEvent(canvas => createOrb(canvas, { colors: palette(voice), seed: seedOf(key) }));
   useEffect(() => {
     const canvas = canvasRef.current;
     let orb = null;
     // A shader that fails to build leaves the plain dot in the orb's place.
-    try { orb = createOrb(canvas, { colors: palette(voice), seed: seedOf(key) }); } catch { canvas.className = 'voice-dot voice-dot-xl'; }
+    try { orb = build(canvas); } catch { canvas.className = 'voice-dot voice-dot-xl'; }
     if (orbRef) orbRef.current = orb;
     return () => { orb?.destroy(); if (orbRef) orbRef.current = null; };
-  // A new voice gets a new orb; colour changes go through setColors.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, orbRef]);
   return <canvas ref={canvasRef} className="voice-orb" aria-hidden="true" />;
 }
 
-const READY = ['completed', 'done', 'ready', 'success'];
-const FAILED = ['failed', 'error', 'cancelled', 'canceled'];
 
 // "Hear it": a sample in this voice, with the orb following the sound.
 export function HearPanel({ voice, orbRef }) {
@@ -51,20 +47,9 @@ export function HearPanel({ voice, orbRef }) {
     audioRef.current?.pause();
     setStatus('Generating…');
     try {
-      const made = await api('voice-catalog/preview', { method: 'POST', json: { key: voice.key,
-        language: lang.trim().toLowerCase() || 'es', text: text.trim() || SAMPLE } });
-      const deadline = Date.now() + 180000;
-      for (;;) {
-        if (mine !== version.current) return;
-        const state = await api(`voice-catalog/preview/${made.id}`);
-        if (READY.includes(state.status)) break;
-        if (FAILED.includes(state.status)) throw new Error(state.error || 'The sample failed.');
-        if (Date.now() > deadline) throw new Error('Still generating in the speech service; try again shortly.');
-        await new Promise(r => setTimeout(r, 1200));
-      }
-      if (mine !== version.current) return;
-      const apiKey = safeGet('doblarr_api_key', '');
-      const url = apiUrl(`voice-catalog/preview/${made.id}/audio`) + (apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '');
+      const url = await previewSample({ key: voice.key, language: lang.trim().toLowerCase() || 'es',
+        text: text.trim() || SAMPLE }, { current: () => mine === version.current });
+      if (!url) return;
       setSrc(url);
       const audio = audioRef.current;
       audio.src = url;
@@ -121,13 +106,13 @@ export function UsedPanel({ used }) {
     <section className="panel voice-panel" aria-labelledby="voiceUsed">
       <h3 id="voiceUsed">Cast in</h3>
       {used?.length ? (
-        <table className="table">
+        <div className="table-wrap"><table className="table">
           <thead><tr><th>Title</th><th>Speaker</th><th>Shaping</th></tr></thead>
           <tbody>{used.map((u, n) => (
             <tr key={n}><td>{u.title || u.title_key}</td><td className="m">{u.label || u.speaker || ''}</td>
               <td className="m">{[semis(u.pitch_semitones, 'pitch'), semis(u.formant_semitones, 'formant')].filter(Boolean).join(' · ') || '—'}</td></tr>
           ))}</tbody>
-        </table>
+        </table></div>
       ) : <p className="hint">Not used in any saved dub yet.</p>}
     </section>
   );

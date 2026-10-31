@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLoaderData, useParams } from 'react-router';
 import { api, apiUrl } from '../../lib/api.js';
 import { safeGet } from '../../lib/storage.js';
 import { useOpenStudio } from '../../lib/studio.js';
+import { formatTime } from '../../lib/media.js';
+import { notify } from '../../lib/notice.js';
 
 // One finished dub, watched in the browser (doblarr/watch.py): every audio
 // track one click away at the same moment, the original's subtitles, the
@@ -12,10 +14,10 @@ import { useOpenStudio } from '../../lib/studio.js';
 // through the quieter spots. When the run kept a review snapshot its lines
 // fill a lane on the timeline and a tab in the side panel.
 
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const CATEGORIES = [['', 'Kind'], ['lost sound', 'Sound lost'], ['overlap', 'Voices overlap'],
   ['timing', 'Timing'], ['voice', 'Wrong or odd voice'], ['translation', 'Translation'],
   ['level', 'Too loud or quiet'], ['other', 'Other']];
+const NO_LOUDNESS = { spans: [] };
 const SEVERITIES = [['minor', 'Minor'], ['noticeable', 'Noticeable'], ['major', 'Major']];
 const IN_ORIGINAL = [['no', 'Not in original'], ['yes', 'Also in original'], ['not sure', 'Not sure']];
 const RESOLUTIONS = ['open', 'fixed', "won't fix"];
@@ -84,12 +86,14 @@ function Player({ jobId, data, reload }) {
   const resume = useRef(null);     // where to pick up after a language switch
   const openStudio = useOpenStudio();
   const lines = useLines(data.job);
-  const loud = data.loudness || { spans: [] };
+  const loud = data.loudness || NO_LOUDNESS;
   const src = stream => `${apiUrl(`watch/${encodeURIComponent(jobId)}/audio/${stream}.mp4`)}${key()}`;
   const byStream = stream => data.tracks.find(t => t.stream === stream);
   const reference = byStream(compare);
   const minDb = FILTERS.find(f => f[0] === filter)[2];
-  const spans = loud.spans.filter(s => s.quieter_db >= minDb);
+  // Stable between renders: the key handler below depends on it, and the
+  // playhead re-renders this page several times a second.
+  const spans = useMemo(() => loud.spans.filter(s => s.quieter_db >= minDb), [loud.spans, minDb]);
 
   const switchTo = useCallback(stream => {
     if (stream === current) return;
@@ -113,7 +117,7 @@ function Player({ jobId, data, reload }) {
   function onTime() {
     const v = video.current;
     setPlayhead(v.currentTime);
-    if (document.activeElement?.name !== 'note') setAt(clock(v.currentTime));
+    if (document.activeElement?.name !== 'note') setAt(formatTime(v.currentTime));
   }
 
   const seek = useCallback((time, play = false) => {
@@ -148,7 +152,7 @@ function Player({ jobId, data, reload }) {
       } else if (k === 'n') {
         e.preventDefault();
         video.current.pause();
-        setAt(clock(video.current.currentTime));
+        setAt(formatTime(video.current.currentTime));
         form.current.elements.note.focus();
       } else if (k === 'j' || k === 'k') step(k === 'k' ? 1 : -1);
       else if (e.key === 'ArrowLeft') { e.preventDefault(); seek(video.current.currentTime - 5); }
@@ -164,7 +168,7 @@ function Player({ jobId, data, reload }) {
       await action();
       await reload();
       if (video.current) video.current.currentTime = time;
-    } catch (error) { window.alert(error.message); }
+    } catch (error) { notify(error.message); }
   }
 
   function saveNote(e) {
@@ -240,7 +244,7 @@ function Player({ jobId, data, reload }) {
             <span className={`watch-hearing${hearing?.ours ? ' watch-hearing-dub' : ''}`}>Hearing: {hearing ? (hearing.ours ? 'Dub' : label(hearing)) : '—'}</span>
             <div className="watch-controls">
               <button type="button" className="watch-play" aria-label={playing ? 'Pause' : 'Play'} onClick={toggle}>{playing ? '❚❚' : '▶'}</button>
-              <span className="m watch-clock">{clock(playhead)} / {clock(length)}</span>
+              <span className="m watch-clock">{formatTime(playhead)} / {formatTime(length)}</span>
               {ours && reference && (
                 <div className="watch-ab" role="group" aria-label="Dub or comparison">
                   <button type="button" aria-pressed={current === ours.stream ? 'true' : 'false'} onClick={() => switchTo(ours.stream)}>Dub</button>
@@ -260,7 +264,7 @@ function Player({ jobId, data, reload }) {
           </div>
 
           <div className="watch-timeline">
-            <div className="watch-lanes" ref={lanes} onClick={onLanes} role="presentation"
+            <div className="watch-lanes" ref={lanes} onClick={onLanes} role="img"
               aria-label="Where the dub is quieter than the original, and notes">
               {lines.length > 0 && (
                 <div className="watch-lane">{lines.map(l => <span key={l.start} className="watch-tick" style={mark(l.start, l.end - l.start)} />)}</div>
@@ -268,13 +272,13 @@ function Player({ jobId, data, reload }) {
               <div className="watch-lane">
                 {loud.spans.map(s => (
                   <span key={`q${s.start}`} className={`watch-tick watch-quiet ${band(s.quieter_db)}`} style={mark(s.start, s.end - s.start)}
-                    title={`${clock(s.start)}: ours ${s.quieter_db} dB quieter than the original`} />
+                    title={`${formatTime(s.start)}: ours ${s.quieter_db} dB quieter than the original`} />
                 ))}
               </div>
               <div className="watch-lane">
                 {data.notes.map((n, i) => (
                   <span key={`n${n.id}`} className={`watch-note-mark${n.resolution === 'open' ? '' : ' watch-note-done'}`}
-                    style={{ left: pct(n.at) }} title={`${clock(n.at)}: ${n.note || n.category}`}>{i + 1}</span>
+                    style={{ left: pct(n.at) }} title={`${formatTime(n.at)}: ${n.note || n.category}`}>{i + 1}</span>
                 ))}
               </div>
               <span className="watch-head-line" style={{ left: pct(playhead) }} />
@@ -283,7 +287,7 @@ function Player({ jobId, data, reload }) {
               {lines.length > 0 && <span><i className="watch-key-line" />Dubbed lines</span>}
               <span><i className="watch-key-quiet" />Quieter than {reference && !reference.ours ? label(reference) : 'the original'} (darker = bigger drop)</span>
               <span><i className="watch-key-note" />Your notes</span>
-              <span className="m watch-legend-time">{clock(playhead)} / {clock(length)}</span>
+              <span className="m watch-legend-time">{formatTime(playhead)} / {formatTime(length)}</span>
             </div>
           </div>
 
@@ -333,7 +337,7 @@ function Player({ jobId, data, reload }) {
                 {spans.slice(0, limit).map((s, i) => (
                   <li key={s.start}>
                     <button type="button" className={`watch-row${i === near ? ' watch-row-near' : ''}`} onClick={() => seek(s.start - 1, true)}>
-                      <span className="m watch-time">{clock(s.start)}</span>
+                      <span className="m watch-time">{formatTime(s.start)}</span>
                       <span>{(s.end - s.start).toFixed(1)} s · {s.quieter_db} dB quieter</span>
                       <span className="watch-meter"><span className={band(s.quieter_db)} style={{ width: `${Math.min(100, s.quieter_db / 37 * 100)}%` }} /></span>
                     </button>
@@ -352,7 +356,7 @@ function Player({ jobId, data, reload }) {
                   <li key={n.id} className={n.resolution === 'open' ? '' : 'watch-done'}>
                     <span className="watch-num">{i + 1}</span>
                     <button type="button" className="watch-note-body" onClick={() => seek(n.at - 1, true)}>
-                      <span><strong className="m">{clock(n.at)}</strong>{n.category && <> · {CATEGORIES.find(c => c[0] === n.category)?.[1] || n.category}</>}</span>
+                      <span><strong className="m">{formatTime(n.at)}</strong>{n.category && <> · {CATEGORIES.find(c => c[0] === n.category)?.[1] || n.category}</>}</span>
                       <span className="watch-note-text">{n.note || 'No description'}</span>
                       <span className="watch-note-tags">
                         <span className={`tag ${n.severity === 'major' ? 'tag-accent' : 'tag-neutral'}`}>{n.severity}</span>
@@ -374,7 +378,7 @@ function Player({ jobId, data, reload }) {
               {lines.map(l => (
                 <li key={l.start}>
                   <button type="button" className={`watch-row watch-line${l === last ? ' watch-row-near' : ''}`} onClick={() => seek(l.start - 0.2)}>
-                    <span className="m watch-time">{clock(l.start)}</span>
+                    <span className="m watch-time">{formatTime(l.start)}</span>
                     <span><span className="watch-line-who">{l.who}</span><span className="watch-line-dub">{l.dub}</span>
                       {l.src !== l.dub && <span className="watch-line-src">{l.src}</span>}</span>
                   </button>

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { languageName, targetChoices } from '../../lib/languages.js';
 import { PLAN_FIELDS } from '../../lib/settings-model.js';
 import { configQuery } from '../../lib/queries.js';
+import { Loading } from '../../components/States.jsx';
 
 const configValue = (config, dotted) =>
   dotted.split('.').reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), config);
@@ -83,7 +84,7 @@ export function PlanTab({ item, targets, planState }) {
         <button type="button" className="btn btn-ghost plan-reset" id="planReset" onClick={() => save({})}>Reset to global</button>
       </div>
       <div id="planFields" className="plan-fields">
-        {!plan ? <p className="title-muted">Loading plan…</p>
+        {!plan ? <Loading>Loading plan…</Loading>
           : PLAN_FIELDS.map(f => <PlanField key={f.k} field={f} plan={plan} config={config} targets={targets}
               onSet={setValue} onError={setStatus} />)}
       </div>

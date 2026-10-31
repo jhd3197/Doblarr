@@ -23,13 +23,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY doblarr ./doblarr
 COPY --from=ui /src/ui/dist ./ui/dist
+# Fail the build, not the first dub, when a dependency is missing.
+RUN python -c "import sklearn, doblarr.server, doblarr.speakers"
 
 # Run as a non-root user (uid/gid 1000). Bind-mounted volumes must be writable
 # by uid 1000 on the host, e.g.:  mkdir -p config data && chown -R 1000:1000 data
 RUN groupadd --gid 1000 doblarr \
     && useradd --uid 1000 --gid doblarr --no-create-home --shell /usr/sbin/nologin doblarr \
     && mkdir -p /config /data \
-    && chown -R doblarr:doblarr /app /config /data
+    && chown -R doblarr:doblarr /config /data
 USER doblarr
 
 ENV PYTHONUNBUFFERED=1

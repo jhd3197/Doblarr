@@ -20,7 +20,7 @@ from .common import Plan, cached, dry, stage
 log = logging.getLogger("doblarr.mux")
 
 # ISO-639-2/B codes ffmpeg wants for the language metadata tag.
-_LANG3 = {e.id: e.iso3 for e in catalog() if e.id == e.base and e.iso3}
+LANG3 = {e.id: e.iso3 for e in catalog() if e.id == e.base and e.iso3}
 
 
 @stage("mux")

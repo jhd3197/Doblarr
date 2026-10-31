@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { createScenePlayer } from '../../lib/scene-player.js';
 import { defaultOrder, FILTERS, matchesFilter, ORDERS, orderRows } from '../../lib/review.js';
@@ -6,6 +6,7 @@ import { LineEditor } from './LineEditor.jsx';
 import { ScenePanel } from './ScenePanel.jsx';
 import { collectScene, createSceneState, resetSceneState } from './scene-collect.js';
 import './dubs.css';
+import { formatTime } from '../../lib/media.js';
 
 // Dialogue review for one job: the line list beside a focused editor, the
 // scene panel (playback, takes, direction, timing, space, coverage, verdicts)
@@ -28,7 +29,6 @@ import './dubs.css';
 //   data             the loaded review (segments, revision, …) or null
 //   jobId            the job on screen
 
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function describeRerun(plan) {
   if (!plan) return 'Unchanged clips will be reused.';
@@ -63,7 +63,7 @@ function deliveryNote(report) {
   return ` · ${state}${loudness}. Technical checks are not a listening pass.`;
 }
 
-export const Review = forwardRef(function Review({ jobId, embedded = false, onClose, onSelect, onQueued }, ref) {
+export function Review({ jobId, embedded = false, onClose, onSelect, onQueued, ref }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
@@ -91,13 +91,18 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
   const epoch = useRef(0);
   const sceneEpoch = useRef(0);
   const editorRef = useRef(null);
+  const lineValues = useRef(null);       // the line editor's fields (LineEditor)
+  const sceneForm = useRef(null);        // the scene panel's fields (ScenePanel)
+  const [updatedKnowledge, setUpdatedKnowledge] = useState(false);
   const listRef = useRef(null);
-  const sceneBox = useRef(null);
   const sceneDataRef = useRef(null);
-  sceneDataRef.current = scene.data;
   const callbacks = useRef({ onSelect, onQueued });
-  callbacks.current = { onSelect, onQueued };
   const rerender = () => setTick(t => t + 1);
+  // Refreshed after each render, never during one.
+  useLayoutEffect(() => {
+    sceneDataRef.current = scene.data;
+    callbacks.current = { onSelect, onQueued };
+  });
 
   useEffect(() => {
     const scenes = sceneEpoch;
@@ -181,15 +186,13 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
   // Collect the line on screen into `pending` whenever one of its fields changes.
   const collect = useCallback(() => {
     const row = currentRow();
-    const editor = editorRef.current;
-    if (!row || !editor) return;
-    const field = id => editor.querySelector(id);
-    if (!field('#reviewText')) return;
-    const extra = collectScene({ container: sceneBox.current, scene: sceneDataRef.current, row, state: sceneState });
-    const patch = { index: row.index, cue: row.cue?.cue_id || undefined, text: field('#reviewText').value,
-      start: Number(field('#reviewStart').value), end: Number(field('#reviewEnd').value),
-      voice: field('#reviewVoice').value, delivery: field('#reviewDelivery').value,
-      regenerate: field('#reviewRegenerate').checked, exclude: field('#reviewExclude').checked, ...extra };
+    const values = lineValues.current;
+    if (!row || !values) return;
+    const extra = collectScene({ form: sceneForm.current, scene: sceneDataRef.current, row, state: sceneState,
+      data: dataRef.current });
+    const patch = { index: row.index, cue: row.cue?.cue_id || undefined, text: values.text,
+      start: Number(values.start), end: Number(values.end), voice: values.voice, delivery: values.delivery,
+      regenerate: values.regenerate, exclude: values.exclude, ...extra };
     const changed = patch.text !== (row.text_translated || row.text_src) || patch.start !== row.start
       || patch.end !== row.end || patch.voice !== (row.voice || '') || patch.delivery !== (row.delivery || '')
       || patch.regenerate || patch.exclude || Object.keys(extra).length > 0;
@@ -197,6 +200,14 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
     setStatus('');
     rerender();
   }, [sceneState]);
+  const onValues = useCallback((values, edited) => {
+    lineValues.current = values;
+    if (edited) collect();
+  }, [collect]);
+  const onForm = useCallback((form, edited) => {
+    sceneForm.current = form;
+    if (edited) collect();
+  }, [collect]);
   // Escape in the editor returns to the line list rather than closing the
   // review, so a keyboard user keeps their place. (A native listener, so the
   // correction dialog's Escape doesn't arrive here through React's portal.)
@@ -240,9 +251,8 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
     setBusy(true);
     setStatus('Queuing changes…');
     try {
-      const useUpdated = document.getElementById('reviewUpdatedKnowledge')?.checked || false;
       const result = await api(`jobs/${jobId}/review`, { method: 'POST', json: {
-        edits, events, use_updated_knowledge: useUpdated, base_revision: dataRef.current.revision } });
+        edits, events, use_updated_knowledge: updatedKnowledge, base_revision: dataRef.current.revision } });
       const sent = edits.map(e => e.cue).filter(Boolean);
       pending.current.clear();
       lock();
@@ -300,36 +310,37 @@ export const Review = forwardRef(function Review({ jobId, embedded = false, onCl
               aria-pressed={s.index === selected ? 'true' : 'false'}
               title={s.review_priority ? s.review_priority.reasons.join(', ') : undefined}
               onClick={() => select(s.index)}>
-              <span className="m">{clock(s.source_start ?? s.start)}</span>
+              <span className="m">{formatTime(s.source_start ?? s.start)}</span>
               <span><strong>{s.speaker}</strong>{' '}
                 <span className="review-excerpt">{s.text_translated || s.text_src}</span></span>
               <span className="review-marker">{pending.current.has(s.index) ? 'Edited' : s.issues.length ? 'Review' : ''}</span>
             </button>
           )) : <p className="hint">No lines match this filter.</p>)}
         </nav>
-        <section id="reviewEditor" ref={editorRef} className="review-editor" aria-label="Line editor" onInput={collect}>
+        <section id="reviewEditor" ref={editorRef} className="review-editor" aria-label="Line editor">
           {error ? error
             : !data ? <p>Loading dialogue…</p>
             : !row ? <p>Select a line to review.</p>
             : <LineEditor key={`${row.index}:${editorKey}`} row={row} data={data} jobId={jobId}
-                edit={pending.current.get(row.index) || {}} voices={voices} editorRef={editorRef}
+                edit={pending.current.get(row.index) || {}} voices={voices} onValues={onValues}
                 onQueued={() => callbacks.current.onQueued?.(undefined, [])} onLocked={lock}
                 scene={<ScenePanel key={`${row.index}:${scene.key}`} row={row} data={data} jobId={jobId}
                   scene={scene.data} status={scene.status} kind={kind} audio={audio} player={player}
                   state={sceneState} onPlay={onPlay} onTab={onTab} onContext={onContext}
-                  onDecision={rerender} containerRef={sceneBox} />} />}
+                  onDecision={rerender} onForm={onForm} />} />}
         </section>
       </div>
       <div className="review-footer">
         <p id="reviewStatus" role="status">{status}</p>
-        <label className="hint review-knowledge"><input type="checkbox" id="reviewUpdatedKnowledge" /> Use updated language knowledge</label>
+        <label className="hint review-knowledge"><input type="checkbox" id="reviewUpdatedKnowledge"
+          checked={updatedKnowledge} onChange={e => setUpdatedKnowledge(e.target.checked)} /> Use updated language knowledge</label>
         <button type="button" id="reviewSubmit" className="btn btn-primary" onClick={submit}
           disabled={busy || (!pending.current.size && !events) || !data?.editable}>
           {parts.length ? `Render ${parts.join(' and ')}` : 'Render changes'}</button>
       </div>
     </>
   );
-});
+}
 
 // The review as a modal, opened from Dubs. Focus returns to the button that
 // opened it (or that job's Review button) when it closes.

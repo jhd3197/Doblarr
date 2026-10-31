@@ -23,11 +23,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import envelopes, feedback, templates
 from ..artifacts import read_json
 from ..cues import LEVELED, apply_cue_payload
+from ..jobs import queue_rerender
 from ..models import Segment
 from ..studio import records
 from .media_delivery import allowed_path
 
 # What each kind of change costs (docs/adaptive-audio.md, plan §8).
+# Seconds a request waits on ffmpeg for one line's audio.
+REQUEST_TIMEOUT = 30.0
+
 IMPACT = {
     "template": ("processing", "Reprocesses the existing take and remixes. No speech."),
     "strength": ("processing", "Reprocesses the existing take and remixes. No speech."),
@@ -177,14 +181,7 @@ def build_router(config, store, bus) -> APIRouter:
                                **({"strength": body.strength}
                                   if body.strength is not None else {})}
         overrides["adaptive.lines"] = lines
-        overrides["dub.dry_run"] = False
-        job = store.add(title=original.title, source=original.source,
-                        source_lang=original.source_lang, target_lang=original.target_lang,
-                        target_locale=original.target_locale, input_file=original.input_file,
-                        knowledge_snapshot=original.knowledge_snapshot, kind=original.kind,
-                        overrides=overrides,
-                        narrative_snapshot=getattr(original, "narrative_snapshot", None))
-        bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+        job = queue_rerender(store, bus, original, overrides)
         work, note = IMPACT["envelope_clear" if body.clear else "template"]
         return {"job": job.id, "work": work, "speech": False, "note": note,
                 "lines": lines}
@@ -216,12 +213,11 @@ def build_router(config, store, bus) -> APIRouter:
             config, media.get("dubbed_track") or "")
         if source is None or not source.is_file():
             raise HTTPException(404, f"no {kind} audio for this run")
-        import subprocess
+        from ..ffmpeg import run_ffmpeg_bytes
 
-        clip = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{max(0.0, seg.start - 0.2):.3f}",
-                               "-t", f"{seg.duration + 0.4:.3f}", "-i", str(source), "-ac", "2",
-                               "-ar", "48000", "-f", "wav", "-"], capture_output=True,
-                              check=False).stdout
+        clip = run_ffmpeg_bytes(["-v", "error", "-ss", f"{max(0.0, seg.start - 0.2):.3f}",
+                                 "-t", f"{seg.duration + 0.4:.3f}", "-i", str(source), "-ac", "2",
+                                 "-ar", "48000", "-f", "wav", "-"], timeout=REQUEST_TIMEOUT)
         if not clip:
             raise HTTPException(500, "could not cut the line")
         return Response(content=clip, media_type="audio/wav",

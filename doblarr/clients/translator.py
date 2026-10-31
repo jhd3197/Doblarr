@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -112,18 +111,13 @@ class PromptureTranslator:
 
     def _get_driver(self):
         if self._driver is None:
-            prompture = _prompture()
-            overrides = {}
-            if self.endpoint:
-                overrides["endpoint"] = self.endpoint
-            if self.api_key:
-                overrides["api_key"] = self.api_key
-            elif self.model.startswith("claude/") and os.environ.get("ANTHROPIC_API_KEY"):
-                overrides["api_key"] = os.environ["ANTHROPIC_API_KEY"]
+            from ..llm import ModelUnavailable, driver_for
+
+            _prompture()     # a clear "install Prompture" message first
             try:
-                self._driver = prompture.get_driver_for_model(self.model, **overrides)
-            except Exception as exc:
-                raise ConfigError(f"Prompture could not initialize '{self.model}': {exc}") from exc
+                self._driver = driver_for(self.model, endpoint=self.endpoint, api_key=self.api_key)
+            except ModelUnavailable as exc:
+                raise ConfigError(str(exc)) from exc
         return self._driver
 
     def _translate_lines(

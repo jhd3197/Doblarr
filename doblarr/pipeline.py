@@ -19,8 +19,8 @@ from . import (
     phrases,
     prepass,
     reactions,
+    retention,
     romaji,
-    treatments,
     voice_models,
 )
 from .artifacts import digest, media_work
@@ -29,7 +29,7 @@ from .clients.translator import build_translator, translation_options
 from .config import Config
 from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
-from .ffmpeg import FFmpegError
+from .ffmpeg import FFmpegError, media_duration
 from .hardware import gpu_stage, resolve_device
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
@@ -37,7 +37,7 @@ from .languages import base_language, display_name, resolve_target_locale
 from .languages import parse as parse_language_tag
 from .models import DubJob
 from .presets import effective_config
-from .review import apply_edits, write_review
+from .review import apply_edits, policy_settings, write_review
 from .services import Services
 from .stages import (
     audition,
@@ -243,6 +243,7 @@ def run_job(
                 options=dict(config["transcribe"]),
                 force=force,
                 compute=compute,
+                cancel=cancel_event,
             )
         if not dry_run and job.segments and config["transcribe"]["source"] != "whisper":
             _subtitle_roles()
@@ -314,7 +315,7 @@ def run_job(
     def _diarize():
         with gpu_stage("diarize", job, compute, retain=keep_models):
             diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run,
-                        compute=compute,
+                        compute=compute, cancel=cancel_event,
                         method=config["transcribe"].get("diarizer", "auto"),
                         voices=_voices())
         if not dry_run and job.segments and prior_groups.get("segments"):
@@ -725,7 +726,7 @@ def run_job(
             return
         try:
             tracks = speakers.audio_tracks(job.input_file)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, FFmpegError) as exc:
             analysis.record(db, job, "dub_text", "failed", error=str(exc))
             return
         track = dub_text.pick_track(tracks, job.target_locale or job.target_lang,
@@ -927,7 +928,7 @@ def run_job(
                 target=current.role)
             seg.verification = result
             quality.verification_findings(seg)
-            seg.issues = [i for i in seg.issues if i not in quality._VERIFY_ISSUES]
+            seg.issues = [i for i in seg.issues if i not in quality.VERIFY_ISSUES]
             seg.issues += quality.legacy_issues(result)
             rechecked += 0 if reused else 1
         job.metrics["verification_rechecked"] = rechecked
@@ -978,6 +979,17 @@ def run_job(
         if not dry_run and job.segments:
             save_script(job, effective_work)
 
+    def _mux():
+        if not dry_run and job.input_file.is_file():
+            # The muxed copy is about the size of the input, and a saved version
+            # copies it again; a full disk takes the database down with it.
+            copies = 2 if config["dub"].get("preserve_versions", True) else 1
+            retention.require_space(out, int(job.input_file.stat().st_size * 1.1 * copies))
+        return mux.run(job, out, track_name_template=config["dub"]["track_name_template"],
+                       dry_run=dry_run, cancel=cancel_event, force=force, duration=teaser_s,
+                       audio_codec=config["dub"].get("output_codec", "aac"),
+                       bitrate=config["dub"].get("output_bitrate", "192k"))
+
     def _background():
         background.check(job, coverage_options, cancel=cancel_event, work_dir=work,
                          vb=vb, budget=budget, dry_run=dry_run)
@@ -1011,7 +1023,7 @@ def run_job(
         if program["seconds"] is None:
             track = job.source_audio or job.background
             try:
-                program["seconds"] = (fit_timing._duration(track, cancel=cancel_event)
+                program["seconds"] = (media_duration(track, cancel=cancel_event)
                                       if track else 0.0)
             except (OSError, ValueError, FFmpegError):
                 program["seconds"] = 0.0
@@ -1118,20 +1130,7 @@ def run_job(
                                      work_dir=work, dry_run=dry_run),
         ),
         ("background", _background),
-        (
-            "mux",
-            lambda: mux.run(
-                job,
-                out,
-                track_name_template=config["dub"]["track_name_template"],
-                dry_run=dry_run,
-                cancel=cancel_event,
-                force=force,
-                duration=teaser_s,
-                audio_codec=config["dub"].get("output_codec", "aac"),
-                bitrate=config["dub"].get("output_bitrate", "192k"),
-            ),
-        ),
+        ("mux", _mux),
         ("validate", _validate),
     ]
     if job.kind == "analyze":
@@ -1224,7 +1223,10 @@ def run_job(
                 # is what "this render is a deliverable" means here, and a
                 # truncated or mis-tagged track has not earned that word.
                 if job.delivery.get("publishable", True):
-                    preserve_version(job, config, cast=cast_holder["cast"])
+                    saved = Path(preserve_version(job, config, cast=cast_holder["cast"])["output"])
+                    retention.trim_versions(saved.parent.parent,
+                                            int(config["dub"].get("versions_kept", 0)),
+                                            current=saved.parent)
                 else:
                     log.warning(
                         "not saving a version: export validation failed (%s). The "
@@ -1241,46 +1243,22 @@ def run_job(
         job.metrics["request_budget"] = budget.snapshot()
         oracle.close()
         if not dry_run and job.segments:
-            ensure_identity(job)
-            validate_cues(job.segments, job.cue_lineage)
-            write_review(job, config.work_dir,
-                         priorities=decisions.review_order(job, decision_options), settings={
-                # What this run actually used, not what is configured now.
-                "levels": {k: level_options.get(k, default) for k, default in (
-                    ("mode", "legacy"), ("target_db", -20.0), ("strength", 0.7),
-                    ("max_boost_db", 4.0), ("max_cut_db", 8.0))},
-                "verification_policy": config["quality"].get("asr", "off"),
-                "candidate_limit": int(config["dub"].get("candidate_limit", 4)),
-                "clone_cleanup": bool(config["dub"].get("clone_cleanup", False)),
-                # Phrase timing and coverage policy, frozen the same way: an old
-                # review must show the policy that produced it, not today's.
-                "timing": {k: timing_options.get(k, default) for k, default in (
-                    ("mode", "whole"), ("pacing", "speaker"),
-                    ("max_stretch", 1.3), ("min_stretch", 1.0), ("stretcher", "atempo"),
-                    ("protect_pause", 0.45), ("anchor_tolerance", 0.12),
-                    ("repair", True))},
-                "coverage": {k: coverage_options.get(k, default) for k, default in (
-                    ("mode", "off"), ("gain_db", 0.0), ("handle_ms", 80),
-                    ("fade_ms", 25), ("max_seconds", 4.0),
-                    ("leakage_check", False), ("generate", False))},
-                "background": background.kind(job),
-                # Plan 05. Which acoustic space this run put around the lines,
-                # and what the delivered file was graded against. Frozen the
-                # same way: an old review shows the profile that produced it.
-                "treatments": {
-                    **{k: treatment_options.get(k, default) for k, default in (
-                        ("mode", "off"), ("default", "dry"), ("intensity", 1.0))},
-                    "scenes": treatments.settings(treatment_options)["scenes"],
-                    "catalogue": treatments.catalogue(),
-                },
-                "delivery": delivery.describe(delivery.settings(delivery_options)),
-                "review_order": decisions.enabled(decision_options, "review_order"),
-                # Adaptive audio, frozen the same way: which mode, judge and
-                # bed policy produced this run's envelopes.
-                "adaptive": {k: adaptive_options.get(k, default) for k, default in (
-                    ("mode", "off"), ("judge", "retrieval"), ("background_policy", ""),
-                    ("envelope_strength", 1.0), ("max_envelope_db", 6.0))},
-            })
+            # Best effort: a review that cannot be written must neither replace
+            # the error a failed stage is raising nor fail a finished dub.
+            try:
+                ensure_identity(job)
+                validate_cues(job.segments, job.cue_lineage)
+                write_review(job, config.work_dir,
+                             priorities=decisions.review_order(job, decision_options), settings={
+                    # What this run actually used, not what is configured now.
+                    **policy_settings(config),
+                    "background": background.kind(job),
+                    "delivery": delivery.describe(delivery.settings(delivery_options)),
+                    "review_order": decisions.enabled(decision_options, "review_order"),
+                })
+            except Exception as exc:  # noqa: BLE001 - see above
+                log.exception("could not write the review for %s", job.input_file)
+                job.metrics["review_error"] = str(exc)
     report.finish()
 
     log.info("=== done -> %s ===", job.output_file)
@@ -1358,7 +1336,10 @@ def _published_dub(job, config, shared_work: Path, translator, dry_run: bool) ->
         return None
     lines = [{"index": s.index, "start": s.start, "end": s.end} for s in job.segments]
     try:
-        found = dub_reference.ensure(shared_work, stem, track, lines, job.target_lang)
+        found = dub_reference.ensure(
+            shared_work, stem, track, lines, job.target_lang,
+            model=(config.get("transcribe") or {}).get("whisper_model", "large-v3"),
+            device=resolve_device("transcribe", dict(config.get("compute") or {})))
     except Exception as exc:  # noqa: BLE001 - a reference is help, never a requirement
         log.warning("published dub: could not read track %s (%s); translating without it",
                     track.get("stream"), exc)

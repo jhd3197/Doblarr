@@ -7,7 +7,9 @@ import { useJobs } from '../../lib/jobs.js';
 import { isShow, itemKey, titleHref } from '../../lib/library.js';
 import { useSearch } from '../../shell/Shell.jsx';
 import { Poster } from '../../components/Poster.jsx';
+import { PageHeader } from '../../components/PageHeader.jsx';
 import { LangChips, QueueButton, StatusTag } from './parts.jsx';
+import { Loading, EmptyState } from '../../components/States.jsx';
 import './library.css';
 
 export async function libraryLoader() {
@@ -63,10 +65,15 @@ function usePlexLabels() {
 function PosterCard({ item, targets }) {
   const navigate = useNavigate();
   return (
-    <div className="poster-card library-card" onClick={() => navigate(titleHref(item))}>
+    <div className="poster-card library-card">
       <Poster item={item} />
       <div className="poster-body">
-        <div className="library-card-title">{item.title}{item.year ? <> <span className="m library-card-year">{item.year}</span></> : ''}</div>
+        <div className="library-card-title">
+          {/* A real link that covers the card, so the whole card opens the title
+              and keyboard and screen-reader users reach it like any link. */}
+          <Link className="library-card-link" to={titleHref(item)}>{item.title}</Link>
+          {item.year ? <> <span className="m library-card-year">{item.year}</span></> : ''}
+        </div>
         <LangChips item={item} targets={targets} />
         <div className="library-card-foot">
           <StatusTag label={item.label} />
@@ -80,7 +87,7 @@ function PosterCard({ item, targets }) {
           <QueueButton item={item} kind="tease" targets={targets} label="Tease" className="btn btn-ghost tease-dub"
             onShow={isShow(item) ? () => navigate(titleHref(item, 'episodes')) : undefined} />
           <button type="button" className="btn btn-ghost cast-edit"
-            onClick={e => { e.stopPropagation(); navigate(titleHref(item, 'voices')); }}>Cast</button>
+            onClick={() => navigate(titleHref(item, 'voices'))}>Cast</button>
         </div>
       </div>
     </div>
@@ -119,13 +126,14 @@ export function Library() {
   if (sort === 'recent') rows.sort((a, b) => (activity[b.title] || '').localeCompare(activity[a.title] || ''));
 
   let grid;
-  if (scan.busy) grid = <div className="muted-note">Rescanning Sonarr and Radarr…</div>;
-  else if (scan.error) grid = <div className="muted-note">Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? {scan.error}</div>;
-  else if (!rows.length) grid = <div className="muted-note">No titles match.</div>;
+  if (scan.busy) grid = <Loading className="empty">Rescanning Sonarr and Radarr…</Loading>;
+  else if (scan.error) grid = <EmptyState block>Library scan unavailable — is Doblarr running (doblarr serve) and Radarr reachable? {scan.error}</EmptyState>;
+  else if (!rows.length) grid = <EmptyState block>No titles match.</EmptyState>;
   else grid = rows.map(item => <PosterCard key={itemKey(item)} item={item} targets={targets} />);
 
   return (
     <div className="page">
+      <PageHeader title="Library" hint="Films and shows from Radarr and Sonarr, and which still need a dubbed track." />
       <div className="library-toolbar">
         <Pills id="libraryFilters" options={FILTERS.map(f => [f, f === 'all' ? 'All' : f])} value={filter} onChange={setFilter} />
         <Pills id="librarySort" options={SORTS} value={sort} onChange={setSort} />

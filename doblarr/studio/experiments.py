@@ -43,8 +43,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from ..artifacts import digest, read_json
 from ..budget import RequestBudget
 from ..errors import DoblarrError, JobCancelled
+from ..fileio import write_json
 from ..languages import display_name
-from ..telemetry import write_json
 from . import alignment as aligner
 from . import records
 from .holdout import Fingerprints, GuardedDriver, HoldoutGuard, HoldoutViolation

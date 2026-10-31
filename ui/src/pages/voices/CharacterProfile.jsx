@@ -1,14 +1,15 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLoaderData } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery, queryClient } from '../../lib/queries.js';
 import { api } from '../../lib/api.js';
-import { frameUrl, pickFrames, trackLabel, videoUrl } from '../../lib/media.js';
+import { formatTime, frameUrl, pickFrames, trackLabel, videoUrl } from '../../lib/media.js';
 import { voiceFor } from '../../lib/voices.js';
 import { MediaPlayer } from '../../components/MediaPlayer.jsx';
 import { catalogQuery, invalidateVoices, profileQuery, voiceQuery, voiceTemplatesQuery } from './queries.js';
 import { ColourField, HearPanel, UsedPanel, VoiceOrb, VoiceTags } from './VoiceParts.jsx';
 import { languageColumns, voicesIn } from '../../lib/research.js';
+import { notify } from '../../lib/notice.js';
 
 // One character of a show: the single page for who they are and how they
 // sound. It carries the voice they speak with (hear it, change it, shape it),
@@ -55,7 +56,6 @@ const GROUPS = [
 ];
 const VARIATIONS = ['neutral', 'whisper', 'call', 'shout', 'restrained', 'excited', 'sad', 'exhausted', 'nonverbal'];
 const VERDICTS = ['untested', 'good', 'acceptable', 'poor', 'failed'];
-const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
 const known = value => !(value == null || value === '' || value === 'unknown' || value === false
@@ -70,38 +70,53 @@ export async function characterLoader({ params }) {
   return { id };
 }
 
-// One field of the description: uncontrolled, read back on save like a form.
-function Control({ spec: [path, label, kind], profile, locked }) {
-  const value = get(profile, path);
-  let input;
-  if (Array.isArray(kind)) {
-    input = <select className="input" data-field={path} defaultValue={kind.includes(value) ? value : kind[0]}>
-      {kind.map(o => <option key={o}>{o}</option>)}</select>;
-  } else if (kind === 'check') {
-    input = <input type="checkbox" data-field={path} data-kind="check" defaultChecked={Boolean(value)} />;
-  } else if (kind === 'number') {
-    input = <input className="input m" type="number" step="any" data-field={path} data-kind="number" defaultValue={value ?? ''} />;
-  } else if (kind === 'list') {
-    input = <input className="input" data-field={path} data-kind="list" defaultValue={(value || []).join(', ')} />;
-  } else {
-    input = <input className="input" data-field={path} defaultValue={value || ''} />;
-  }
-  return (
-    <label className="review-field">{label} {input}
-      <label className="hint profile-lock" title="Locked fields are never changed by suggestions">
-        <input type="checkbox" data-lock={path} defaultChecked={locked(path)} /> lock</label>
-    </label>
-  );
+// One field of the description, shown as the text its control holds.
+function display(kind, value) {
+  if (Array.isArray(kind)) return kind.includes(value) ? value : kind[0];
+  if (kind === 'check') return Boolean(value);
+  if (kind === 'number') return value == null ? '' : String(value);
+  if (kind === 'list') return (value || []).join(', ');
+  if (kind === 'tri') return value === true ? 'yes' : value === false ? 'no' : '';
+  return value || '';
 }
 
-function read(field) {
-  const kind = field.dataset.kind;
-  if (kind === 'check') return field.checked;
-  if (kind === 'number') return field.value === '' ? null : Number(field.value);
-  if (kind === 'list') return field.value.split(',').map(s => s.trim()).filter(Boolean);
-  return field.value;
+// The stored value for what a control holds.
+function stored(kind, shown) {
+  if (kind === 'number') return shown === '' ? null : Number(shown);
+  if (kind === 'list') return shown.split(',').map(s => s.trim()).filter(Boolean);
+  if (kind === 'tri') return shown === '' ? null : shown === 'yes';
+  return shown;
 }
-const fieldState = f => JSON.stringify(f.dataset.kind === 'tri' ? f.value : read(f));
+
+// Every editable field of a profile: the described groups and the performance range.
+const SPECS = [
+  ...GROUPS.flatMap(([, , list]) => list),
+  ...VARIATIONS.flatMap(v => [[`variations.${v}.desired`, '', 'tri'], [`variations.${v}.auditioned`, '', VERDICTS]]),
+];
+
+function Control({ spec: [path, label, kind], value, onChange, locked, onLock }) {
+  const set = e => onChange(path, kind === 'check' ? e.target.checked : e.target.value);
+  let input;
+  if (Array.isArray(kind)) {
+    input = <select className="input" data-field={path} value={value} onChange={set}>
+      {kind.map(o => <option key={o}>{o}</option>)}</select>;
+  } else if (kind === 'check') {
+    input = <input type="checkbox" data-field={path} checked={value} onChange={set} />;
+  } else if (kind === 'number') {
+    input = <input className="input m" type="number" step="any" data-field={path} value={value} onChange={set} />;
+  } else {
+    input = <input className="input" data-field={path} value={value} onChange={set} />;
+  }
+  // Two labels side by side, never one inside the other: the field's name must
+  // not be read as "… lock", and a click on "lock" must not reach the field.
+  return (
+    <div className="review-field">
+      <label>{label} {input}</label>
+      <label className="hint profile-lock" title="Locked fields are never changed by suggestions">
+        <input type="checkbox" data-lock={path} checked={locked} onChange={e => onLock(path, e.target.checked)} /> lock</label>
+    </div>
+  );
+}
 
 // What is known about the voice, as short facts ("Pace: quick"), group by group.
 function Described({ profile, locked }) {
@@ -122,32 +137,30 @@ function Described({ profile, locked }) {
 // The description editor; remounted per profile revision so fields show what was saved.
 function DescriptionEditor({ characterId, data, templates, locked, open, onToggle, say, refresh }) {
   const { profile } = data;
-  const formRef = useRef(null);
-  const original = useRef(new Map());
-  useLayoutEffect(() => {
-    original.current = new Map([...formRef.current.querySelectorAll('[data-field]')].map(f => [f.dataset.field, fieldState(f)]));
-  }, []);
+  const picked = kind => (profile.templates[kind] || []).map(p => p.template).filter(id => templates.some(t => t.id === id));
+  const [initial] = useState(() => ({
+    fields: Object.fromEntries(SPECS.map(([path, , kind]) => [path, display(kind, get(profile, path))])),
+    locks: Object.fromEntries(SPECS.map(([path]) => [path, locked(path)])),
+    templates: { favored: picked('favored'), discouraged: picked('discouraged') },
+  }));
+  const [form, setForm] = useState(initial);
+  const setField = (path, value) => setForm(f => ({ ...f, fields: { ...f.fields, [path]: value } }));
+  const setLock = (path, value) => setForm(f => ({ ...f, locks: { ...f.locks, [path]: value } }));
+  const setTemplates = (kind, ids) => setForm(f => ({ ...f, templates: { ...f.templates, [kind]: ids } }));
 
   async function save() {
-    const root = formRef.current;
     const set = {};
-    root.querySelectorAll('[data-field]').forEach(f => {
-      if (fieldState(f) === original.current.get(f.dataset.field)) return;
-      const value = f.dataset.kind === 'tri' ? f.value : read(f);
-      set[f.dataset.field] = f.dataset.kind === 'tri' ? (value === '' ? null : value === 'yes') : value;
-    });
+    for (const [path, , kind] of SPECS) {
+      if (form.fields[path] !== initial.fields[path]) set[path] = stored(kind, form.fields[path]);
+    }
     ['favored', 'discouraged'].forEach(kind => {
-      const box = root.querySelector(`[data-templates="${kind}"]`);
-      const picked = [...box.selectedOptions].map(o => o.value);
+      const ids = form.templates[kind];
       const before = (profile.templates[kind] || []).map(p => p.template);
-      if (JSON.stringify(picked) !== JSON.stringify(before))
-        set[`templates.${kind}`] = picked.map(id => (profile.templates[kind] || []).find(p => p.template === id) || { template: id });
+      if (JSON.stringify(ids) !== JSON.stringify(before))
+        set[`templates.${kind}`] = ids.map(id => (profile.templates[kind] || []).find(p => p.template === id) || { template: id });
     });
-    const lock = [], unlock = [];
-    root.querySelectorAll('[data-lock]').forEach(b => {
-      if (b.checked && !locked(b.dataset.lock)) lock.push(b.dataset.lock);
-      if (!b.checked && locked(b.dataset.lock)) unlock.push(b.dataset.lock);
-    });
+    const lock = SPECS.map(([path]) => path).filter(path => form.locks[path] && !locked(path));
+    const unlock = SPECS.map(([path]) => path).filter(path => !form.locks[path] && locked(path));
     if (!Object.keys(set).length && !lock.length && !unlock.length) { say('Nothing changed.'); return; }
     try {
       await api(`characters/${encodeURIComponent(characterId)}/profile`, { method: 'PATCH',
@@ -159,37 +172,40 @@ function DescriptionEditor({ characterId, data, templates, locked, open, onToggl
     }
   }
 
-  const triValue = d => (d === true ? 'yes' : d === false ? 'no' : '');
   return (
-    <details className="profile-edit" data-profile-edit open={open} onToggle={e => onToggle(e.currentTarget.open)} ref={formRef}>
+    <details className="profile-edit" data-profile-edit open={open} onToggle={e => onToggle(e.currentTarget.open)}>
       <summary>Edit the description</summary>
       {GROUPS.map(([id, title, list]) => (
         <div key={id}><h4 className="voice-subhead">{title}</h4>
-          <div className="voice-form">{list.map(spec => <Control key={spec[0]} spec={spec} profile={profile} locked={locked} />)}</div></div>
+          <div className="voice-form">{list.map(spec => (
+            <Control key={spec[0]} spec={spec} value={form.fields[spec[0]]} onChange={setField}
+              locked={form.locks[spec[0]]} onLock={setLock} />))}</div></div>
       ))}
       <h4 className="voice-subhead">Performance range</h4>
       <p className="hint">What you want, what the cast engine can be asked for, and what an audition proved, kept apart.</p>
-      <table className="table"><thead><tr><th>State</th><th>Wanted</th><th>Engine can be asked</th><th>Auditioned</th></tr></thead><tbody>
+      <div className="table-wrap"><table className="table"><thead><tr><th>State</th><th>Wanted</th><th>Engine can be asked</th><th>Auditioned</th></tr></thead><tbody>
         {VARIATIONS.map(v => {
-          const row = profile.variations[v] || {};
           const support = (data.assignments[0]?.variations || {})[v] || 'unknown';
           return (
             <tr key={v}><td>{v}</td>
-              <td><select className="input" data-field={`variations.${v}.desired`} data-kind="tri" defaultValue={triValue(row.desired)}>
+              <td><select className="input" data-field={`variations.${v}.desired`}
+                value={form.fields[`variations.${v}.desired`]}
+                onChange={e => setField(`variations.${v}.desired`, e.target.value)}>
                 {['', 'yes', 'no'].map(o => <option key={o} value={o}>{o || 'unknown'}</option>)}</select></td>
               <td className="m">{support}</td>
               <td><select className="input" data-field={`variations.${v}.auditioned`}
-                defaultValue={VERDICTS.includes(row.auditioned) ? row.auditioned : VERDICTS[0]}>
+                value={form.fields[`variations.${v}.auditioned`]}
+                onChange={e => setField(`variations.${v}.auditioned`, e.target.value)}>
                 {VERDICTS.map(o => <option key={o}>{o}</option>)}</select></td></tr>
           );
-        })}</tbody></table>
+        })}</tbody></table></div>
       <h4 className="voice-subhead">Templates</h4>
       <p className="hint">Envelope templates this character tends to suit, or should avoid. Recommendations weigh them; they never force one.</p>
       <div className="voice-form">
         {[['favored', 'Favoured'], ['discouraged', 'Avoid']].map(([kind, label]) => (
           <label key={kind} className="review-field">{label}
-            <select className="input" multiple size={5} data-templates={kind}
-              defaultValue={(profile.templates[kind] || []).map(p => p.template).filter(id => templates.some(t => t.id === id))}>
+            <select className="input" multiple size={5} data-templates={kind} value={form.templates[kind]}
+              onChange={e => setTemplates(kind, [...e.target.selectedOptions].map(o => o.value))}>
               {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>
         ))}
       </div>
@@ -210,13 +226,13 @@ function Appearances({ character, voice }) {
   if (!data.episodes.length) return <p className="hint">No analysed episode names this character yet. Name their voice on an episode’s Analysis tab.</p>;
   const colour = voice?.color || 'var(--color-accent)';
 
-  async function watch(e, fromCue, button) {
+  async function watch(e, fromCue) {
     let found;
-    try { found = await api(`analysis/tracks?path=${encodeURIComponent(e.path)}`); } catch (error) { button.title = error.message; return; }
+    try { found = await api(`analysis/tracks?path=${encodeURIComponent(e.path)}`); } catch (error) { notify(error.message); return; }
     const clips = e.lines.map(l => {
       const start = Math.max(0, l.start - 0.35);
       const end = Math.min(start + 29.5, l.end + 0.45);
-      return { start, end, label: clock(l.start), text: l.text, detail: l.original_text || '', cue: l.cue,
+      return { start, end, label: formatTime(l.start), text: l.text, detail: l.original_text || '', cue: l.cue,
         url: stream => videoUrl(e.path, start, end, stream) };
     });
     setPlayer({ title: character.name, colour, subtitle: `${e.episode} · ${e.lines.length} lines, back to back`,
@@ -230,20 +246,20 @@ function Appearances({ character, voice }) {
       {data.episodes.map((e, n) => (
         <div key={n} className="appear-episode">
           <div className="appear-head"><strong>{e.episode || e.revision_id}</strong>
-            <span className="hint"><span className="m">{e.lines.length}</span> lines · <span className="m">{clock(e.seconds)}</span></span>
+            <span className="hint"><span className="m">{e.lines.length}</span> lines · <span className="m">{formatTime(e.seconds)}</span></span>
             {e.reachable ? <button type="button" className="btn btn-ghost" data-watch-episode={n}
-              onClick={ev => watch(e, undefined, ev.currentTarget)}>Watch their lines</button>
+              onClick={() => watch(e)}>Watch their lines</button>
               : <span className="hint">video not reachable from here</span>}</div>
           {e.reachable && (
             <div className="cast-frames">{pickFrames(e.lines, {}, 6).map(l => (
               <button key={l.cue} type="button" className="cast-frame" style={{ '--tint': colour }} data-watch-episode={n}
-                data-from={l.cue} title={`${clock(l.start)} · ${l.text}`} onClick={ev => watch(e, l.cue, ev.currentTarget)}>
-                <img src={frameUrl(e.path, (l.start + l.end) / 2)} alt={`The picture at ${clock(l.start)}`} width="160" height="90" decoding="async" />
-                <span className="cast-frame-time m">{clock(l.start)}</span></button>
+                data-from={l.cue} title={`${formatTime(l.start)} · ${l.text}`} onClick={() => watch(e, l.cue)}>
+                <img src={frameUrl(e.path, (l.start + l.end) / 2)} alt={`The picture at ${formatTime(l.start)}`} width="160" height="90" decoding="async" />
+                <span className="cast-frame-time m">{formatTime(l.start)}</span></button>
             ))}</div>
           )}
           <details className="appear-lines"><summary>Their lines</summary><ol>{e.lines.map((l, i) => (
-            <li key={i}><span className="m hint">{clock(l.start)}</span> {l.text}{l.original_text && <> <span className="hint">{l.original_text}</span></>}</li>
+            <li key={i}><span className="m hint">{formatTime(l.start)}</span> {l.text}{l.original_text && <> <span className="hint">{l.original_text}</span></>}</li>
           ))}</ol></details>
         </div>
       ))}
@@ -357,6 +373,9 @@ function Assign({ character, catalog, onAssign, say }) {
 
 function Rename({ character, characterId, say, refresh }) {
   const [open, setOpen] = useState(false);
+  const input = useRef(null);
+  // Focus the name once, when the form opens, not on every keystroke.
+  useEffect(() => { if (open) input.current?.focus(); }, [open]);
   const [name, setName] = useState(character.name);
   async function submit(e) {
     e.preventDefault();
@@ -373,7 +392,7 @@ function Rename({ character, characterId, say, refresh }) {
     <>
       <form className="character-rename" data-rename-form hidden={!open} onSubmit={submit}>
         <input className="input" data-rename value={name} maxLength={80} aria-label="Name" onChange={e => setName(e.target.value)}
-          ref={el => { if (el && open) el.focus(); }} />
+          ref={input} />
         <button type="submit" className="btn btn-secondary">Rename</button>
         <button type="button" className="btn btn-ghost" data-rename-cancel onClick={() => setOpen(false)}>Cancel</button></form>
       <RenameOpen onOpen={() => { setName(character.name); setOpen(true); }} />
@@ -473,14 +492,14 @@ export function CharacterProfile() {
         {voice && <VoiceTraits key={voice.key} voice={voice} orbRef={orbRef} />}
         <h4 className="voice-subhead">Which voice, per language</h4>
         {data.assignments.length ? (
-          <table className="table"><thead><tr><th>Locale</th><th>Variant</th><th>Voice</th><th>Engine can do</th><th></th></tr></thead><tbody>
+          <div className="table-wrap"><table className="table"><thead><tr><th>Locale</th><th>Variant</th><th>Voice</th><th>Engine can do</th><th></th></tr></thead><tbody>
             {data.assignments.map((a, n) => (
               <tr key={n}><td className="m">{a.locale || 'any'}</td><td>{a.variant || 'any'}</td>
                 <td>{catalog.find(v => v.profile_id === a.voice || v.key === a.voice)?.display_name || catalog.find(v => v.profile_id === a.voice)?.name || a.voice}</td>
                 <td className="hint">{(a.capabilities?.supported_controls || []).join(', ') || 'unknown'}{a.capabilities?.unsupported?.length ? `; cannot: ${a.capabilities.unsupported.join(', ')}` : ''}</td>
                 <td><button type="button" className="btn btn-ghost" data-unassign={a.locale || ''} data-variant={a.variant || ''}
                   onClick={() => assign({ clear: true, locale: a.locale || '', variant: a.variant || '' })}>Remove</button></td></tr>
-            ))}</tbody></table>
+            ))}</tbody></table></div>
         ) : <p className="hint">{voice ? 'Not cast yet: the voice above is matched by its name only.' : 'No voice cast yet.'}</p>}
         <PublishedVoices published={character.published} />
         <Assign character={character} catalog={catalog} onAssign={assign} say={setStatus} />
@@ -498,7 +517,7 @@ export function CharacterProfile() {
       <section className="panel voice-panel" aria-labelledby="charRefs"><h3 id="charRefs">References</h3>
         <p className="hint">Lines of the original actor a clone learns from. {data.references.approved} approved{data.references.neutral ? '' : ', no neutral one yet'}{data.references.expressive ? '' : ', no expressive one yet'}.</p>
         {profile.references.length > 0 && (
-          <table className="table"><thead><tr><th>Kind</th><th>Line</th><th>Quality</th><th>State</th><th></th></tr></thead><tbody>
+          <div className="table-wrap"><table className="table"><thead><tr><th>Kind</th><th>Line</th><th>Quality</th><th>State</th><th></th></tr></thead><tbody>
             {profile.references.map(r => (
               <tr key={r.id}><td>{r.kind} · {r.variation}</td>
                 <td>{r.transcript || ''}<br /><span className="hint m">{r.source.start.toFixed(1)}–{r.source.end.toFixed(1)} s · {r.provenance || ''}</span></td>
@@ -507,7 +526,7 @@ export function CharacterProfile() {
                 <td>{!r.retired && <>
                   <button type="button" className="btn btn-ghost" data-ref={r.id} onClick={() => retouchReference(r.id, { approved: !r.approved })}>{r.approved ? 'Unapprove' : 'Approve'}</button>
                   <button type="button" className="btn btn-ghost" data-ref={r.id} data-retire="true" onClick={() => retouchReference(r.id, { retired: true })}>Retire</button></>}</td></tr>
-            ))}</tbody></table>
+            ))}</tbody></table></div>
         )}
         {profile.auditions.length > 0 && <><h4 className="voice-subhead">Auditions</h4>
           {profile.auditions.map((a, n) => <p key={n} className="hint">{a.at} · {a.language} · {a.verdict} · {a.context || ''}</p>)}</>}

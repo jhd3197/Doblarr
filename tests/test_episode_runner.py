@@ -5,7 +5,7 @@ import json
 import pytest
 
 from doblarr.models import DubJob, Segment
-from scripts.finish_episode import apply_cast, load_reviewed_script
+from doblarr.recovery import apply_cast, load_reviewed_script
 
 
 def test_cast_assigns_each_character_and_clears_old_voice_override(tmp_path):

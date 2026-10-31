@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { apiUrl } from './api.js';
-import { safeGet } from './storage.js';
+import { apiUrl, withKey } from './api.js';
 import { queryClient } from './queries.js';
 
 // Live updates from /api/events (SSE). Job events refresh the jobs cache, scan
@@ -13,8 +12,22 @@ let failures = 0;
 let refreshTimer = null;
 let logLines = [];
 const listeners = new Set();
+const streamListeners = new Set();
 
 export const streamDown = () => failures >= 3;
+
+function setFailures(count) {
+  const wasDown = streamDown();
+  failures = count;
+  if (streamDown() !== wasDown) streamListeners.forEach(fn => fn());
+}
+
+// Whether the stream is down, as React state: the jobs query switches its
+// polling on or off the moment this changes, not at its next fetch.
+export function useStreamDown() {
+  return useSyncExternalStore(fn => { streamListeners.add(fn); return () => streamListeners.delete(fn); },
+    streamDown);
+}
 
 function refreshJobs() {
   if (refreshTimer) return;
@@ -28,17 +41,16 @@ function pushLog(evt) {
 
 export function startEventStream() {
   source?.close();
-  const key = safeGet('doblarr_api_key', '');
-  source = new EventSource(apiUrl('events') + (key ? '?api_key=' + encodeURIComponent(key) : ''));
+  source = new EventSource(withKey(apiUrl('events')));
   source.onmessage = e => {
-    failures = 0;
+    setFailures(0);
     let evt;
     try { evt = JSON.parse(e.data); } catch { return; }
     if (evt.topic === 'log') pushLog(evt);
     else if (evt.topic === 'job') refreshJobs();
     else if (evt.topic === 'scan') queryClient.invalidateQueries({ queryKey: ['status'] });
   };
-  source.onerror = () => { failures++; };
+  source.onerror = () => { setFailures(failures + 1); };
 }
 window.addEventListener('doblarr-api-key', startEventStream);  // reconnect with the new key
 

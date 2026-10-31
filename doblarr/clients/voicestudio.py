@@ -81,12 +81,12 @@ class VoiceStudioClient(SpeechClient):
         return self._get("/health", timeout=timeout)
 
     def transcribe(self, audio: Path, language: str | None = None) -> dict:
-        with open(audio, "rb") as fh:
-            files = {"file": (audio.name, fh)}
-            data = {"response_format": "json"}
-            if language:
-                data["language"] = language
-            return self._post("/v1/audio/transcriptions", files=files, data=data)
+        # Bytes, not an open file, so a retry resends the whole clip.
+        files = {"file": (audio.name, audio.read_bytes())}
+        data = {"response_format": "json"}
+        if language:
+            data["language"] = language
+        return self._post("/v1/audio/transcriptions", files=files, data=data)
 
     # -- voices -----------------------------------------------------------
     def voice_profiles(self) -> list[dict]:
@@ -100,13 +100,13 @@ class VoiceStudioClient(SpeechClient):
     def clone_voice(self, name: str, language: str, sample: Path, reference_text: str,
                     description: str = "") -> str:
         # VoiceStudio profiles have no free-text description field.
-        with open(sample, "rb") as fh:
-            data = self._post(
-                "/profiles",
-                files={"ref_audio": (sample.name, fh, "audio/wav")},
-                data={"name": name, "ref_text": reference_text, "language": language,
-                      "kind": "clone"},
-            )
+        # Not retried: a retry after a lost response would create a second profile.
+        data = self._attempt(
+            "POST", "/profiles",
+            files={"ref_audio": (sample.name, sample.read_bytes(), "audio/wav")},
+            data={"name": name, "ref_text": reference_text, "language": language,
+                  "kind": "clone"},
+        ).json()
         profile_id = data.get("id")
         if not profile_id:
             raise self._error(f"no profile id in response: {data}")

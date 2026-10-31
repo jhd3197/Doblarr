@@ -2,6 +2,7 @@
 
 import datetime as _dt
 import logging
+import threading
 from typing import Any
 
 from . import discovery, plex_labels, plex_library
@@ -24,6 +25,10 @@ class LibraryService:
         self.config, self.db, self.bus, self.services = config, db, bus, services
         self.cache = TTLCache(max_size=4)
         self.state: dict = {"last_scan": None, "counts": None}
+        # One scan at a time: the scheduler, webhooks and page loads would
+        # otherwise run full Radarr/Sonarr/Plex scans side by side.
+        self._scan_lock = threading.Lock()
+        self._scans = 0
 
         # Restore the last scan so /api/status and /api/library survive a restart.
         saved_scan = self.db.load_scan()
@@ -49,6 +54,18 @@ class LibraryService:
             cached = self.cache.get("library", ttl=self._scan_ttl())
             if cached is not None:
                 return cached
+        seen = self._scans
+        with self._scan_lock:
+            # A scan that finished while this caller waited is as fresh as a new one.
+            if self._scans != seen:
+                cached = self.cache.get("library", ttl=self._scan_ttl())
+                if cached is not None:
+                    return cached
+            result = self._scan()
+            self._scans += 1
+            return result
+
+    def _scan(self) -> tuple[list, list[str]]:
         targets = self.config["general"]["target_languages"]
         disc = self.config.get("discovery", {})
         only_foreign = disc.get("only_original_foreign", True)

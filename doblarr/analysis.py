@@ -24,6 +24,8 @@ import math
 import statistics
 from pathlib import Path
 
+from .fileio import write_json
+
 log = logging.getLogger("doblarr.analysis")
 
 DETECTOR = "line-analysis/1"
@@ -87,9 +89,9 @@ def run(job, work_dir: Path, *, whisper_model: str = "large-v3", device=None,
     source_lang = (job.source_lang or "").split("-")[0]
     script_lang = (job.script_lang or "").split("-")[0]
     if recognise and source_lang and script_lang and source_lang != script_lang:
-        from .stages.transcribe import _faster_whisper_segments
+        from .stages.transcribe import faster_whisper_segments
 
-        heard = _faster_whisper_segments(job, Path(audio), whisper_model, device)
+        heard = faster_whisper_segments(job, Path(audio), whisper_model, device)
         words = [w for seg in heard for w in (seg.words or [])]
         original = words_by_line(words, spans)
         log.info("analysis: %d original-language word(s) placed on %d line(s)",
@@ -163,10 +165,7 @@ def run_features(job, work_dir: Path, cancel=None, progress=None,
     payload = {"request": key, "contract": features.describe(), "stats": stats,
                "source": "separated-vocals" if audio == job.vocals else "source-stream",
                "lines": lines}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".partial.json")
-    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    temp.replace(path)
+    write_json(path, payload, indent=None)
     log.info("analysis: features for %d line(s) (%s decoded)", len(lines),
              stats.get("decoded_seconds"))
     return path, False

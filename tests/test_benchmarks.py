@@ -106,7 +106,7 @@ def test_scene_covers_the_documented_fixture_cases():
 
 
 def test_boundary_preparation_removes_needless_timing_repairs(tmp_path):
-    """Plan 02's comparison: same padded scene, preparation off then on."""
+    """Boundary preparation's comparison: same padded scene, preparation off then on."""
     media = tmp_path / "padded"
     off = baseline(tmp_path / "off", BOUNDARY_SCENE, media_root=media)
     on = baseline(tmp_path / "on", BOUNDARY_SCENE,

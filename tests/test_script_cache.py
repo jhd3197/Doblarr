@@ -111,3 +111,27 @@ def test_subtitle_language_is_separate_from_audio(tmp_path, monkeypatch):
     translate.run(job, Translator())
     assert job.segments[0].text_translated == "Alguien viene."
     assert subtitles.pick_stream([{"index": 2, "codec": "ass", "lang": "jpn"}], "ja")
+
+
+def test_restored_narrator_fallback_is_retried(tmp_path, monkeypatch):
+    job = _scripted_job(tmp_path)
+    job.metrics["diarize"] = {"method": "narrator", "reason": "CUDA out of memory"}
+    work = tmp_path / "work"
+    work.mkdir()
+    save_script(job, work)
+
+    fresh = _job(tmp_path)
+    fresh.vocals = tmp_path / "vocals.wav"
+    load_script(fresh, work)
+    assert diarize.narrator_fallback(fresh) == "CUDA out of memory"
+
+    def grouped(job, audio, device, why, voices=None):
+        job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00"), "SPEAKER_01": Speaker("SPEAKER_01")}
+        job.metrics["diarize"] = {"method": "local", "reason": why}
+        return True
+
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setattr(diarize, "_local", grouped)
+    diarize.run(fresh, enabled=True, dry_run=False)
+    assert set(fresh.speakers) == {"SPEAKER_00", "SPEAKER_01"}
+    assert diarize.narrator_fallback(fresh) is None

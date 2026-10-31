@@ -40,7 +40,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -407,7 +407,3 @@ def describe_curve(template: dict, strength: float = 1.0, points: int = 33) -> l
     from .envelopes import template_curve
 
     return [[round(x, 3), round(y, 2)] for x, y in template_curve(template, points, strength)]
-
-
-def as_template(found: dict | None) -> Any:
-    return validate({k: v for k, v in (found or {}).items() if k in Template.model_fields})

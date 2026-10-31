@@ -126,14 +126,13 @@ def assigned_cast(job, db, revision_id: str | None, series_id: str | None) -> li
     """
     if not revision_id or not series_id:
         return []
-    from . import speaker_memory
+    from . import identity, speaker_memory
     from .studio import casting, records
 
     labels = speaker_memory.characters_for_labels(db, revision_id, job.segments)
     if not labels:
         return []
-    series_ref = ("series:" + series_id.rsplit(":", 1)[-1]
-                  if series_id.startswith("show:tvdb:") else series_id)
+    series_ref = identity.casting_ref(series_id)
     choices = (records.get(db, "casting", casting.record_id("series", series_ref))
                or {}).get("characters") or {}
     out = []

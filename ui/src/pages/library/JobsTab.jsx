@@ -1,17 +1,18 @@
 import { useNavigate } from 'react-router';
 import { jobsFor } from '../../lib/identity.js';
 import { jobStatusClass, useJobs } from '../../lib/jobs.js';
+import { Loading, EmptyState } from '../../components/States.jsx';
 
 // The last jobs for this title's file (or any episode of a show's folder).
 export function JobsTab({ item }) {
   const navigate = useNavigate();
   const { data, error, isPending } = useJobs();
   let body;
-  if (isPending) body = <p className="title-muted title-jobs-note">Loading…</p>;
-  else if (error) body = <p className="title-muted title-jobs-note">Jobs unavailable.</p>;
+  if (isPending) body = <Loading className="title-jobs-note" />;
+  else if (error) body = <p className="note title-jobs-note">Jobs unavailable.</p>;
   else {
     const list = jobsFor(item, data.jobs || []);
-    body = !list.length ? <p className="title-muted title-jobs-note">No jobs for this title yet.</p>
+    body = !list.length ? <EmptyState className="title-jobs-note">No jobs for this title yet.</EmptyState>
       : list.slice(0, 10).map(j => (
         <div key={j.id} className="title-job">
           <span className="m title-job-time">{(j.created_at || '').slice(5, 16)}</span>

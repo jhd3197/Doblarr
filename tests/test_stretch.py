@@ -50,7 +50,7 @@ def _job(tmp_path: Path) -> DubJob:
 def _fit(tmp_path, monkeypatch, options):
     job = _job(tmp_path)
     calls = []
-    monkeypatch.setattr(fit_timing, "run_ffprobe", lambda args, **k: "2.4")
+    monkeypatch.setattr(fit_timing, "media_duration", lambda path, **k: 2.4)
 
     def render(args, **kwargs):
         calls.append(args)

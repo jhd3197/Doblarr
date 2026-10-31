@@ -40,6 +40,7 @@ from pathlib import Path
 from . import __version__
 from .clients.speech import SpeechError, build_speech_client
 from .config import Config
+from .errors import DoblarrError
 from .logging_setup import setup_logging
 from .models import DubJob
 from .pipeline import run_job
@@ -59,10 +60,15 @@ def _cmd_check(args: argparse.Namespace, config: Config) -> int:
 def _cmd_serve(args: argparse.Namespace, config: Config) -> int:
     import uvicorn
 
+    from .auth import ensure_api_key
     from .server import create_app
 
     host = args.host or config.get("web", {}).get("host", "127.0.0.1")
     port = args.port or config.get("web", {}).get("port", 6363)
+    key = ensure_api_key(config)
+    if key:
+        print(f"Generated an API key and saved it as web.api_key in {config.path}.")
+        print(f"Enter it when the web UI asks:  {key}")
     print(f"Doblarr serving on http://{host}:{port}  (UI + /api/library)")
     # log_config=None: logging_setup already configured uvicorn's loggers.
     uvicorn.run(create_app(config), host=host, port=int(port), log_config=None)
@@ -84,11 +90,11 @@ def _cmd_dub(args: argparse.Namespace, config: Config) -> int:
     # --dry-run forces a plan; otherwise dub.dry_run from config decides.
     dry_run = args.dry_run if args.dry_run is not None else config["dub"].get("dry_run", True)
     from .artifacts import media_work, read_json
+    from .fileio import write_json
     from .knowledge import snapshot
     from .knowledge.packs import ensure_starter_pack
     from .languages import resolve_target_locale
     from .store import Database
-    from .telemetry import write_json
 
     db = Database(config.db_path)
     try:
@@ -368,6 +374,19 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = Config.load(args.config)
     setup_logging(config, verbose=args.verbose, uvicorn=args.command == "serve")
+    try:
+        return _dispatch(args, config)
+    except (DoblarrError, KeyError, ValueError, OSError) as exc:
+        if args.verbose:
+            raise
+        # A missing id or a bad value is the user's to fix: say what it was,
+        # not where in the code it surfaced. --verbose keeps the traceback.
+        message = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc
+        print(f"doblarr {args.command}: {message}", file=sys.stderr)
+        return 1
+
+
+def _dispatch(args: argparse.Namespace, config: Config) -> int:
     if args.command == "check":
         return _cmd_check(args, config)
     if args.command == "serve":

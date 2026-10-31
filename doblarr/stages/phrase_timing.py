@@ -30,15 +30,14 @@ from pathlib import Path
 from .. import pacing, stretch
 from .. import phrases as planner
 from ..artifacts import digest, matches, record, stamp
-from ..cues import PHRASED, Artifact, Selection, now
+from ..cues import PHRASED, Artifact, Selection, apply_findings, now
 from ..errors import JobCancelled
-from ..ffmpeg import run_ffmpeg
+from ..ffmpeg import media_duration, run_ffmpeg
 from ..fingerprints import processing as processing_fingerprint
 from ..models import DubJob
 from . import boundaries
 from .common import Plan, dry, stage
-from .fit_timing import _duration, written_by_hand
-from .quality import apply_findings
+from .fit_timing import written_by_hand
 
 log = logging.getLogger("doblarr.phrase_timing")
 
@@ -147,7 +146,7 @@ def _eligible_take(seg, needed: float):
         length = take.raw.duration
         if length is None:
             try:
-                length = _duration(Path(take.raw.path))
+                length = media_duration(Path(take.raw.path))
             except (OSError, ValueError):
                 continue
         if length <= needed:

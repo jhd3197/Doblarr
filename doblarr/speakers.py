@@ -30,10 +30,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 from pathlib import Path
 
 from . import voice_models
+from .ffmpeg import FFmpegError, probe_json, run_ffmpeg, run_ffmpeg_bytes
+from .fileio import write_json
 
 log = logging.getLogger("doblarr.speakers")
 
@@ -51,8 +52,8 @@ MIN_LINES_FROM = 30      # ...once there are this many lines to group
 def _audio(path: Path):
     import numpy as np
 
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1", "-ar",
-                          str(RATE), "-f", "s16le", "-"], capture_output=True, check=True).stdout
+    raw = run_ffmpeg_bytes(["-v", "error", "-i", str(path), "-ac", "1", "-ar", str(RATE),
+                            "-f", "s16le", "-"])
     return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
 
@@ -60,12 +61,10 @@ def audio_tracks(source: Path) -> list[dict]:
     """The audio streams of a video: [{stream, lang (two letters), title}]."""
     from .discovery import ISO3_TO_ISO2
 
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
-         "stream=index:stream_tags=language,title", "-of", "json", str(source)],
-        capture_output=True, check=False, text=True).stdout
+    found = probe_json(source, "-select_streams", "a", "-show_entries",
+                       "stream=index:stream_tags=language,title")
     streams = []
-    for row in json.loads(out or "{}").get("streams") or []:
+    for row in found.get("streams") or []:
         tags = row.get("tags") or {}
         code = str(tags.get("language") or "und").lower()
         streams.append({"stream": int(row["index"]), "lang": ISO3_TO_ISO2.get(code, code),
@@ -94,13 +93,13 @@ def other_tracks(source: Path, original: str, folder: Path, stem: str,
         if not wav.is_file():
             folder.mkdir(parents=True, exist_ok=True)
             temp = wav.with_suffix(".part.wav")
-            result = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(source), "-map",
-                                     f"0:{track['stream']}", "-ac", "1", "-ar", str(RATE),
-                                     str(temp)], capture_output=True, check=False)
-            if result.returncode:
+            try:
+                run_ffmpeg(["-v", "error", "-y", "-i", str(source), "-map",
+                            f"0:{track['stream']}", "-ac", "1", "-ar", str(RATE), str(temp)])
+            except FFmpegError as exc:
                 temp.unlink(missing_ok=True)
-                log.warning("speakers: could not read audio track %s of %s", track["stream"],
-                            Path(source).name)
+                log.warning("speakers: could not read audio track %s of %s: %s",
+                            track["stream"], Path(source).name, exc)
                 continue
             os.replace(temp, wav)
         out.append((track["stream"], wav))
@@ -351,10 +350,8 @@ def _maps_for(tracks: list[tuple[int, Path]], evidence: list[dict] | None) -> li
 def _write_sidecar(path: Path, models, threshold: float, rows: list[tuple], vectors: list,
                    tracks: list[int] | None = None, diagnostics: dict | None = None,
                    track_evidence: list[dict] | None = None):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")
     per_line = (diagnostics or {}).get("lines") or [None] * len(rows)
-    temp.write_text(json.dumps({
+    write_json(path, {
         "detector": DETECTOR, "model": voice_models.combined_id(models), "threshold": threshold,
         "tracks": tracks or [], "track_evidence": track_evidence or [],
         "diagnostics": {k: v for k, v in (diagnostics or {}).items() if k != "lines"},
@@ -363,8 +360,7 @@ def _write_sidecar(path: Path, models, threshold: float, rows: list[tuple], vect
                    **({"why": why} if why else {})}
                   for (cue, start, end, speaker), v, why in zip(rows, vectors, per_line,
                                                                 strict=True)],
-    }), encoding="utf-8")
-    os.replace(temp, path)
+    }, indent=None)
 
 
 def move_lines(script: Path, sidecar: Path | None, moves: dict[str, str]) -> int:
@@ -384,9 +380,7 @@ def move_lines(script: Path, sidecar: Path | None, moves: dict[str, str]) -> int
                 source["speaker"] = label
             moved += 1
     data["speakers"] = sorted({str(seg.get("speaker")) for seg in data.get("segments") or []})
-    temp = script.with_suffix(script.suffix + ".tmp")
-    temp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(temp, script)
+    write_json(script, data, indent=1)
     if sidecar is not None and sidecar.is_file():
         evidence = json.loads(sidecar.read_text(encoding="utf-8"))
         for line in evidence.get("lines") or []:
@@ -394,9 +388,7 @@ def move_lines(script: Path, sidecar: Path | None, moves: dict[str, str]) -> int
                 line["speaker"] = moves[str(line["cue"])]
                 # A person decided this line; the grouping's reasons no longer apply.
                 line["why"] = {"method": "manual", "candidates": [], "margin": None}
-        temp = sidecar.with_suffix(sidecar.suffix + ".tmp")
-        temp.write_text(json.dumps(evidence), encoding="utf-8")
-        os.replace(temp, sidecar)
+        write_json(sidecar, evidence, indent=None)
     return moved
 
 
@@ -439,9 +431,7 @@ def regroup(script: Path, audio: Path, sidecar: Path, models: list[voice_models.
         if isinstance(source, dict) and "speaker" in source:
             source["speaker"] = label
     data["speakers"] = sorted(set(labels))
-    temp = script.with_suffix(script.suffix + ".tmp")
-    temp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(temp, script)
+    write_json(script, data, indent=1)
     _write_sidecar(sidecar, models, voice_models.threshold(models, threshold),
                    [((seg.get("cue") or {}).get("cue_id"), seg["start"], seg["end"],
                      seg["speaker"]) for seg in segments], vectors,

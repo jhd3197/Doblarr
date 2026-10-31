@@ -8,7 +8,7 @@ test('review edits one line, validates timing, and queues only the change', asyn
     jobs: [{ id: 'review-1', title: 'The Green Gathering', status: 'done', source_lang: 'ja', target_lang: 'es',
       has_review: true, review_count: 1, progress: 100 }], counts: { done: 1 }, paused: false,
   } }));
-  await page.route('**/api/voices', route => route.fulfill({ json: { voices: [{ id: 'ginko', name: 'Ginko' }] } }));
+  await page.route('**/api/voices', route => route.fulfill({ json: { voices: [{ id: 'sora', name: 'Sora' }] } }));
   let queued;
   await page.route('**/api/jobs/review-1/review', route => {
     if (route.request().method() === 'POST') {
@@ -17,13 +17,13 @@ test('review edits one line, validates timing, and queues only the change', asyn
     }
     return route.fulfill({ json: { title: 'The Green Gathering', flagged: 1, editable: true,
       cue_schema: 1, revision: 'rev-1', segments: [
-        { index: 0, start: 192.1, end: 194.7, speaker: 'Ginko', text_src: 'Someone is coming.',
+        { index: 0, start: 192.1, end: 194.7, speaker: 'Sora', text_src: 'Someone is coming.',
           text_translated: 'Alguien viene hacia nosotros.', has_audio: true, issues: ['timing_overflow'],
           cue: { cue_id: 'cue-aaa', source: { spans: [{ start: 192.1, end: 194.7, domain: 'source' }] },
             preparation: { decision: 'trimmed', lead: 0.42, tail: 0.18, active_duration: 2.1,
               onset: 0.25, silences: [{ start: 1, end: 1.2, domain: 'clip' }] },
             audio: { takes: [{ take_id: 't1' }], renders: [{ role: 'fitted', proven: true, available: true }, { role: 'edged', proven: true, available: true }] } } },
-        { index: 1, start: 197, end: 199.4, speaker: 'Shinra', text_src: 'I see.',
+        { index: 1, start: 197, end: 199.4, speaker: 'Tomoe', text_src: 'I see.',
           text_translated: 'Entiendo.', has_audio: false, issues: [],
           cue: { cue_id: 'cue-bbb', source: { spans: [] },
             preparation: { decision: 'uncertain', reason: 'only 4.0 dB between speech and noise' },
@@ -51,7 +51,7 @@ test('review edits one line, validates timing, and queues only the change', asyn
   await expect(page.locator('#reviewStatus')).toContainText('end time after its start');
   expect(queued).toBeUndefined();
   await page.getByLabel('Start (seconds)').fill('192.1');
-  await expect(page.getByRole('option', { name: 'Ginko', exact: true })).toBeAttached();
+  await expect(page.getByRole('option', { name: 'Sora', exact: true })).toBeAttached();
   await page.screenshot({ path: 'test-results/review-desktop.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/review-mobile.png' });
@@ -73,9 +73,9 @@ test('generation settings validate dictionaries before saving', async ({ page })
   await page.getByLabel('Names and terminology').fill('not JSON');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.locator('#saveStatus')).toContainText('enter a JSON object');
-  await page.getByLabel('Names and terminology').fill('{"Ginko":"Ginko"}');
+  await page.getByLabel('Names and terminology').fill('{"Sora":"Sora"}');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.locator('#saveStatus')).toHaveText('Saved ✓');
   await page.reload();
-  await expect(page.getByLabel('Names and terminology')).toHaveValue(/Ginko/);
+  await expect(page.getByLabel('Names and terminology')).toHaveValue(/Sora/);
 });

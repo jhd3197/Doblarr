@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
-import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,7 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .auth import build_api_key_dependency
+from . import __version__
+from .auth import build_api_key_dependency, build_host_check
 from .clients.speech import SpeechError
 from .config import Config
 from .errors import ConfigError, DoblarrError, NotFoundError
@@ -42,6 +41,7 @@ from .routes import studio as studio_routes
 from .routes import templates as template_routes
 from .routes import titles as title_routes
 from .routes import voice_catalog as catalog_routes
+from .routes import voice_studies as voice_study_routes
 from .routes import watch as watch_routes
 from .scheduler import Scheduler
 from .services import Services
@@ -70,6 +70,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     ensure_starter_pack(db, config.get("knowledge", {}))
     store = JobStore(db)
+    store.reset_running()  # jobs a previous process left running resume from checkpoints
     import_legacy_json(store, config.work_dir / "jobs.json")
     bus = EventBus()
     attach_log_stream(bus)  # log records flow onto the SSE stream (topic: log)
@@ -93,7 +94,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         library.debouncer.cancel()
         db.close()
 
-    app = FastAPI(title="Doblarr", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Doblarr", version=__version__, lifespan=lifespan)
+    app.middleware("http")(build_host_check(config))
     app.state.jobs = store
     app.state.worker = worker
     app.state.scheduler = scheduler
@@ -122,8 +124,10 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @api.get("/api/health/ready")
     def ready():
-        """Readiness: speech service reachable and at least one *arr source configured."""
+        """Readiness: worker alive, speech service reachable, an *arr source configured."""
         problems: list[str] = []
+        if not worker.is_alive():
+            problems.append("the job worker is not running; restart Doblarr")
         conn = config.get("connect", {})
         if not ((conn.get("radarr_url") and conn.get("radarr_api_key"))
                 or (conn.get("sonarr_url") and conn.get("sonarr_api_key"))):
@@ -149,15 +153,15 @@ def create_app(config: Config | None = None) -> FastAPI:
         Browsers can't set headers on EventSource, so pass the API key as
         `?api_key=` (the auth dependency accepts it).
         """
-        q = bus.subscribe()
+        q = bus.subscribe_async()
 
         async def stream():
             try:
                 while True:
                     try:
-                        event = await asyncio.to_thread(q.get, timeout=SSE_HEARTBEAT)
+                        event = await q.get(timeout=SSE_HEARTBEAT)
                         yield f"data: {json.dumps(event)}\n\n"
-                    except queue.Empty:
+                    except TimeoutError:
                         yield ": ping\n\n"
             finally:
                 bus.unsubscribe(q)
@@ -180,6 +184,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(studio_routes.build_router(config, store, worker, bus))
     api.include_router(catalog_routes.build_router(config, services, db))
     api.include_router(character_routes.build_router(config, services, db))
+    api.include_router(voice_study_routes.build_router(config, db))
     api.include_router(narrative_routes.build_router(config, store))
     api.include_router(cast_routes.build_router(config, db))
     api.include_router(research_routes.build_router(config, store, bus))

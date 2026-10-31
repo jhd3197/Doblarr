@@ -10,11 +10,14 @@ Sources, in order of preference:
 from __future__ import annotations
 
 import logging
+import sys
+import threading
 from pathlib import Path
 
 from .. import hardware, subtitles
 from ..cues import SOURCE, Span, ensure_identity
 from ..discovery import ISO3_TO_ISO2
+from ..errors import JobCancelled
 from ..model_pool import model as pooled_model
 from ..models import DubJob, Segment
 from .common import DryRunPlan, dry, load_script, stage
@@ -35,6 +38,7 @@ def run(
     force: bool = False,
     options: dict | None = None,
     compute: dict | None = None,
+    cancel: threading.Event | None = None,
 ) -> DryRunPlan | None:
     if dry_run:
         return dry(f"would build timed segments ({source})")
@@ -68,7 +72,7 @@ def run(
         if device.reason:
             log.info("transcribe: %s", device.reason)
     if source == "whisper":
-        segs = _whisper_segments(job, whisper_model, device)
+        segs = _whisper_segments(job, whisper_model, device, cancel)
     else:
         sub_path = job.subtitle_file
         if not sub_path:
@@ -176,7 +180,6 @@ def _align_script(job, device: hardware.Device | None = None):
                 str(job.vocals or job.source_audio),
                 target,
             )
-            del loaded
         aligned = result["segments"]
         if len(aligned) != len(job.segments):
             raise ValueError("alignment changed the number of subtitle cues")
@@ -190,7 +193,8 @@ def _align_script(job, device: hardware.Device | None = None):
 
 
 def _whisper_segments(job: DubJob, whisper_model: str,
-                      device: hardware.Device | None = None) -> list[Segment]:
+                      device: hardware.Device | None = None,
+                      cancel: threading.Event | None = None) -> list[Segment]:
     """Transcribe the extracted dialogue with whisperx; fall back to faster-whisper."""
     audio = job.vocals if job.vocals and job.vocals.exists() else job.source_audio
     if audio is None or not audio.exists():
@@ -199,11 +203,13 @@ def _whisper_segments(job: DubJob, whisper_model: str,
             "the extract stage must run first"
         )
     try:
-        return _whisperx_segments(job, audio, whisper_model, device)
+        segments = _whisperx_segments(job, audio, whisper_model, device)
+        _check(cancel)      # a whisperx pass cannot be interrupted midway
+        return segments
     except ImportError:
         pass
     try:
-        return _faster_whisper_segments(job, audio, whisper_model, device)
+        return faster_whisper_segments(job, audio, whisper_model, device, cancel)
     except ImportError:
         raise RuntimeError(
             "transcribe.source is 'whisper' but no whisper backend is installed. "
@@ -261,7 +267,6 @@ def _whisperx_segments(job: DubJob, audio: Path, whisper_model: str,
             {"batch_size": max(1, int(options["batch_size"]))} if "batch_size" in options else {}
         )
         result = model.transcribe(str(audio), **kwargs)
-        del model
     # Align against the audio for word-accurate timings — fit_timing and diarize
     # downstream key off these start/end values.
     lang = result.get("language") or job.source_lang
@@ -274,14 +279,23 @@ def _whisperx_segments(job: DubJob, audio: Path, whisper_model: str,
         ) as loaded:
             result = whisperx.align(result["segments"], loaded[0], loaded[1], str(audio),
                                     align_device)
-            del loaded
     except Exception as exc:  # noqa: BLE001 — no align model for some languages; keep raw timings
+        torch = sys.modules.get("torch")
+        if torch is not None and isinstance(exc, torch.cuda.OutOfMemoryError):
+            raise   # a memory problem to fix, not a language without an align model
         log.warning("whisperx alignment failed (%s) — using raw segment timings", exc)
+        job.metrics["alignment"] = {"state": "raw segment timings", "reason": str(exc)}
     return _to_segments(result["segments"])
 
 
-def _faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str,
-                             device: hardware.Device | None = None) -> list[Segment]:
+def _check(cancel: threading.Event | None) -> None:
+    if cancel is not None and cancel.is_set():
+        raise JobCancelled("cancelled during transcription")
+
+
+def faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str,
+                             device: hardware.Device | None = None,
+                             cancel: threading.Event | None = None) -> list[Segment]:
     from faster_whisper import WhisperModel  # lazy — heavy ML dep
 
     device = device or hardware.Device()
@@ -295,19 +309,11 @@ def _faster_whisper_segments(job: DubJob, audio: Path, whisper_model: str,
         options.get("keep_models_loaded", False),
     ) as model:
         raw, _info = model.transcribe(str(audio), language=job.source_lang, word_timestamps=True)
-        result = _to_segments(
-            [
-                {
-                    "start": s.start,
-                    "end": s.end,
-                    "text": s.text,
-                    "words": [
-                        {"start": w.start, "end": w.end, "word": w.word}
-                        for w in (getattr(s, "words", None) or [])
-                    ],
-                }
-                for s in raw
-            ]
-        )
-        del model
+        rows = []
+        for s in raw:       # segments arrive one at a time; a cancel stops between them
+            _check(cancel)
+            rows.append({"start": s.start, "end": s.end, "text": s.text,
+                         "words": [{"start": w.start, "end": w.end, "word": w.word}
+                                   for w in (getattr(s, "words", None) or [])]})
+        result = _to_segments(rows)
     return result

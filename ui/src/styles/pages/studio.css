@@ -15,7 +15,7 @@
   display: flex; flex-direction: column; gap: 10px; }
 .studio-row { display: flex; align-items: center; gap: 12px; }
 .studio-play { appearance: none; border: 0; cursor: pointer; width: 44px; height: 44px; flex: none;
-  border-radius: 50%; background: var(--color-accent); color: #fff; font-size: 15px; font-weight: 700; }
+  border-radius: 50%; background: var(--color-accent-fill); color: var(--color-on-accent); font-size: 15px; font-weight: 700; }
 .studio-play:focus-visible, .studio-src:focus-visible, .studio-wave:focus-visible, .studio-lane:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent) 60%, transparent); outline-offset: 2px; }
 .studio-clock { flex: none; width: 88px; }
@@ -32,7 +32,7 @@
 .studio-pin { position: absolute; top: 3px; transform: translateX(-50%); width: 18px; height: 18px; border-radius: 50%;
   border: 0; padding: 0; cursor: pointer; font-size: 11px; font-weight: 800; color: #fff;
   background: var(--color-neutral-700); }
-.studio-pin[data-sev="major"] { background: var(--color-accent); }
+.studio-pin[data-sev="major"] { background: var(--color-accent-fill); color: var(--color-on-accent); }
 .studio-head-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--color-text); pointer-events: none; }
 .studio-picture { flex: none; width: 150px; }
 .studio-video { width: 150px; height: 84px; border-radius: 8px; background: #000; display: block; object-fit: contain; }
@@ -41,8 +41,8 @@
   background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 11px;
   display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .studio-src[data-kind="original"] { border-style: dashed; }
-.studio-src[aria-checked="true"] { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
-.studio-src[aria-checked="true"] .studio-src-sub, .studio-src[aria-checked="true"] .kbd { color: #fff; border-color: rgba(255,255,255,.5); }
+.studio-src[aria-checked="true"] { background: var(--color-accent-fill); border-color: var(--color-accent-fill); color: var(--color-on-accent); }
+.studio-src[aria-checked="true"] .studio-src-sub, .studio-src[aria-checked="true"] .kbd { color: var(--color-on-accent); border-color: rgba(255,255,255,.5); }
 .studio-src:disabled { opacity: .5; cursor: not-allowed; }
 .studio-src-top { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .studio-src-top .kbd { margin-left: auto; }

@@ -179,7 +179,7 @@ def test_repeating_a_run_is_stable_and_accumulates_no_stretching(tmp_path):
 # -- compatibility ----------------------------------------------------------
 
 def test_the_whole_clip_path_renders_exactly_what_it_rendered_before(tmp_path):
-    """Plan 04 must not move a single sample for a run that did not opt in."""
+    """Phrase timing must not move a single sample for a run that did not opt in."""
     root = tmp_path / "legacy"
     media = root / "media"
     before = benchmarks.baseline(root / "a", benchmarks.SCENE, media_root=media)
@@ -229,7 +229,7 @@ def test_a_snapshot_without_a_timing_plan_gains_no_invented_one(tmp_path):
     assert load_script(restored, script.parent) is not None
     for seg in restored.segments:
         assert seg.phrasing.mode == "unknown" and not seg.phrasing.phrases
-    # The Plan 01 dictionary migrates into the typed record without acquiring a
+    # The first-schema dictionary migrates into the typed record without acquiring a
     # decision nobody made.
     event = restored.nonverbal[0]
     assert isinstance(event, NonverbalEvent)

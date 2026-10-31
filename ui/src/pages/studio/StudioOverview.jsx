@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { probeQuery } from './queries.js';
+import { promptDialog } from '../../lib/dialogs.js';
 
 // Overview: how this episode is worked on, what it may read, and what exists.
 
@@ -159,8 +160,8 @@ function DirectionCard({ ctrl }) {
 }
 
 async function transcribe(ctrl, refId) {
-  const text = window.prompt('Windows to transcribe, in seconds (e.g. "60-120, 300-360"). '
-    + 'Each is at most 240 s; nothing outside them is read.', '');
+  const text = await promptDialog({ title: 'Transcribe windows', label: 'Windows, in seconds (e.g. "60-120, 300-360")',
+    message: 'Each is at most 240 s; nothing outside them is read.' });
   if (!text) return;
   const windows = text.split(',').map(w => w.split('-').map(Number)).filter(w => w.length === 2
     && w.every(Number.isFinite));
@@ -237,7 +238,7 @@ function ReferencesCard({ ctrl }) {
       <h3 id="ovRefs">References</h3>
       <p className="hint">A track&apos;s language tag says what the release claims, not what it contains.
         Nothing here is sent to a model unless a role and a policy allow it.</p>
-      <table className="table"><thead><tr><th>Reference</th><th>Language</th><th>Roles</th><th>Text</th><th /></tr></thead>
+      <div className="table-wrap"><table className="table"><thead><tr><th>Reference</th><th>Language</th><th>Roles</th><th>Text</th><th /></tr></thead>
         <tbody>{refs.length ? refs.map(r => (
           <tr key={r.id}>
             <td><strong>{r.label}</strong><div className="hint">{r.track?.media_name || 'text only'}
@@ -250,7 +251,7 @@ function ReferencesCard({ ctrl }) {
             <td>{r.track && <button type="button" className="btn btn-ghost" data-transcribe={r.id}
               onClick={() => transcribe(ctrl, r.id)}>Transcribe windows</button>}</td>
           </tr>
-        )) : <tr><td colSpan="5" className="hint">No references yet.</td></tr>}</tbody></table>
+        )) : <tr><td colSpan="5" className="hint">No references yet.</td></tr>}</tbody></table></div>
       <details className="studio-add"><summary>Add a reference</summary><AddReference ctrl={ctrl} /></details>
     </section>
   );
@@ -272,7 +273,7 @@ function AlignmentDetail({ ctrl, id }) {
     <div className="studio-align">
       <p className="hint">Method {alignment.method} · {stateSummary(alignment.stats)}.
         Uncertain and excluded groups are never sent to a writer.</p>
-      <table className="table"><thead><tr><th>Original</th><th>Reference</th><th>State</th><th /></tr></thead><tbody>
+      <div className="table-wrap"><table className="table"><thead><tr><th>Original</th><th>Reference</th><th>State</th><th /></tr></thead><tbody>
         {alignment.groups.slice(0, 400).map(g => (
           <tr key={g.group_id} data-group={g.group_id}>
             <td>{g.source_text || '—'}</td>
@@ -288,7 +289,7 @@ function AlignmentDetail({ ctrl, id }) {
                 <button type="button" className="btn btn-ghost" data-act="unlink" onClick={() => act(g.group_id, 'unlink')}>Unlink</button>}</td>
           </tr>
         ))}
-      </tbody></table>
+      </tbody></table></div>
     </div>
   );
 }
@@ -437,12 +438,12 @@ function StudioJobs({ ctrl }) {
   }
   return (
     <section className="panel studio-card"><h3>Studio work in the queue</h3>
-      <table className="table"><tbody>{jobs.map(j => (
+      <div className="table-wrap"><table className="table"><tbody>{jobs.map(j => (
         <tr key={j.id}><td>{j.kind.replace('studio_', '')}</td><td>{j.status}</td>
           <td className="hint">{j.message || j.stage || ''}</td>
           <td>{['queued', 'running'].includes(j.status) &&
             <button type="button" className="btn btn-ghost" data-cancel={j.id} onClick={() => cancel(j.id)}>Cancel</button>}</td></tr>
-      ))}</tbody></table>
+      ))}</tbody></table></div>
     </section>
   );
 }

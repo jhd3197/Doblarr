@@ -8,6 +8,9 @@
     --color-text: #1c1a19;
     --color-accent: #ec573c;
     --color-accent-700: #cf4a2e;
+    /* Filled controls: text on the fill stays above 4.5:1 in both themes. */
+    --color-accent-fill: #c2412a;
+    --color-on-accent: #ffffff;
     --color-divider: rgba(0,0,0,0.12);
     --color-neutral-100: #ffffff;
     --color-neutral-200: #f5f1ed;
@@ -17,19 +20,24 @@
     --color-neutral-800: #2f2c2a;
     --color-neutral-900: #1c1a19;
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+    /* Status text stays above 4.5:1 on the page and on its own 14% tint. */
+    --ok: #1f7a46; --warn: #8a5a00; --danger: #b3261e;
 
     --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+    --text-xs: 12px; --text-sm: 13px; --text-md: 14px;
     --line: color-mix(in srgb, var(--color-text) 12%, transparent);
     --line-strong: color-mix(in srgb, var(--color-text) 18%, transparent);
-    --muted: color-mix(in srgb, var(--color-text) 62%, transparent);
+    --muted: color-mix(in srgb, var(--color-text) 70%, transparent);
     --panel: var(--color-neutral-100);
   }
   .app[data-theme="dark"] {
     --color-bg: #191817; --color-surface: #232120; --color-text: #f2f0ef;
-    --color-accent: #ff6a50; --color-accent-700: #ff8f7c; --color-divider: rgba(255,255,255,0.16);
+    --color-accent: #ff6a50; --color-accent-700: #ff8f7c;
+    --color-accent-fill: #ff6a50; --color-on-accent: #1b0d0a; --color-divider: rgba(255,255,255,0.16);
     --color-neutral-100: #232120; --color-neutral-200: #2c2a28; --color-neutral-300: #3a3735;
     --color-neutral-600: #9c9795; --color-neutral-700: #b4afac; --color-neutral-800: #d6d2cf; --color-neutral-900: #f2f0ef;
     --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.16);
-    --muted: rgba(242,240,239,0.62); --panel: #201f1e;
+    --muted: rgba(242,240,239,0.70); --panel: #201f1e;
+    --ok: #6fd39a; --warn: #f0c060; --danger: #ff8a80;
     color-scheme: dark;
   }

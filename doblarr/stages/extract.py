@@ -12,8 +12,8 @@ from ..cues import SOURCE, SourceReference, Span
 from ..discovery import ISO3_TO_ISO2
 from ..errors import DoblarrError
 from ..ffmpeg import run_ffmpeg, run_ffprobe
+from ..fileio import write_json
 from ..models import DubJob
-from ..telemetry import write_json
 from .common import Plan, cached, dry, stage, work_stem
 
 log = logging.getLogger("doblarr.extract")
@@ -37,7 +37,7 @@ def _detect_original(job: DubJob) -> int:
     return int(found["stream"])
 
 
-def _select_audio_stream(job: DubJob, cancel=None) -> int:
+def select_audio_stream(job: DubJob, cancel=None) -> int:
     if (job.source_lang or "auto").lower() in ("auto", "und", ""):
         return _detect_original(job)
     data = json.loads(
@@ -147,7 +147,7 @@ def run(
     log.info("extract audio -> %s", out.name)
     if dry_run:
         return dry("ffmpeg " + " ".join(args))
-    index = _select_audio_stream(job, cancel)
+    index = select_audio_stream(job, cancel)
     receipt = out.with_suffix(".json")
     identity = {"input": stamp(job.input_file), "stream": index, "duration": duration}
     # Recorded on every run, cached or not: later stages must be able to say

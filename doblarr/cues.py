@@ -34,17 +34,17 @@ from .errors import DoblarrError
 # Bump only for an incompatible change to the records below. A payload written
 # by a newer Doblarr is rejected, never guessed at.
 #
-# 2 (Plan 03): the `leveled` artifact role, plus the performance intent, source
+# 2: the `leveled` artifact role, plus the performance intent, source
 # measurement, level decision and content-verification records. A version-1
 # payload is read unchanged — the new records simply stay empty, which is their
 # honest state for a run that never produced them.
 #
-# 3 (Plan 04): the `phrased` artifact role and the phrase timing plan, plus
+# 3: the `phrased` artifact role and the phrase timing plan, plus
 # typed nonverbal events. Older payloads load unchanged: their timing plan is
 # empty (that run fitted whole clips) and their nonverbal rows are migrated
-# from the plain dictionaries Plan 01 wrote.
+# from the plain dictionaries the first cue schema wrote.
 #
-# 4 (Plan 05): the `treated` artifact role and the acoustic treatment record.
+# 4: the `treated` artifact role and the acoustic treatment record.
 # Older payloads load unchanged and their treatment stays empty, which is the
 # honest state: that run placed dry dialogue and no preset was ever chosen.
 #
@@ -64,19 +64,19 @@ DOMAINS = (SOURCE, TARGET, CLIP, MONTAGE)
 # Artifact roles in processing order. "unknown" is a real state, used when a
 # migrated file's provenance cannot be proven.
 RAW = "raw"
-TRIMMED = "trimmed"        # reversible boundary preparation (Plan 02)
+TRIMMED = "trimmed"        # reversible boundary preparation
 NORMALIZED = "normalized"  # legacy pre-fit loudness pass (levels.mode="legacy")
-PHRASED = "phrased"        # per-phrase timing recipe (timing.mode="phrase", Plan 04)
+PHRASED = "phrased"        # per-phrase timing recipe (timing.mode="phrase")
 FITTED = "fitted"          # whole-clip timing (timing.mode="whole")
-LEVELED = "leveled"        # post-fit baseline level + performance gain (Plan 03)
-EDGED = "edged"            # protected final edges (Plan 02)
-TREATED = "treated"        # reviewed acoustic/device treatment (Plan 05)
+LEVELED = "leveled"        # post-fit baseline level + performance gain
+EDGED = "edged"            # protected final edges
+TREATED = "treated"        # reviewed acoustic/device treatment
 UNKNOWN = "unknown"
 ROLES = (RAW, TRIMMED, NORMALIZED, PHRASED, FITTED, LEVELED, EDGED, TREATED,
          UNKNOWN)
 # Later plans append their own role here; order defines "most processed last".
-# `normalized` stays where Plan 02 put it so a legacy run keeps reproducing
-# exactly what it rendered before; Plan 03's level owner sits after fitting,
+# `normalized` stays where boundary preparation put it so a legacy run keeps reproducing
+# exactly what it rendered before; the level owner sits after fitting,
 # because a loudness decision made before time-stretching is a decision about
 # audio that no longer exists. Only one of the two ever runs.
 #
@@ -150,7 +150,7 @@ EVENT_COVERAGE = ("unresolved", "retained", "replaced", "omitted", "covered",
 EVENT_EVIDENCE = ("subtitle", "manual", "detector", "unknown")
 
 
-# Acoustic treatment (Plan 05). A preset is a *place or a device*, never a
+# Acoustic treatment. A preset is a *place or a device*, never a
 # performance: none of these change who is speaking or how they act.
 TREATMENT_PRESETS = ("dry", "room", "distant", "phone", "radio")
 # Where the choice came from. `default` is the run-wide preset, `scene` a time
@@ -513,7 +513,7 @@ class PerformanceIntent:
     direction: str = ""                   # freeform reviewer direction
     origin: str = "unknown"               # manual | cast | knowledge | suggestion | unknown
     revision: int = 0                     # accepted intent revision
-    treatment: str = ""                   # acoustic treatment reference (Plan 05 owns the DSP)
+    treatment: str = ""                   # acoustic treatment reference (DSP: stages/treatment)
     effective: str = ""                   # the composed instruction actually requested
     unsupported: list[str] = field(default_factory=list)
     capability: str = "unknown"           # supported | unsupported | unknown
@@ -1224,7 +1224,7 @@ class NonverbalEvent:
 
     @classmethod
     def from_dict(cls, data: Any) -> NonverbalEvent:
-        """Read an event, migrating the plain dictionaries Plan 01 wrote.
+        """Read an event, migrating the plain dictionaries the first cue schema wrote.
 
         Those rows carried `cue_id`, `type`, `speaker`, `text`, `source` and
         `coverage="uncovered"`. The old `uncovered` becomes `unresolved`, which
@@ -1238,7 +1238,7 @@ class NonverbalEvent:
         coverage = _text(data.get("coverage")) or "unresolved"
         cue = _text(data.get("cue_id"))
         return cls(
-            # A Plan 01 row has no id at all. It gets the one the parser would
+            # A first-schema row has no id at all. It gets the one the parser would
             # derive for the same cue, so the migrated event and a freshly
             # parsed one are the same event rather than two.
             event_id=_text(data.get("event_id")) or (event_id(cue, 0) if cue else ""),
@@ -1461,7 +1461,7 @@ class Take:
     remote_id: str | None = None
     raw: Artifact | None = None
     created_at: str = ""
-    # Candidate provenance (Plan 03). `origin` separates the take the pipeline
+    # Candidate provenance. `origin` separates the take the pipeline
     # made on its own from one a reviewer asked for; `checks` holds the
     # technical measurements a ranking may explain itself with. A number here
     # is never an acting judgement.
@@ -2080,3 +2080,40 @@ def validate_cues(segments, lineage: dict | None = None) -> None:
             raise SchemaError(f"cue {retired} is both live and retired")
         if not successors:
             raise SchemaError(f"retired cue {retired} has no successor")
+
+
+def apply_findings(seg, detector: str, inputs: str, observed: list[tuple]) -> None:
+    """Merge this detector's observations into the cue's structured findings.
+
+    A finding is never silently resolved by new audio: when the inputs change,
+    an accepted finding reopens with its history intact, and a code that is no
+    longer reported becomes `obsolete` rather than disappearing.
+    """
+    codes = {code for code, *_ in observed}
+    latest = {code: row for code, *row in observed}
+    for found in seg.findings:
+        if found.detector != detector:
+            continue
+        if found.code in codes:
+            if found.inputs != inputs and found.disposition != "open":
+                found.history.append({"at": now(), "from": found.disposition,
+                                      "to": "open", "reason": "inputs changed"})
+                found.disposition = "open"
+            if found.inputs != inputs:
+                # The same problem measured on different audio: the evidence
+                # must describe the audio that is there now.
+                _kind, found.severity, found.confidence, found.evidence = latest[found.code]
+            found.inputs = inputs
+        elif found.disposition != "obsolete":
+            found.history.append({"at": now(), "from": found.disposition,
+                                  "to": "obsolete", "reason": "no longer detected"})
+            found.disposition = "obsolete"
+    known = {f.code for f in seg.findings if f.detector == detector}
+    for code, kind, severity, confidence, evidence in observed:
+        if code in known:
+            continue
+        seg.findings.append(Finding(
+            finding_id=finding_id(seg.cue_id, code, detector),
+            code=code, kind=kind, severity=severity, confidence=confidence,
+            scope="render", target=RAW, detector=detector, inputs=inputs,
+            evidence=evidence))

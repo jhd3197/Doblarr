@@ -10,14 +10,34 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from contextlib import suppress
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
-DATEFMT = "%H:%M:%S"
-MAX_BYTES = 5 * 1024 * 1024
-BACKUPS = 3
+DATEFMT = "%Y-%m-%d %H:%M:%S"
+MAX_BYTES = 10 * 1024 * 1024
+BACKUPS = 5
+
+# Browsers send the API key in the query string where they cannot set a header
+# (event streams, media); it must not land in a log file or the log stream.
+_KEY_IN_URL = re.compile(r"(?<=api_key=)[^&\s\"']+")
+
+
+def redact(text: str) -> str:
+    return _KEY_IN_URL.sub("***", text)
+
+
+class RedactApiKey(logging.Filter):
+    """Masks `api_key=` values in a record's message and arguments."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = redact(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(redact(a) if isinstance(a, str) else a for a in record.args)
+        return True
 
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
@@ -95,3 +115,9 @@ def setup_logging(config=None, verbose: bool = False, uvicorn: bool = False) -> 
             lg.handlers.clear()
             lg.setLevel(level)
             lg.propagate = True
+            if not any(isinstance(f, RedactApiKey) for f in lg.filters):
+                lg.addFilter(RedactApiKey())
+        # One line per UI poll would rotate a failed job's traceback out of the
+        # file within a night; access lines appear only when debugging.
+        access_level = level if level <= logging.DEBUG else max(level, logging.WARNING)
+        logging.getLogger("uvicorn.access").setLevel(access_level)

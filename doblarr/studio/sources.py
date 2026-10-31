@@ -202,18 +202,3 @@ def from_subtitles(path: Path, prefix: str = "sub") -> list[dict]:
         rows.append({"utt_id": f"{prefix}-{n:05d}", "start": line.start / 1000.0,
                      "end": line.end / 1000.0, "text": text, "speaker": line.name or ""})
     return rows
-
-
-def from_segments(segments, prefix: str = "cue") -> list[dict]:
-    """Utterances from a run's cues, on the source timeline, keyed by cue id."""
-    rows = []
-    for seg in segments:
-        span = seg.source.spans[0] if seg.source.spans else None
-        start = span.start if span else (seg.source_start if seg.source_start is not None
-                                         else seg.start)
-        end = seg.source.spans[-1].end if seg.source.spans else start + seg.duration
-        if end <= start:
-            continue
-        rows.append({"utt_id": seg.cue_id or f"{prefix}-{seg.index:05d}", "start": start,
-                     "end": end, "text": seg.text_src, "speaker": seg.speaker})
-    return rows
