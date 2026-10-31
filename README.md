@@ -5,6 +5,14 @@
 <h1 align="center">Doblarr</h1>
 
 <p align="center">
+  <a href="https://youtu.be/6qZMMPa4zk8">
+    <img src="docs/media/doblarr-demo.gif" alt="Doblarr demo: dub your movie library, keep the original audio (click for the full video)" width="800" />
+  </a>
+</p>
+
+<sub>Demo footage: *Tears of Steel* (CC) Blender Foundation | [mango.blender.org](https://mango.blender.org), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).</sub>
+
+<p align="center">
   <a href="https://github.com/jhd3197/Doblarr/pkgs/container/doblarr">
     <img src="https://ghcr-badge.elias.eu.org/shield/jhd3197/Doblarr/doblarr" alt="Docker pulls (GitHub Container Registry)" />
   </a>
