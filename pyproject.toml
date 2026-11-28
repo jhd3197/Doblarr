@@ -42,6 +42,11 @@ vision = [
 emotion = [
     "funasr>=1.2",
 ]
+# Optional: read shots, scenes and faces from a running Marcarr (doblarr/clients/marcarr.py).
+# TODO: switch to "marcarr>=0.2,<0.3" once 0.2.0 is on PyPI.
+marcarr = [
+    "marcarr @ git+https://github.com/jhd3197/marcarr@dev",
+]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",

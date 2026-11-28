@@ -88,6 +88,11 @@ class VoiceStudioModel(_Section):
     directable_engines: list[str] = []
 
 
+class MarcarrModel(_Section):
+    url: str = ""                # empty: Marcarr is not used
+    api_key: str = ""            # always sent; Marcarr asks for it off loopback
+
+
 class VoiceboxModel(_Section):
     base_url: str = "http://127.0.0.1:17493"
     timeout_seconds: int = 1800  # first CPU generation includes the model load
@@ -558,6 +563,7 @@ class ConfigModel(_Section):
     speech: SpeechModel = SpeechModel()
     voicebox: VoiceboxModel = VoiceboxModel()
     voicestudio: VoiceStudioModel = VoiceStudioModel()
+    marcarr: MarcarrModel = MarcarrModel()
     translate: TranslateModel = TranslateModel()
     transcribe: TranscribeModel = TranscribeModel()
     speakers: SpeakersModel = SpeakersModel()

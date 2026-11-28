@@ -32,7 +32,7 @@ DEFAULTS: dict[str, Any] = ConfigModel().model_dump()
 SECRET_KEYS = {
     "connect.radarr_api_key", "connect.sonarr_api_key", "connect.plex_token",
     "web.api_key", "notify.discord_webhook", "voicestudio.api_key",
-    "research.opensubtitles_api_key", "research.tmdb_api_key",
+    "research.opensubtitles_api_key", "research.tmdb_api_key", "marcarr.api_key",
 }
 SECRET_SENTINEL = "••••••"
 
@@ -44,6 +44,7 @@ URL_SECRETS = {
     "connect.sonarr_url": "connect.sonarr_api_key",
     "connect.plex_url": "connect.plex_token",
     "voicestudio.base_url": "voicestudio.api_key",
+    "marcarr.url": "marcarr.api_key",
 }
 
 # Environment variables that override the matching YAML value when set
@@ -53,6 +54,7 @@ ENV_OVERRIDES = {
     "DOBLARR_SONARR_API_KEY": ("connect", "sonarr_api_key"),
     "DOBLARR_PLEX_TOKEN": ("connect", "plex_token"),
     "DOBLARR_VOICESTUDIO_API_KEY": ("voicestudio", "api_key"),
+    "DOBLARR_MARCARR_API_KEY": ("marcarr", "api_key"),
 }
 
 
@@ -133,7 +135,7 @@ def _strip_sentinels(d: Any) -> Any:
 # Settings a queued job or a saved title plan may never change: where files are
 # written, which servers are called, and the secrets sent to them. Only Settings
 # can. Checked where overrides arrive (JobStore.add, the title plan route).
-PROTECTED_OVERRIDES = ("paths.", "connect.", "web.", "speech.",
+PROTECTED_OVERRIDES = ("paths.", "connect.", "web.", "speech.", "marcarr.",
                        "research.opensubtitles_api_key", "research.tmdb_api_key",
                        "voicebox.base_url", "voicestudio.base_url", "voicestudio.api_key",
                        "translate.endpoint", "knowledge.pack_distribution_url")
