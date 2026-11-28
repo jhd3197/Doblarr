@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from .clients.marcarr import MarcarrClient
 from .clients.plex import PlexClient
 from .clients.radarr import RadarrClient
 from .clients.sonarr import SonarrClient
@@ -56,6 +57,15 @@ class Services:
             url, token = self._conn("Plex", "plex_url", "plex_token")
             self._cache["plex"] = PlexClient(url, token)
         return self._cache["plex"]
+
+    @property
+    def marcarr(self) -> MarcarrClient:
+        if "marcarr" not in self._cache:
+            conn = self.config.get("marcarr", {})
+            if not conn.get("url"):
+                raise ConfigError("Marcarr is not configured (marcarr.url / marcarr.api_key).")
+            self._cache["marcarr"] = MarcarrClient(conn["url"], conn.get("api_key") or "")
+        return self._cache["marcarr"]
 
     @property
     def speech(self) -> SpeechClient:

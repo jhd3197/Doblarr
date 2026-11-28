@@ -84,6 +84,11 @@ voicestudio:
   timeout_seconds: 1800
   directable_engines: []        # engines you've heard follow a delivery direction
 
+# Marcarr (optional media analysis service). Needs: pip install "doblarr[marcarr]"
+marcarr:
+  url: ""                       # e.g. http://127.0.0.1:7470; empty leaves it unused
+  api_key: ""                   # required with a url; or env DOBLARR_MARCARR_API_KEY
+
 # Translation
 translate:
   # The episode's own dub in the target language, when the file has one:

@@ -28,6 +28,7 @@ const TABS = [
       T("voicestudio.base_url", "VoiceStudio URL"), T("voicestudio.api_key", "VoiceStudio API key", "Only needed when VoiceStudio is on another machine."),
       N("voicestudio.timeout_seconds", "VoiceStudio timeout (seconds)"),
       L("voicestudio.directable_engines", "VoiceStudio engines that take direction", "Comma-separated engine IDs you have heard follow a delivery direction.")]),
+    group("Marcarr", [T("marcarr.url", "Marcarr URL"), T("marcarr.api_key", "Marcarr API key")]),
   ]),
   tab("general", "General", [group("Dubbing", [
     L("general.target_languages", "Target languages", "Comma-separated language codes, such as en, es."),
